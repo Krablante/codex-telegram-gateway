@@ -211,6 +211,10 @@ export class SessionCompactor {
       last_compacted_at: updatedAt,
       last_compaction_reason: reason,
       exchange_log_entries: exchangeLog.length,
+      codex_thread_id: null,
+      codex_rollout_path: null,
+      last_context_snapshot: null,
+      last_token_usage: null,
     });
 
     return {

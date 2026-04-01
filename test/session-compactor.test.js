@@ -89,11 +89,34 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   });
 
   const withRun = await sessionStore.patch(session, {
+    codex_thread_id: "thread-before-compact",
+    codex_rollout_path:
+      "/home/bloob/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
     last_user_prompt: "Inspect compact state",
     last_agent_reply: "Workspace is clean and ready.",
     last_run_status: "completed",
     last_run_started_at: "2026-03-22T12:00:00.000Z",
     last_run_finished_at: "2026-03-22T12:01:00.000Z",
+    last_token_usage: {
+      input_tokens: 120000,
+      cached_input_tokens: 30000,
+      output_tokens: 400,
+      reasoning_tokens: 50,
+      total_tokens: 120450,
+    },
+    last_context_snapshot: {
+      captured_at: "2026-03-22T12:01:00.000Z",
+      model_context_window: 275500,
+      last_token_usage: {
+        input_tokens: 120000,
+        cached_input_tokens: 30000,
+        output_tokens: 400,
+        reasoning_tokens: 50,
+        total_tokens: 120450,
+      },
+      rollout_path:
+        "/home/bloob/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
+    },
     parked_reason: "telegram/forum-topic-closed",
     lifecycle_state: "parked",
   });
@@ -157,6 +180,10 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   const updated = await sessionStore.load(withRun.chat_id, withRun.topic_id);
   assert.equal(updated.last_compaction_reason, "command/compact");
   assert.equal(updated.exchange_log_entries, 1);
+  assert.equal(updated.codex_thread_id, null);
+  assert.equal(updated.codex_rollout_path, null);
+  assert.equal(updated.last_context_snapshot, null);
+  assert.equal(updated.last_token_usage, null);
 });
 
 test("SessionCompactor writes a stub brief when exchange log is empty", async () => {
@@ -186,6 +213,11 @@ test("SessionCompactor writes a stub brief when exchange log is empty", async ()
   assert.equal(compacted.exchangeLogEntries, 0);
   assert.equal(compacted.generatedWithCodex, false);
   assert.match(briefText, /No exchange log entries yet/u);
+  const updated = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(updated.codex_thread_id, null);
+  assert.equal(updated.codex_rollout_path, null);
+  assert.equal(updated.last_context_snapshot, null);
+  assert.equal(updated.last_token_usage, null);
 });
 
 test("SessionCompactor retries the temporary Codex summarizer once before failing", async () => {
