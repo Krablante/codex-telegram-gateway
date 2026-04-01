@@ -49,6 +49,7 @@ It is a focused bridge between Telegram topics and a real local Codex install.
 - emergency private-chat rescue lane
 - durable session state on disk
 - resume-to-compact fallback when old thread continuity is gone
+- manual `/compact` resets stored thread-backed context so the next run starts from rebuilt brief continuity
 - bilingual topic UI with `ENG` and `RUS` modes via `/language`
 
 ## What You Need
@@ -153,6 +154,7 @@ The important distinction is:
 
 - `exchange-log.jsonl` = raw durable prompt/reply history
 - `active-brief.md` = derived recovery summary
+- explicit `/compact` = rebuild `active-brief.md` and drop stored thread/context continuity for the next run
 
 ## Architecture in One Screen
 

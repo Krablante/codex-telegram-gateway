@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.1.1] - 2026-04-01
+
+Fixes:
+
+- manual `/compact` now clears stored Codex thread and context snapshot state
+- the next worker prompt after `/compact` now starts from rebuilt brief continuity instead of resuming the old thread
+- `/status` no longer keeps showing stale thread-backed context usage right after successful compaction
+
 ## [0.1.0] - 2026-03-31
 
 Initial public release.

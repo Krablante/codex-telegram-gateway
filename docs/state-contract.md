@@ -36,4 +36,5 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway
 - bot tokens and runtime credentials stay only there
 - the gateway does not keep tool chatter or full PTY transcripts as canonical memory
 - the clean exchange log is the durable raw surface, and the compact brief is a derived recovery surface
+- explicit `/compact` also clears stored Codex thread/context metadata so the next run starts from rebuilt brief continuity instead of the previous thread
 - operator private-chat prompts may bypass topic routing entirely and execute through the isolated emergency `codex exec` path
