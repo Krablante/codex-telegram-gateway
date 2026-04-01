@@ -152,6 +152,16 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   assert.match(runCalls[0].prompt, /The exchange log file contains only user prompts and final agent replies/u);
   assert.match(
     runCalls[0].prompt,
+    /Write a dense but readable markdown brief that lets a fresh Codex run continue work without rereading the full exchange log\./u,
+  );
+  assert.match(runCalls[0].prompt, /## Workspace context/u);
+  assert.match(runCalls[0].prompt, /## Current state/u);
+  assert.match(
+    runCalls[0].prompt,
+    /Latest exchange: capture the latest user ask and the latest assistant outcome in concrete terms\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
     new RegExp(sessionStore.getExchangeLogPath(withRun.chat_id, withRun.topic_id)),
   );
   assert.doesNotMatch(runCalls[0].prompt, /Inspect compact state/u);

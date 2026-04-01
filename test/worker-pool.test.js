@@ -227,6 +227,168 @@ test("CodexWorkerPool falls back to compact rebuild only after one resume retry"
   assert.equal(deletedMessages.length, 1);
 });
 
+test("CodexWorkerPool bootstraps a fresh run from active brief after compaction", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 244,
+    topicName: "Fresh brief bootstrap test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+  const compactedSession = await sessionStore.patch(session, {
+    last_compacted_at: "2026-04-01T15:30:00.000Z",
+    last_compaction_reason: "command/compact",
+    exchange_log_entries: 4,
+    last_user_prompt: "Please continue the compact work on the Telegram gateway.",
+    last_agent_reply: "I fixed the stale thread reset and we can continue.",
+    last_run_status: "completed",
+  });
+  await sessionStore.writeSessionText(
+    compactedSession,
+    "active-brief.md",
+    [
+      "# Active brief",
+      "",
+      "updated_from_reason: command/compact",
+      "session_key: -1003577434463:244",
+      "topic_name: Fresh brief bootstrap test",
+      "cwd: /home/bloob/atlas",
+      "",
+      "## Workspace context",
+      "- repo_root: /home/bloob/atlas",
+      "- focus: codex-telegram-gateway compact flow",
+      "",
+      "## Current state",
+      "- Manual compact just refreshed the recovery brief.",
+      "",
+      "## Open work",
+      "- Make the next fresh run continue cleanly from this brief.",
+      "",
+      "## Latest exchange",
+      "- User wants stronger continuity after /compact.",
+    ].join("\n"),
+  );
+
+  const sentMessages = [];
+  const editedMessages = [];
+  const deletedMessages = [];
+  const runCalls = [];
+  const runTask = ({ prompt, sessionThreadId, onEvent }) => {
+    runCalls.push({ prompt, sessionThreadId });
+    return {
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent(
+          {
+            kind: "thread",
+            text: "Codex thread started: fresh-brief-thread",
+            threadId: "fresh-brief-thread",
+          },
+          {
+            type: "thread.started",
+            thread_id: "fresh-brief-thread",
+          },
+        );
+        await onEvent(
+          {
+            kind: "agent_message",
+            text: "Continued from the refreshed brief.",
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              text: "Continued from the refreshed brief.",
+            },
+          },
+        );
+
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "fresh-brief-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    };
+  };
+
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        return { ok: true };
+      },
+      async deleteMessage(payload) {
+        deletedMessages.push(payload);
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 2,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    sessionCompactor: null,
+    runTask,
+  });
+
+  await workerPool.startPromptRun({
+    session: compactedSession,
+    prompt: "Continue the compact improvements.",
+    message: {
+      message_id: 199,
+      message_thread_id: 244,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(compactedSession.session_key) === null);
+
+  assert.equal(runCalls.length, 1);
+  assert.equal(runCalls[0].sessionThreadId, null);
+  assert.match(runCalls[0].prompt, /Telegram topic routing context:/u);
+  assert.match(
+    runCalls[0].prompt,
+    /This Telegram topic has no live Codex thread, but it does have a stored active brief\./u,
+  );
+  assert.match(runCalls[0].prompt, /last_compaction_reason: command\/compact/u);
+  assert.match(runCalls[0].prompt, /exchange_log_entries: 4/u);
+  assert.match(runCalls[0].prompt, /## Active brief/u);
+  assert.match(runCalls[0].prompt, /focus: codex-telegram-gateway compact flow/u);
+  assert.match(runCalls[0].prompt, /## Latest user request/u);
+  assert.match(runCalls[0].prompt, /Continue the compact improvements\./u);
+
+  const meta = await sessionStore.load(compactedSession.chat_id, compactedSession.topic_id);
+  assert.equal(meta.codex_thread_id, "fresh-brief-thread");
+  assert.equal(meta.last_run_status, "completed");
+  assert.equal(meta.last_agent_reply, "Continued from the refreshed brief.");
+
+  assert.equal(sentMessages.length, 2);
+  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages.at(-1).text, "Continued from the refreshed brief.");
+  assert.equal(deletedMessages.length, 1);
+  assert.ok(editedMessages.length >= 0);
+});
+
 test("CodexWorkerPool retries thread resume once before succeeding without compact rebuild", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),

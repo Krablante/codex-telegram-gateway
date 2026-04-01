@@ -36,7 +36,7 @@ Canonical durable surfaces:
 
 - `meta.json` — topic/session metadata
 - `exchange-log.jsonl` — durable raw prompt/final-reply history
-- `active-brief.md` — derived recovery summary
+- `active-brief.md` — derived recovery summary with enough continuity for a fresh post-compact or post-recovery run
 - `telegram-topic-context.md` — compact routing/file-delivery contract for Codex
 - `artifacts/` — generated diffs and related outputs
 - `state_root/emergency/` — isolated rescue-lane scratch space for downloaded private-chat attachments and `codex exec` output files

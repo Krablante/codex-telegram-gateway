@@ -740,6 +740,7 @@ export class CodexWorkerPool {
       replyDocumentWarnings: [],
       warnings: [],
       interruptRequested: false,
+      interruptSignalSent: false,
       finalizing: false,
       resumeMode: session.codex_thread_id ? "thread-resume" : null,
       lastTokenUsage: session.last_token_usage ?? null,
@@ -984,16 +985,34 @@ export class CodexWorkerPool {
     }
 
     if (run.child) {
-      setTimeout(() => {
-        if (this.activeRuns.get(sessionKey) === run && run.child) {
-          signalChildProcessGroup(run.child, "SIGINT");
-          setTimeout(() => {
-            if (this.activeRuns.get(sessionKey) === run && run.child) {
-              signalChildProcessGroup(run.child, "SIGKILL");
-            }
-          }, 5000).unref();
+      const scheduleHardKill = () => {
+        setTimeout(() => {
+          if (this.activeRuns.get(sessionKey) === run && run.child) {
+            signalChildProcessGroup(run.child, "SIGKILL");
+          }
+        }, 5000).unref();
+      };
+      const sendSigint = () => {
+        if (
+          this.activeRuns.get(sessionKey) !== run ||
+          !run.child ||
+          run.state.interruptSignalSent
+        ) {
+          return;
         }
-      }, nativeInterruptRequested ? 5000 : 0).unref();
+
+        run.state.interruptSignalSent = true;
+        signalChildProcessGroup(run.child, "SIGINT");
+        scheduleHardKill();
+      };
+
+      if (nativeInterruptRequested) {
+        setTimeout(() => {
+          sendSigint();
+        }, 5000).unref();
+      } else {
+        sendSigint();
+      }
     }
     return true;
   }
@@ -1035,15 +1054,41 @@ export class CodexWorkerPool {
     attachments = [],
     includeTopicContext = true,
   }) {
+    const promptWithAttachments = buildPromptWithAttachments(
+      prompt,
+      attachments,
+      getSessionUiLanguage(run.session),
+    );
+    const sessionThreadId = run.session.codex_thread_id ?? null;
+    const initialPrompt = sessionThreadId
+      ? promptWithAttachments
+      : await this.buildFreshBriefBootstrapPrompt(run, promptWithAttachments);
+
     return this.executeRunAttempts(run, {
-      prompt: buildPromptWithAttachments(
-        prompt,
-        attachments,
-        getSessionUiLanguage(run.session),
-      ),
-      sessionThreadId: run.session.codex_thread_id ?? null,
+      prompt: initialPrompt,
+      sessionThreadId,
       attachments,
       includeTopicContext,
+    });
+  }
+
+  async buildFreshBriefBootstrapPrompt(run, prompt) {
+    if (!run.session.last_compacted_at && !run.session.last_compaction_reason) {
+      return prompt;
+    }
+
+    const activeBrief = await this.sessionStore.loadActiveBrief(run.session);
+    if (!String(activeBrief || "").trim()) {
+      return prompt;
+    }
+
+    return buildCompactResumePrompt({
+      session: run.session,
+      prompt,
+      compactState: {
+        activeBrief,
+      },
+      mode: "fresh-brief",
     });
   }
 
@@ -1191,6 +1236,15 @@ export class CodexWorkerPool {
 
     run.child = child;
     run.controller = task;
+    if (state.interruptRequested && !state.interruptSignalSent && run.child) {
+      state.interruptSignalSent = true;
+      signalChildProcessGroup(run.child, "SIGINT");
+      setTimeout(() => {
+        if (this.activeRuns.get(run.sessionKey) === run && run.child === child) {
+          signalChildProcessGroup(run.child, "SIGKILL");
+        }
+      }, 5000).unref();
+    }
     void this.flushPendingLiveSteer(run.sessionKey, run).catch((error) => {
       state.warnings.push(`live steer flush failed: ${error.message}`);
     });
