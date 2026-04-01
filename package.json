@@ -1,0 +1,38 @@
+{
+  "name": "codex-telegram-gateway",
+  "version": "0.1.0",
+  "description": "Telegram forum-topic gateway for the real Codex CLI runtime.",
+  "keywords": [
+    "telegram",
+    "telegram-bot",
+    "codex",
+    "openai",
+    "automation",
+    "forum-topics",
+    "nodejs",
+    "homelab"
+  ],
+  "homepage": "https://github.com/Krablante/codex-telegram-gateway",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Krablante/codex-telegram-gateway.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Krablante/codex-telegram-gateway/issues"
+  },
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "admin": "node src/cli/admin.js",
+    "doctor": "node src/cli/doctor.js",
+    "install-user-service": "node src/cli/install-user-service.js",
+    "run": "node src/cli/run.js",
+    "smoke": "TELEGRAM_POLL_TIMEOUT_SECS=1 RUN_ONCE=1 node src/cli/run.js",
+    "soak": "node src/cli/soak.js",
+    "test": "node --test",
+    "test:live": "CODEX_LIVE_TESTS=1 node --test test/worker-pool.live.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
