@@ -113,3 +113,4 @@ The installed user unit runs `src/cli/run.js` directly under the resolved Node b
 - if only one topic is wedged, prefer `/status`, `/interrupt`, or `/purge` inside that topic instead of restarting the whole service
 - if the topic path itself is what broke, switch to the bot's private chat and use the emergency lane there instead of poking the broken topic harder
 - if a stored `codex_thread_id` no longer resumes cleanly, the runtime retries resume once and only then regenerates `active-brief.md` from `exchange-log.jsonl`
+- after manual `/compact`, expect the next fresh run to start from that rebuilt brief instead of a near-empty context bootstrap

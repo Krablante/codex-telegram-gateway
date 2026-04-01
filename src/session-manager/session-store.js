@@ -31,6 +31,18 @@ async function readMetaJson(filePath) {
   }
 }
 
+async function readOptionalText(filePath) {
+  try {
+    return await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 function buildRuntimeStateFields() {
   return {
     last_command_name: null,
@@ -338,25 +350,21 @@ export class SessionStore {
     const current =
       (await this.load(meta.chat_id, meta.topic_id)) || meta;
 
-    const readOptionalText = async (filePath) => {
-      try {
-        return await fs.readFile(filePath, "utf8");
-      } catch (error) {
-        if (error?.code === "ENOENT") {
-          return null;
-        }
-
-        throw error;
-      }
-    };
-
     return {
-      activeBrief:
-        (await readOptionalText(
-          this.getActiveBriefPath(current.chat_id, current.topic_id),
-        )) || "",
+      activeBrief: await this.loadActiveBrief(current),
       exchangeLog: await this.loadExchangeLog(current),
     };
+  }
+
+  async loadActiveBrief(meta) {
+    const current =
+      (await this.load(meta.chat_id, meta.topic_id)) || meta;
+
+    return (
+      (await readOptionalText(
+        this.getActiveBriefPath(current.chat_id, current.topic_id),
+      )) || ""
+    );
   }
 
   async loadExchangeLog(meta) {

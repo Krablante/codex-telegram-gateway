@@ -23,18 +23,39 @@ export function summarizeCompactState(compactState) {
   };
 }
 
-export function buildCompactResumePrompt({ session, prompt, compactState }) {
+export function buildCompactResumePrompt({
+  session,
+  prompt,
+  compactState,
+  mode = "resume-fallback",
+}) {
   const activeBrief = truncateBlock(compactState?.activeBrief || "");
+  const exchangeLogEntries = Array.isArray(compactState?.exchangeLog)
+    ? compactState.exchangeLog.length
+    : session.exchange_log_entries ?? 0;
+  const introLines =
+    mode === "fresh-brief"
+      ? [
+          "This Telegram topic has no live Codex thread, but it does have a stored active brief.",
+          "Use the brief as bootstrap context for a fresh run, inspect the workspace if anything looks stale, and continue with the latest user request.",
+        ]
+      : [
+          "The previous Codex thread for this Telegram topic could not be resumed.",
+          "A fresh active brief was generated from the session exchange log.",
+          "Use it as bootstrap context, inspect the workspace if anything looks stale, and continue with the latest user request.",
+        ];
 
   const lines = [
-    "The previous Codex thread for this Telegram topic could not be resumed.",
-    "A fresh active brief was generated from the session exchange log.",
-    "Use it as bootstrap context, inspect the workspace if anything looks stale, and continue with the latest user request.",
+    ...introLines,
     "",
     `session_key: ${session.session_key}`,
+    `topic_name: ${session.topic_name ?? "unknown"}`,
     `cwd: ${session.workspace_binding.cwd}`,
     `previous_thread_id: ${session.codex_thread_id ?? "none"}`,
     `last_run_status: ${session.last_run_status ?? "none"}`,
+    `last_compacted_at: ${session.last_compacted_at ?? "none"}`,
+    `last_compaction_reason: ${session.last_compaction_reason ?? "none"}`,
+    `exchange_log_entries: ${exchangeLogEntries}`,
     "",
     "## Active brief",
   ];
