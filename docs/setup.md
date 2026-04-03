@@ -1,26 +1,42 @@
 # Setup
 
-## Goal
+This is the recommended first-time setup path for a single operator running the gateway on one machine.
 
-Get one operator, one Telegram bot, and one forum-enabled supergroup into a state where `make doctor` passes and `make run` can start the gateway.
+If you want the shortest version:
 
-## Prerequisites
+```bash
+npm install
+cp .env.example .env
+
+# fill the Telegram ids and local paths
+make doctor
+make test
+make run
+```
+
+Then open Telegram, go to `General`, and send `/help`.
+
+## Before You Start
+
+You need:
 
 - Node.js 20+
-- local `codex` CLI installed and already authenticated
+- the local `codex` CLI already installed and authenticated
 - one Telegram account that will operate the bot
 - one Telegram supergroup with topics enabled
+
+You do not need `Omni` to get started. Spike-only mode is the simplest and usually the best first install.
 
 ## 1. Create The Spike Bot
 
 1. Open `@BotFather`.
 2. Run `/newbot`.
-3. Copy the bot token into `TELEGRAM_BOT_TOKEN`.
+3. Copy the token into `TELEGRAM_BOT_TOKEN`.
 4. Run `/setprivacy`.
 5. Choose the bot.
 6. Set privacy mode to `Disable`.
 
-Without that privacy change, the bot may only see commands and will miss ordinary prompt text in topics.
+Without that privacy change, the bot will see commands but miss ordinary prompt text in topics.
 
 ## 2. Prepare The Telegram Chat
 
@@ -29,14 +45,14 @@ Without that privacy change, the bot may only see commands and will miss ordinar
 3. Add the bot to the chat.
 4. Promote the bot to admin.
 
-Recommended admin rights:
+Recommended rights:
 
 - post messages
 - edit messages
 - delete messages
 - manage topics
 
-`/new` depends on topic-creation rights. The rest of the gateway still works without it if you only use existing topics.
+`/new Topic Name` needs topic-management rights. The rest of the gateway still works without it if you only use existing topics.
 
 ## 3. Get The Numeric Ids
 
@@ -45,18 +61,16 @@ You need:
 - `TELEGRAM_ALLOWED_USER_ID`
 - `TELEGRAM_FORUM_CHAT_ID`
 
-Simple path:
+The easy path:
 
 1. send any message in the target Telegram chat
-2. call Bot API `getUpdates` once
-
-Example:
+2. call Bot API `getUpdates`
 
 ```bash
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getUpdates"
 ```
 
-Read these fields from the response:
+Read these values:
 
 - `message.from.id` -> `TELEGRAM_ALLOWED_USER_ID`
 - `message.chat.id` -> `TELEGRAM_FORUM_CHAT_ID`
@@ -77,15 +91,16 @@ Minimum required values:
 Useful defaults:
 
 - `DEFAULT_SESSION_BINDING_PATH`
-  this is the path used by `/new` when you do not pass `cwd=...`
+  the path used by `/new` when you do not pass `cwd=...`
 - `TELEGRAM_ALLOWED_BOT_IDS`
   optional allowlist for other trusted bots in the same forum
 
-Optional but useful:
+Optional but commonly useful:
 
 - `TELEGRAM_EXPECTED_TOPICS`
 - `STATE_ROOT`
 - `CODEX_BIN_PATH`
+- `MAX_PARALLEL_SESSIONS`
 
 Optional Omni setup:
 
@@ -94,23 +109,23 @@ Optional Omni setup:
 - `OMNI_BOT_ID`
 - `SPIKE_BOT_ID`
 
-If you do not need `/auto`, leave the Omni values unset and start with Spike-only mode.
+If you do not need `/auto` yet, leave the Omni settings unset and start with Spike-only mode.
 
 ## 5. Validate Before Running
 
 ```bash
 make doctor
+make test
 ```
 
-You want to see:
+`make doctor` should confirm:
 
-- `doctor: ok`
-- the expected forum chat title and id
-- `forum_enabled: true`
-- sane bot membership
-- `webhook_url: (none)` unless you intentionally use a Telegram-compatible API proxy
+- the bot token works
+- the expected forum chat is reachable
+- topics are enabled
+- the webhook is empty unless you intentionally use a Telegram-compatible proxy
 
-## 6. Run The Gateway
+## 6. Run It
 
 Foreground:
 
@@ -131,28 +146,37 @@ If Omni is configured:
 make run-omni
 ```
 
-## 7. First-Use Sanity Check
+## 7. First Telegram Check
 
-Inside the Telegram chat:
+Inside Telegram:
 
 1. open `General`
 2. send `/help`
-3. create a topic with `/new Backend Cleanup` or reuse an existing work topic
-4. send a normal text prompt there
-5. verify the bot answers in the same topic
+3. optionally send `/guide`
+4. create a topic with `/new Backend Cleanup`
+5. enter that topic and send a plain text prompt
+6. confirm the reply comes back into the same topic
 
 Emergency lane sanity check:
 
 1. open a private chat with the bot
 2. send `/status`
-3. verify the bot answers there without depending on any forum topic
-4. remember that this private chat is the rescue lane if the normal topic path breaks
+3. confirm the bot answers there too
 
-## Common Setup Mistakes
+That private chat is the rescue lane if the normal topic path breaks.
+
+## Common Mistakes
 
 - Bot privacy mode is still enabled
-- the configured chat is not a supergroup
-- topics are not enabled in the chat
+- the target chat is not a supergroup
+- topics are not enabled
 - the chat id came from the wrong conversation
 - the bot is in the chat but not an admin
 - `WORKSPACE_ROOT` points to a path that does not exist locally
+- Omni was configured immediately even though Spike-only would have been enough for the first run
+
+## What To Read Next
+
+- [telegram-surface.md](./telegram-surface.md) — commands and menus
+- [deployment.md](./deployment.md) — Spike-only vs Spike+Omni
+- [runbook.md](./runbook.md) — live operations and recovery
