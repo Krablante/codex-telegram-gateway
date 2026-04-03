@@ -198,6 +198,25 @@ Default path model:
 - `make` targets use `.env` in the repo root unless you override `ENV_FILE`
 - mutable runtime state goes under `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway`
 
+### Workspace Binding Rules
+
+Set `WORKSPACE_ROOT` on purpose. It is the base directory the gateway uses when it resolves topic bindings and relative `cwd=...` values.
+
+`DEFAULT_SESSION_BINDING_PATH` is the default start path for a plain `/new Topic Name`. If you leave it unset, the gateway falls back to `WORKSPACE_ROOT`. If `WORKSPACE_ROOT` is also unset, the final fallback is your home directory, which is usually too vague for a real setup.
+
+Example:
+
+```env
+WORKSPACE_ROOT=/home/you/work
+DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo
+```
+
+With that setup:
+
+- `/new Backend Cleanup` starts in `/home/you/work/main-repo`
+- `/new cwd=experiments/lab Lab thread` starts in `/home/you/work/experiments/lab`
+- `/new cwd=/srv/shared/repo Hotfix` uses that absolute path directly
+
 ## Useful Repo Entry Points
 
 ```bash

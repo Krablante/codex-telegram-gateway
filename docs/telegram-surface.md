@@ -55,6 +55,13 @@ Stable values are handled directly by buttons. Free-form values such as the glob
 
 New topics created via `/new` now get that local menu automatically right after the bootstrap message.
 
+Binding rules for `/new`:
+
+- `/new Topic Name` starts from `DEFAULT_SESSION_BINDING_PATH`
+- if `DEFAULT_SESSION_BINDING_PATH` is unset, it falls back to `WORKSPACE_ROOT`
+- `/new cwd=backend/api Topic Name` resolves `backend/api` relative to `WORKSPACE_ROOT`
+- `/new cwd=/absolute/path Topic Name` uses that absolute path directly
+
 Current local panel coverage:
 
 - `/wait ...` for the current topic

@@ -88,6 +88,8 @@ Minimum required values:
 - `TELEGRAM_FORUM_CHAT_ID`
 - `WORKSPACE_ROOT`
 
+Set `WORKSPACE_ROOT` deliberately. It becomes the base path for relative topic bindings such as `/new cwd=backend/api Fix auth`.
+
 Useful defaults:
 
 - `DEFAULT_SESSION_BINDING_PATH`
@@ -110,6 +112,20 @@ Optional Omni setup:
 - `SPIKE_BOT_ID`
 
 If you do not need `/auto` yet, leave the Omni settings unset and start with Spike-only mode.
+
+Recommended path setup:
+
+```env
+WORKSPACE_ROOT=/home/you/work
+DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo
+```
+
+What that means in practice:
+
+- `/new Backend Cleanup` starts in `/home/you/work/main-repo`
+- `/new cwd=experiments/prototype Prototype work` resolves to `/home/you/work/experiments/prototype`
+- if `DEFAULT_SESSION_BINDING_PATH` is unset, the gateway falls back to `WORKSPACE_ROOT`
+- if `WORKSPACE_ROOT` is also unset, the final fallback is your home directory, which is usually not what you want
 
 ## 5. Validate Before Running
 
