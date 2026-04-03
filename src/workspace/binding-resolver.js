@@ -17,12 +17,9 @@ async function readGitOutput(args, cwd) {
 
 export async function resolveWorkspaceBinding({
   workspaceRoot,
-  atlasWorkspaceRoot,
   requestedPath,
 }) {
-  const resolvedWorkspaceRoot = await fs.realpath(
-    workspaceRoot || atlasWorkspaceRoot,
-  );
+  const resolvedWorkspaceRoot = await fs.realpath(workspaceRoot);
   const requestedAbsolutePath = requestedPath
     ? path.isAbsolute(requestedPath)
       ? requestedPath
@@ -39,7 +36,6 @@ export async function resolveWorkspaceBinding({
 
   return {
     workspace_root: resolvedWorkspaceRoot,
-    atlas_workspace_root: resolvedWorkspaceRoot,
     repo_root: repoRoot,
     cwd,
     branch: branch || null,

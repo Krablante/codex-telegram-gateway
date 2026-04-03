@@ -12,18 +12,46 @@ export function getTopicLabel(message) {
     : "general";
 }
 
-export function isAuthorizedMessage(message, config) {
+function includesId(list, value) {
+  const normalized = String(value ?? "").trim();
+  return Array.isArray(list) && normalized
+    ? list.map((entry) => String(entry ?? "").trim()).includes(normalized)
+    : false;
+}
+
+export function isAuthorizedForumMessageFromHuman(message, config) {
   if (!message?.from || message.from.is_bot) {
     return false;
   }
 
   return (
-    String(message.from.id) === config.telegramAllowedUserId &&
-    String(message.chat?.id) === config.telegramForumChatId
+    includesId(config.telegramAllowedUserIds, message.from.id)
+    || String(message.from.id) === String(config.telegramAllowedUserId)
+  ) && String(message.chat?.id) === config.telegramForumChatId;
+}
+
+export function isAuthorizedForumMessageFromBot(message, config) {
+  if (!message?.from || !message.from.is_bot) {
+    return false;
+  }
+
+  return (
+    includesId(config.telegramAllowedBotIds, message.from.id)
+    && String(message.chat?.id) === config.telegramForumChatId
   );
 }
 
-export function extractBotCommand(message, botUsername) {
+export function isAuthorizedMessage(message, config) {
+  if (!message?.from) {
+    return false;
+  }
+
+  return message.from.is_bot
+    ? isAuthorizedForumMessageFromBot(message, config)
+    : isAuthorizedForumMessageFromHuman(message, config);
+}
+
+function extractLeadingBotCommand(message) {
   const text = String(message?.text ?? message?.caption ?? "");
   if (!text.trim()) {
     return null;
@@ -66,18 +94,41 @@ export function extractBotCommand(message, botUsername) {
   }
 
   const [commandName, commandTarget] = rawCommand.slice(1).split("@");
-  if (
-    commandTarget &&
-    botUsername &&
-    commandTarget.toLowerCase() !== botUsername.toLowerCase()
-  ) {
-    return null;
-  }
-
   return {
     name: commandName.toLowerCase(),
     raw: rawCommand,
     args: text.slice(commandEntity.length).trim(),
+    target: commandTarget ? commandTarget.toLowerCase() : null,
+  };
+}
+
+export function isForeignBotCommand(message, botUsername) {
+  const command = extractLeadingBotCommand(message);
+  if (!command?.target || !botUsername) {
+    return false;
+  }
+
+  return command.target !== botUsername.toLowerCase();
+}
+
+export function extractBotCommand(message, botUsername) {
+  const directCommand = extractLeadingBotCommand(message);
+  if (
+    directCommand?.target &&
+    botUsername &&
+    directCommand.target !== botUsername.toLowerCase()
+  ) {
+    return null;
+  }
+
+  if (!directCommand) {
+    return null;
+  }
+
+  return {
+    name: directCommand.name,
+    raw: directCommand.raw,
+    args: directCommand.args,
   };
 }
 
@@ -177,17 +228,72 @@ export function parsePromptSuffixCommandArgs(rawArgs) {
   };
 }
 
+export function parseQueueCommandArgs(rawArgs) {
+  const trimmed = rawArgs.trim();
+  if (!trimmed) {
+    return {
+      action: "enqueue",
+      text: null,
+      position: null,
+    };
+  }
+
+  if (/^status$/iu.test(trimmed)) {
+    return {
+      action: "status",
+      text: null,
+      position: null,
+    };
+  }
+
+  const deleteMatch = trimmed.match(/^delete\s+(\d+)$/iu);
+  if (deleteMatch) {
+    return {
+      action: "delete",
+      text: null,
+      position: Number.parseInt(deleteMatch[1], 10),
+    };
+  }
+
+  return {
+    action: "enqueue",
+    text: trimmed,
+    position: null,
+  };
+}
+
 export function parseWaitCommandArgs(rawArgs) {
   const trimmed = rawArgs.trim();
   if (!trimmed) {
     return {
       action: "show",
+      scope: "effective",
       delayMs: null,
       seconds: null,
     };
   }
 
-  const lowered = trimmed.toLowerCase();
+  let scope = "topic";
+  let scopeArgs = trimmed;
+  if (/^global(?:\s+|$)/iu.test(trimmed)) {
+    scope = "global";
+    scopeArgs = trimmed.slice("global".length).trim();
+  } else if (/^(?:topic|local)(?:\s+|$)/iu.test(trimmed)) {
+    scope = "topic";
+    const prefix = trimmed.match(/^(topic|local)(?:\s+|$)/iu)?.[1] || "";
+    scopeArgs = trimmed.slice(prefix.length).trim();
+  }
+
+  if (!scopeArgs) {
+    return {
+      action: "show",
+      scope,
+      delayMs: null,
+      seconds: null,
+    };
+  }
+
+  const lowered = scopeArgs.toLowerCase();
   if (
     lowered === "off" ||
     lowered === "cancel" ||
@@ -196,18 +302,20 @@ export function parseWaitCommandArgs(rawArgs) {
   ) {
     return {
       action: "off",
+      scope,
       delayMs: null,
       seconds: null,
     };
   }
 
-  const match = trimmed.match(/^(\d+)\s*([sm]?)$/iu);
+  const match = scopeArgs.match(/^(\d+)\s*([sm]?)$/iu);
   if (!match) {
     return {
       action: "invalid",
+      scope,
       delayMs: null,
       seconds: null,
-      raw: trimmed,
+      raw: scopeArgs,
     };
   }
 
@@ -215,9 +323,10 @@ export function parseWaitCommandArgs(rawArgs) {
   if (!Number.isInteger(value) || value <= 0) {
     return {
       action: "invalid",
+      scope,
       delayMs: null,
       seconds: null,
-      raw: trimmed,
+      raw: scopeArgs,
     };
   }
 
@@ -226,14 +335,16 @@ export function parseWaitCommandArgs(rawArgs) {
   if (seconds > MAX_WAIT_WINDOW_SECS) {
     return {
       action: "invalid",
+      scope,
       delayMs: null,
       seconds: null,
-      raw: trimmed,
+      raw: scopeArgs,
     };
   }
 
   return {
     action: "set",
+    scope,
     delayMs: seconds * 1000,
     seconds,
   };
@@ -262,6 +373,55 @@ export function parseLanguageCommandArgs(rawArgs) {
     action: "set",
     language,
     raw: trimmed,
+  };
+}
+
+export function parseScopedRuntimeSettingCommandArgs(rawArgs) {
+  const trimmed = rawArgs.trim();
+  if (!trimmed) {
+    return {
+      scope: "topic",
+      action: "show",
+      value: null,
+    };
+  }
+
+  let scope = "topic";
+  let scopeArgs = trimmed;
+  if (/^global(?:\s+|$)/iu.test(trimmed)) {
+    scope = "global";
+    scopeArgs = trimmed.slice("global".length).trim();
+  }
+
+  if (!scopeArgs) {
+    return {
+      scope,
+      action: "show",
+      value: null,
+    };
+  }
+
+  const lowered = scopeArgs.toLowerCase();
+  if (lowered === "list" || lowered === "ls") {
+    return {
+      scope,
+      action: "list",
+      value: null,
+    };
+  }
+
+  if (lowered === "clear" || lowered === "reset" || lowered === "default") {
+    return {
+      scope,
+      action: "clear",
+      value: null,
+    };
+  }
+
+  return {
+    scope,
+    action: "set",
+    value: scopeArgs,
   };
 }
 

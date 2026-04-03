@@ -4,17 +4,17 @@ import assert from "node:assert/strict";
 import { EmergencyPrivateChatRouter } from "../src/emergency/private-chat-router.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  repoRoot: "/path/to/codex-telegram-gateway",
-  stateRoot: "/home/example/.local/state/codex-telegram-gateway",
+  telegramAllowedUserId: "123456789",
+  repoRoot: "/workspace/projects/codex-telegram-gateway",
+  stateRoot: "/workspace/state/projects/codex-telegram-gateway",
   codexBinPath: "codex",
 };
 
 function buildPrivateMessage(overrides = {}) {
   return {
     text: "fix the gateway",
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: 1234567890, type: "private" },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: 123456789, type: "private" },
     message_id: 1,
     ...overrides,
   };
@@ -23,7 +23,7 @@ function buildPrivateMessage(overrides = {}) {
 function buildTopicMessage(overrides = {}) {
   return {
     text: "normal topic message",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890, type: "supergroup" },
     message_thread_id: 2203,
     message_id: 1,

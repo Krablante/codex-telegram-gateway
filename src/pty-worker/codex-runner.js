@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import readline from "node:readline";
 
+import { appendCodexRuntimeConfigArgs } from "../codex-runtime/config-args.js";
 import { readLatestContextSnapshot } from "../session-manager/context-snapshot.js";
 
 const APP_SERVER_BOOT_TIMEOUT_MS = 15000;
@@ -16,12 +17,18 @@ const CODEX_SESSIONS_ROOT = path.join(os.homedir(), ".codex", "sessions");
 
 export function buildCodexArgs({
   listenUrl = `ws://${APP_SERVER_HOST}:0`,
+  model = null,
+  reasoningEffort = null,
 } = {}) {
-  return [
+  const args = [
     "app-server",
     "--listen",
     listenUrl,
   ];
+  return appendCodexRuntimeConfigArgs(args, {
+    model,
+    reasoningEffort,
+  });
 }
 
 export function buildTurnInput({
@@ -456,8 +463,13 @@ export function runCodexTask({
   rolloutDiscoveryTimeoutMs = ROLLOUT_DISCOVERY_TIMEOUT_MS,
   rolloutPollIntervalMs = ROLLOUT_POLL_INTERVAL_MS,
   rolloutStallAfterChildExitMs = ROLLOUT_STALL_AFTER_CHILD_EXIT_MS,
+  model = null,
+  reasoningEffort = null,
 }) {
-  const args = buildCodexArgs({});
+  const args = buildCodexArgs({
+    model,
+    reasoningEffort,
+  });
   const child = spawnImpl(codexBinPath, args, {
     cwd,
     env: process.env,
@@ -473,6 +485,7 @@ export function runCodexTask({
   let primaryThreadId = sessionThreadId;
   let activeTurnId = null;
   let rolloutPath = null;
+  let rolloutOffsetAtDisconnect = null;
   let resumeReplacement = null;
   let rpc = null;
   let shuttingDown = false;
@@ -675,9 +688,12 @@ export function runCodexTask({
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
-    let offset = rolloutPathWasKnownAtDisconnect
-      ? await fs.stat(rolloutPath).then((stats) => stats.size)
-      : 0;
+    let offset = rolloutPathWasKnownAtDisconnect &&
+      Number.isInteger(rolloutOffsetAtDisconnect)
+      ? rolloutOffsetAtDisconnect
+      : rolloutPathWasKnownAtDisconnect
+        ? await fs.stat(rolloutPath).then((stats) => stats.size)
+        : 0;
     let carryover = "";
     let lastObservedGrowthAt = Date.now();
     while (!settled) {
@@ -898,6 +914,20 @@ export function runCodexTask({
         rpc = null;
         activeTurnId = null;
         Promise.resolve()
+          .then(async () => {
+            if (!rolloutPath) {
+              rolloutOffsetAtDisconnect = null;
+              return;
+            }
+
+            try {
+              rolloutOffsetAtDisconnect = await fs
+                .stat(rolloutPath)
+                .then((stats) => stats.size);
+            } catch {
+              rolloutOffsetAtDisconnect = null;
+            }
+          })
           .then(() => followRolloutAfterDisconnect(error))
           .catch((disconnectError) => {
             if (settled) {
@@ -908,6 +938,7 @@ export function runCodexTask({
           })
           .finally(() => {
             recoveringFromDisconnect = false;
+            rolloutOffsetAtDisconnect = null;
           });
       },
     });

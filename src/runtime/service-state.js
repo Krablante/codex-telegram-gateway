@@ -2,9 +2,12 @@ export function createServiceState(config, probe) {
   return {
     startedAt: new Date().toISOString(),
     allowedUserId: config.telegramAllowedUserId,
+    allowedUserIds: config.telegramAllowedUserIds,
+    allowedBotIds: config.telegramAllowedBotIds,
     forumChatId: config.telegramForumChatId,
     botId: String(probe.me.id),
     botUsername: probe.me.username || null,
+    omniEnabled: config.omniEnabled !== false,
     codexModel: config.codexModel,
     codexReasoningEffort: config.codexReasoningEffort,
     codexContextWindow: config.codexContextWindow,

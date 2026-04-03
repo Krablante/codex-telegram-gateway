@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import {
   applyPromptSuffix,
@@ -9,23 +12,104 @@ import {
   buildStatusMessage,
   extractBotCommand,
   getTopicLabel,
+  handleIncomingCallbackQuery,
   handleIncomingMessage,
   isAuthorizedMessage,
   parseLanguageCommandArgs,
+  parseQueueCommandArgs,
   parseWaitCommandArgs,
   parsePromptSuffixCommandArgs,
   parseNewTopicCommandArgs,
+  parseScopedRuntimeSettingCommandArgs,
 } from "../src/telegram/command-router.js";
 import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembler.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789"],
+  telegramAllowedBotIds: ["222333444"],
   telegramForumChatId: "-1001234567890",
   maxParallelSessions: 4,
+  codexModel: "gpt-5.4",
+  codexReasoningEffort: "medium",
+  codexContextWindow: 320000,
+  codexAutoCompactTokenLimit: 300000,
+  codexConfigPath: "/tmp/codex-telegram-gateway-tests-missing-config.toml",
 };
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createGlobalControlPanelStore(initialState = {}) {
+  let state = {
+    schema_version: 1,
+    updated_at: null,
+    menu_message_id: null,
+    active_screen: "root",
+    ui_language: "rus",
+    pending_input: null,
+    ...initialState,
+  };
+
+  return {
+    async load() {
+      return JSON.parse(JSON.stringify(state));
+    },
+    async patch(patch) {
+      state = {
+        ...state,
+        ...patch,
+        updated_at: new Date().toISOString(),
+      };
+      return JSON.parse(JSON.stringify(state));
+    },
+    getState() {
+      return JSON.parse(JSON.stringify(state));
+    },
+  };
+}
+
+function createTopicControlPanelStore(initialState = {}) {
+  const states = new Map();
+
+  function getKey(session) {
+    return String(session?.session_key ?? `${session?.chat_id}:${session?.topic_id}`);
+  }
+
+  function ensureState(session) {
+    const key = getKey(session);
+    if (!states.has(key)) {
+      states.set(key, {
+        schema_version: 1,
+        updated_at: null,
+        menu_message_id: null,
+        active_screen: "root",
+        pending_input: null,
+        ...initialState,
+      });
+    }
+    return states.get(key);
+  }
+
+  return {
+    async load(session) {
+      return JSON.parse(JSON.stringify(ensureState(session)));
+    },
+    async patch(session, patch) {
+      const key = getKey(session);
+      const nextState = {
+        ...ensureState(session),
+        ...patch,
+        updated_at: new Date().toISOString(),
+      };
+      states.set(key, nextState);
+      return JSON.parse(JSON.stringify(nextState));
+    },
+    getState(session) {
+      return JSON.parse(JSON.stringify(ensureState(session)));
+    },
+  };
 }
 
 test("extractBotCommand parses direct commands and bot username suffix", () => {
@@ -76,22 +160,40 @@ test("extractBotCommand accepts bare wait commands when args are valid", () => {
   );
 });
 
+test("parseQueueCommandArgs distinguishes queue actions from prompt text", () => {
+  assert.deepEqual(parseQueueCommandArgs("status"), {
+    action: "status",
+    text: null,
+    position: null,
+  });
+  assert.deepEqual(parseQueueCommandArgs("delete 2"), {
+    action: "delete",
+    text: null,
+    position: 2,
+  });
+  assert.deepEqual(parseQueueCommandArgs("delete node_modules and retry"), {
+    action: "enqueue",
+    text: "delete node_modules and retry",
+    position: null,
+  });
+});
+
 test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit binding path", () => {
   assert.deepEqual(parseNewTopicCommandArgs("Slice 4 test"), {
     bindingPath: null,
     title: "Slice 4 test",
   });
   assert.deepEqual(
-    parseNewTopicCommandArgs("cwd=/home/example/workspace Gateway topic"),
+    parseNewTopicCommandArgs("cwd=/workspace Gateway topic"),
     {
-      bindingPath: "/home/example/workspace",
+      bindingPath: "/workspace",
       title: "Gateway topic",
     },
   );
   assert.deepEqual(
-    parseNewTopicCommandArgs("--cwd=homelab/infra/automation/codex-telegram-gateway"),
+    parseNewTopicCommandArgs("--cwd=projects/codex-telegram-gateway"),
     {
-      bindingPath: "homelab/infra/automation/codex-telegram-gateway",
+      bindingPath: "projects/codex-telegram-gateway",
       title: "",
     },
   );
@@ -165,31 +267,54 @@ test("parsePromptSuffixCommandArgs supports show, toggle, and set modes", () => 
   });
 });
 
-test("parseWaitCommandArgs supports show, disable, and duration modes", () => {
+test("parseWaitCommandArgs supports local and global wait scopes", () => {
   assert.deepEqual(parseWaitCommandArgs(""), {
     action: "show",
+    scope: "effective",
     delayMs: null,
     seconds: null,
   });
   assert.deepEqual(parseWaitCommandArgs("off"), {
     action: "off",
+    scope: "topic",
     delayMs: null,
     seconds: null,
   });
   assert.deepEqual(parseWaitCommandArgs("60"), {
     action: "set",
+    scope: "topic",
     delayMs: 60000,
     seconds: 60,
   });
   assert.deepEqual(parseWaitCommandArgs("1m"), {
     action: "set",
+    scope: "topic",
     delayMs: 60000,
     seconds: 60,
   });
   assert.deepEqual(parseWaitCommandArgs("90s"), {
     action: "set",
+    scope: "topic",
     delayMs: 90000,
     seconds: 90,
+  });
+  assert.deepEqual(parseWaitCommandArgs("global"), {
+    action: "show",
+    scope: "global",
+    delayMs: null,
+    seconds: null,
+  });
+  assert.deepEqual(parseWaitCommandArgs("global 60"), {
+    action: "set",
+    scope: "global",
+    delayMs: 60000,
+    seconds: 60,
+  });
+  assert.deepEqual(parseWaitCommandArgs("global off"), {
+    action: "off",
+    scope: "global",
+    delayMs: null,
+    seconds: null,
   });
   assert.equal(parseWaitCommandArgs("9999").action, "invalid");
 });
@@ -211,6 +336,44 @@ test("parseLanguageCommandArgs supports show and ENG/RUS values", () => {
     raw: "RUS",
   });
   assert.equal(parseLanguageCommandArgs("deu").action, "invalid");
+});
+
+test("parseScopedRuntimeSettingCommandArgs supports topic and global modes", () => {
+  assert.deepEqual(parseScopedRuntimeSettingCommandArgs(""), {
+    scope: "topic",
+    action: "show",
+    value: null,
+  });
+  assert.deepEqual(parseScopedRuntimeSettingCommandArgs("list"), {
+    scope: "topic",
+    action: "list",
+    value: null,
+  });
+  assert.deepEqual(parseScopedRuntimeSettingCommandArgs("clear"), {
+    scope: "topic",
+    action: "clear",
+    value: null,
+  });
+  assert.deepEqual(parseScopedRuntimeSettingCommandArgs("gpt-5.4-mini"), {
+    scope: "topic",
+    action: "set",
+    value: "gpt-5.4-mini",
+  });
+  assert.deepEqual(parseScopedRuntimeSettingCommandArgs("global"), {
+    scope: "global",
+    action: "show",
+    value: null,
+  });
+  assert.deepEqual(parseScopedRuntimeSettingCommandArgs("global list"), {
+    scope: "global",
+    action: "list",
+    value: null,
+  });
+  assert.deepEqual(parseScopedRuntimeSettingCommandArgs("global xhigh"), {
+    scope: "global",
+    action: "set",
+    value: "xhigh",
+  });
 });
 
 test("applyPromptSuffix prefers topic suffix over global and falls back when topic is off", () => {
@@ -259,16 +422,36 @@ test("applyPromptSuffix prefers topic suffix over global and falls back when top
   );
 });
 
-test("isAuthorizedMessage only allows configured user in configured chat", () => {
+test("isAuthorizedMessage allows trusted human and trusted bot principals in configured chat", () => {
   const message = {
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
   };
 
   assert.equal(isAuthorizedMessage(message, config), true);
   assert.equal(
     isAuthorizedMessage(
+      {
+        from: { id: 222333444, is_bot: true },
+        chat: { id: -1001234567890 },
+      },
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    isAuthorizedMessage(
       { ...message, from: { id: 1, is_bot: false } },
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    isAuthorizedMessage(
+      {
+        from: { id: 999999999, is_bot: true },
+        chat: { id: -1001234567890 },
+      },
       config,
     ),
     false,
@@ -317,10 +500,10 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
         total_tokens: 228400,
       },
       workspace_binding: {
-        repo_root: "/home/example/workspace",
-        cwd: "/home/example/workspace",
+        repo_root: "/workspace",
+        cwd: "/workspace",
         branch: "main",
-        worktree_path: "/home/example/workspace",
+        worktree_path: "/workspace",
       },
     },
     {
@@ -333,9 +516,9 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
 
   assert.match(text, /тема: Test topic 1/u);
   assert.match(text, /run: running/u);
-  assert.match(text, /папка: \/home\/bloob\/atlas/u);
+  assert.match(text, /папка: \/workspace/u);
   assert.match(text, /модель: gpt-5\.4/u);
-  assert.match(text, /thinking: xhigh/u);
+  assert.match(text, /reasoning: Extra High \(xhigh\)/u);
   assert.match(text, /context window: 320000/u);
   assert.match(text, /язык: RUS/u);
   assert.match(text, /использование контекста: 71\.4%/u);
@@ -343,6 +526,38 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
   assert.match(text, /доступно токенов: 91600/u);
   assert.match(text, /вход\/кэш\/выход: 227200 \/ 180000 \/ 1200/u);
   assert.match(text, /reasoning tokens: 800/u);
+});
+
+test("buildStatusMessage hides Omni lines when Omni is globally disabled", () => {
+  const text = buildStatusMessage(
+    {
+      omniEnabled: false,
+      codexModel: "gpt-5.4",
+      codexReasoningEffort: "xhigh",
+      codexContextWindow: 320000,
+      codexAutoCompactTokenLimit: 300000,
+    },
+    {
+      chat: { id: -1001234567890 },
+      message_thread_id: 7,
+    },
+    {
+      session_key: "-1001234567890:7",
+      topic_name: "Test topic 1",
+      lifecycle_state: "active",
+      last_run_status: "idle",
+      workspace_binding: {
+        repo_root: "/workspace",
+        cwd: "/workspace",
+        branch: "main",
+        worktree_path: "/workspace",
+      },
+    },
+    null,
+  );
+
+  assert.doesNotMatch(text, /omni model/u);
+  assert.doesNotMatch(text, /omni reasoning/u);
 });
 
 test("buildStatusMessage prefers rollout context snapshot over static config", () => {
@@ -365,10 +580,10 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
       last_run_status: "completed",
       last_token_usage: null,
       workspace_binding: {
-        repo_root: "/home/example/workspace",
-        cwd: "/home/example/workspace",
+        repo_root: "/workspace",
+        cwd: "/workspace",
         branch: "main",
-        worktree_path: "/home/example/workspace",
+        worktree_path: "/workspace",
       },
     },
     null,
@@ -389,6 +604,7 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
 
   assert.match(text, /context window: 275500/u);
   assert.match(text, /язык: RUS/u);
+  assert.match(text, /omni model: gpt-5\.4/u);
   assert.match(text, /использование контекста: 6\.6%/u);
   assert.match(text, /токены контекста: 18262 \/ 275500/u);
   assert.match(text, /доступно токенов: 257238/u);
@@ -416,7 +632,7 @@ test("handleIncomingMessage replies with guidance in General topic for /status",
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
     },
     serviceState,
@@ -439,8 +655,8 @@ test("handleIncomingMessage replies with guidance in General topic for /status",
   assert.equal(sent[0].text, buildNoSessionTopicMessage());
 });
 
-test("handleIncomingMessage sends the help card from General topic", async () => {
-  const photos = [];
+test("handleIncomingMessage uses the global panel ENG language for General-topic guidance", async () => {
+  const sent = [];
   const serviceState = {
     ignoredUpdates: 0,
     handledCommands: 0,
@@ -450,8 +666,1309 @@ test("handleIncomingMessage sends the help card from General topic", async () =>
 
   const result = await handleIncomingMessage({
     api: {
-      async sendPhoto(payload) {
-        photos.push(payload);
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      ui_language: "eng",
+    }),
+    message: {
+      text: "/status",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "general-topic");
+  assert.equal(sent[0].text, buildNoSessionTopicMessage("eng"));
+});
+
+test("handleIncomingMessage opens the persistent global control panel in General", async () => {
+  const sent = [];
+  const store = createGlobalControlPanelStore();
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 901 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    message: {
+      text: "/global",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState,
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "global");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Global control panel/u);
+  assert.doesNotMatch(sent[0].text, /Закрепи это сообщение/u);
+  assert.match(sent[0].text, /interface language: RUS/u);
+  assert.equal(Array.isArray(sent[0].reply_markup.inline_keyboard), true);
+  assert.equal(
+    sent[0].reply_markup.inline_keyboard.some((row) =>
+      row.some((button) => button.text === "Язык" || button.text === "Help"),
+    ),
+    true,
+  );
+  assert.equal(store.getState().menu_message_id, 901);
+});
+
+test("handleIncomingMessage keeps /menu General guidance in the selected General language", async () => {
+  const sent = [];
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 902 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      ui_language: "eng",
+    }),
+    topicControlPanelStore: createTopicControlPanelStore(),
+    message: {
+      text: "/menu",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "menu");
+  assert.match(sent[0].text, /Use \/menu inside a topic\./u);
+});
+
+test("handleIncomingCallbackQuery applies a global wait preset from the control panel", async () => {
+  const sent = [];
+  const edited = [];
+  const answered = [];
+  const callOrder = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "wait",
+  });
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        callOrder.push("ack");
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        callOrder.push("edit");
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        callOrder.push("send");
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-1",
+      data: "gcfg:w:60",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler,
+    serviceState,
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  const waitState = promptFragmentAssembler.getStateForMessage({
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
+  });
+
+  assert.equal(result.reason, "global-control-action-applied");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(sent.length, 0);
+  assert.equal(waitState.global.active, true);
+  assert.equal(waitState.global.flushDelayMs, 60000);
+  assert.equal(callOrder[0], "ack");
+  assert.equal(callOrder.includes("send"), false);
+  assert.equal(callOrder.indexOf("ack") < callOrder.indexOf("edit"), true);
+});
+
+test("handleIncomingCallbackQuery applies a local wait preset from the topic control panel", async () => {
+  const edited = [];
+  const answered = [];
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+  const topicControlPanelStore = createTopicControlPanelStore({
+    menu_message_id: 91,
+    active_screen: "wait",
+  });
+  const session = {
+    session_key: "-1001234567890:55",
+    chat_id: "-1001234567890",
+    topic_id: "55",
+    topic_name: "Slice 4 test",
+    ui_language: "rus",
+    prompt_suffix_topic_enabled: true,
+    prompt_suffix_text: null,
+    prompt_suffix_enabled: false,
+    spike_model_override: null,
+    spike_reasoning_effort_override: null,
+    omni_model_override: null,
+    omni_reasoning_effort_override: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-topic-1",
+      data: "tcfg:w:300",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 91,
+        chat: { id: -1001234567890 },
+        message_thread_id: 55,
+      },
+    },
+    config,
+    promptFragmentAssembler,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    topicControlPanelStore,
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  const waitState = promptFragmentAssembler.getStateForMessage({
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
+    message_thread_id: 55,
+  });
+
+  assert.equal(result.reason, "topic-control-action-applied");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(waitState.local.active, true);
+  assert.equal(waitState.local.flushDelayMs, 300000);
+});
+
+test("handleIncomingCallbackQuery updates the global panel language and refreshes the menu", async () => {
+  const sent = [];
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "language",
+    ui_language: "rus",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-language",
+      data: "gcfg:l:eng",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "global-control-language-updated");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(sent.length, 1);
+  assert.equal(store.getState().ui_language, "eng");
+  assert.equal(store.getState().active_screen, "root");
+  assert.match(edited[0].text, /Global control panel/u);
+  assert.match(edited[0].text, /interface language: ENG/u);
+  assert.match(sent[0].text, /Interface language updated\./u);
+});
+
+test("handleIncomingCallbackQuery shows the full global suffix text on the suffix screen", async () => {
+  const edited = [];
+  const longSuffix = [
+    "НЕ переусложняй: нужен практичный и эффективный результат.",
+    "Можешь использовать ЛЮБЫЕ доступные MCP/инструменты.",
+    "Держи фокус на efficiency, modularity, security, agentness, convenience.",
+  ].join("\n");
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery() {},
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage() {
+        throw new Error("suffix screen navigation should edit the menu in place");
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-suffix-full",
+      data: "gcfg:n:s",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      active_screen: "root",
+      ui_language: "rus",
+    }),
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: true,
+          prompt_suffix_text: longSuffix,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "global-control-menu-navigated");
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /НЕ переусложняй/u);
+  assert.match(edited[0].text, /agentness, convenience\./u);
+  assert.doesNotMatch(edited[0].text, /\.\.\./u);
+});
+
+test("handleIncomingCallbackQuery sends help cards in the selected global panel language", async () => {
+  const documents = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async sendDocument(payload) {
+        documents.push(payload);
+      },
+      async sendMessage() {},
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-help",
+      data: "gcfg:h:show",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "global-control-help-sent");
+  assert.equal(answered.length, 1);
+  assert.equal(documents.length, 2);
+  assert.equal(documents[0].document.fileName, "severus-help-summer-eng-1.png");
+  assert.equal(documents[1].document.fileName, "severus-help-summer-eng-2.png");
+});
+
+test("handleIncomingMessage accepts /wait global from General", async () => {
+  const sent = [];
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/wait global 60",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    promptFragmentAssembler,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {},
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  const waitState = promptFragmentAssembler.getStateForMessage({
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
+  });
+
+  assert.equal(result.command, "wait");
+  assert.equal(waitState.global.active, true);
+  assert.equal(waitState.global.flushDelayMs, 60000);
+  assert.match(sent[0].text, /Global collection window enabled/u);
+});
+
+test("handleIncomingMessage keeps /wait global replies in ENG when General panel language is ENG", async () => {
+  const sent = [];
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      ui_language: "eng",
+    }),
+    message: {
+      text: "/wait global 60",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    promptFragmentAssembler,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {},
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "wait");
+  assert.match(sent[0].text, /Global collection window enabled\./u);
+  assert.doesNotMatch(sent[0].text, /окно сбора/u);
+});
+
+test("global control panel suffix text flow applies reply-based manual input", async () => {
+  const sent = [];
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "suffix",
+  });
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+  const globalSuffixState = {
+    prompt_suffix_enabled: false,
+    prompt_suffix_text: null,
+  };
+  const sessionService = {
+    async getGlobalCodexSettings() {
+      return {
+        spike_model: null,
+        spike_reasoning_effort: null,
+        omni_model: null,
+        omni_reasoning_effort: null,
+      };
+    },
+    async getGlobalPromptSuffix() {
+      return { ...globalSuffixState };
+    },
+    async updateGlobalPromptSuffix(patch) {
+      globalSuffixState.prompt_suffix_text =
+        patch.text ?? globalSuffixState.prompt_suffix_text;
+      globalSuffixState.prompt_suffix_enabled =
+        patch.enabled ?? globalSuffixState.prompt_suffix_enabled;
+      return { ...globalSuffixState };
+    },
+    async clearGlobalPromptSuffix() {
+      globalSuffixState.prompt_suffix_text = null;
+      globalSuffixState.prompt_suffix_enabled = false;
+      return { ...globalSuffixState };
+    },
+  };
+
+  const callbackResult = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-2",
+      data: "gcfg:s:input",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler,
+    serviceState,
+    sessionService,
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(callbackResult.reason, "global-control-pending-input-started");
+  assert.equal(store.getState().pending_input.kind, "suffix_text");
+  assert.match(sent[0].text, /Ответь на menu|Reply to the menu/u);
+
+  const replyResult = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    message: {
+      text: "P.S.\nKeep it short everywhere.",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      reply_to_message: { message_id: 901 },
+    },
+    promptFragmentAssembler,
+    serviceState,
+    sessionService,
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(replyResult.reason, "global-control-pending-input-applied");
+  assert.equal(store.getState().pending_input, null);
+  assert.match(sent.at(-1).text, /Global prompt suffix updated/u);
+  assert.equal(edited.length >= 2, true);
+});
+
+test("global control panel keeps pending reply target aligned when the menu message is recreated", async () => {
+  const sent = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "suffix",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText() {
+        throw new Error("Telegram API editMessageText failed: message to edit not found");
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 902 };
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-3",
+      data: "gcfg:s:input",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "global-control-pending-input-started");
+  assert.equal(answered.length, 1);
+  assert.equal(sent.length, 2);
+  assert.equal(store.getState().menu_message_id, 902);
+  assert.equal(store.getState().pending_input.menu_message_id, 902);
+});
+
+test("handleIncomingMessage stores a global Spike model via /model global", async () => {
+  const sent = [];
+  const updates = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/model global gpt-5.4-mini",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState,
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async updateGlobalCodexSetting(target, kind, value) {
+        updates.push({ target, kind, value });
+        return {
+          spike_model: value,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "model");
+  assert.deepEqual(updates, [
+    { target: "spike", kind: "model", value: "gpt-5.4-mini" },
+  ]);
+  assert.match(sent[0].text, /Spike model обновлён\./u);
+  assert.match(sent[0].text, /global default: gpt-5\.4-mini/u);
+  assert.match(sent[0].text, /effective: gpt-5\.4-mini \(global\)/u);
+});
+
+test("handleIncomingMessage keeps global model replies in ENG when General panel language is ENG", async () => {
+  const sent = [];
+  const updates = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      ui_language: "eng",
+    }),
+    message: {
+      text: "/model global gpt-5.4-mini",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState,
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async updateGlobalCodexSetting(target, kind, value) {
+        updates.push({ target, kind, value });
+        return {
+          spike_model: value,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "model");
+  assert.deepEqual(updates, [
+    { target: "spike", kind: "model", value: "gpt-5.4-mini" },
+  ]);
+  assert.match(sent[0].text, /Spike model updated\./u);
+  assert.match(sent[0].text, /global default: gpt-5\.4-mini/u);
+  assert.doesNotMatch(sent[0].text, /Модель Spike/u);
+});
+
+test("handleIncomingMessage validates /reasoning global against the global target model", async () => {
+  const runtimeDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-runtime-settings-"),
+  );
+  const codexConfigPath = path.join(runtimeDir, "config.toml");
+  await fs.writeFile(codexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(
+    path.join(runtimeDir, "models_cache.json"),
+    `${JSON.stringify({
+      models: [
+        {
+          slug: "gpt-5.4",
+          display_name: "GPT-5.4",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "low" },
+            { effort: "medium" },
+            { effort: "high" },
+            { effort: "xhigh" },
+          ],
+        },
+        {
+          slug: "gpt-5.1-codex-mini",
+          display_name: "GPT-5.1-Codex-Mini",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "medium" },
+            { effort: "high" },
+          ],
+        },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const sent = [];
+  const updates = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    topic_name: "Runtime topic",
+    lifecycle_state: "active",
+    ui_language: "eng",
+    spike_model_override: "gpt-5.1-codex-mini",
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config: {
+      ...config,
+      codexConfigPath,
+    },
+    message: {
+      text: "/reasoning global xhigh",
+      entities: [{ type: "bot_command", offset: 0, length: 10 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: "gpt-5.4",
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async updateGlobalCodexSetting(target, kind, value) {
+        updates.push({ target, kind, value });
+        return {
+          spike_model: "gpt-5.4",
+          spike_reasoning_effort: value,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async resolveCodexRuntimeProfile(current, { target }) {
+        return target === "spike"
+          ? {
+              model: current.spike_model_override ?? "gpt-5.4",
+              modelSource: current.spike_model_override ? "topic" : "global",
+              reasoningEffort: "xhigh",
+              reasoningSource: "global",
+            }
+          : {
+              model: "gpt-5.4",
+              modelSource: "default",
+              reasoningEffort: "medium",
+              reasoningSource: "default",
+            };
+      },
+      async recordHandledSession(_, current) {
+        return current;
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "reasoning");
+  assert.deepEqual(updates, [
+    { target: "spike", kind: "reasoning", value: "xhigh" },
+  ]);
+  assert.match(sent[0].text, /Spike reasoning updated\./u);
+  assert.match(sent[0].text, /global default: Extra High \(xhigh\)/u);
+});
+
+test("handleIncomingMessage stores topic Omni reasoning via /omni_reasoning", async () => {
+  const sent = [];
+  const updates = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    topic_name: "Runtime topic",
+    lifecycle_state: "active",
+    ui_language: "eng",
+    omni_reasoning_effort_override: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/omni_reasoning xhigh",
+      entities: [{ type: "bot_command", offset: 0, length: 15 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async updateSessionCodexSetting(current, target, kind, value) {
+        updates.push({ target, kind, value });
+        return {
+          ...current,
+          omni_reasoning_effort_override: value,
+        };
+      },
+      async resolveCodexRuntimeProfile(current, { target }) {
+        return target === "omni"
+          ? {
+              model: "gpt-5.4",
+              modelSource: "default",
+              reasoningEffort:
+                current.omni_reasoning_effort_override ?? "medium",
+              reasoningSource: current.omni_reasoning_effort_override
+                ? "topic"
+                : "default",
+            }
+          : {
+              model: "gpt-5.4",
+              modelSource: "default",
+              reasoningEffort: "medium",
+              reasoningSource: "default",
+            };
+      },
+      async recordHandledSession(_, current) {
+        return current;
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "omni_reasoning");
+  assert.deepEqual(updates, [
+    { target: "omni", kind: "reasoning", value: "xhigh" },
+  ]);
+  assert.match(sent[0].text, /Omni reasoning updated\./u);
+  assert.match(sent[0].text, /topic override: Extra High \(xhigh\)/u);
+  assert.match(sent[0].text, /effective: Extra High \(xhigh\) \(topic\)/u);
+});
+
+test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /status", async () => {
+  const sent = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+    codexModel: "gpt-5.4",
+    codexReasoningEffort: "medium",
+    codexContextWindow: 320000,
+    codexAutoCompactTokenLimit: 300000,
+  };
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    topic_name: "Status topic",
+    lifecycle_state: "active",
+    ui_language: "rus",
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/status",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async resolveContextSnapshot(current) {
+        return {
+          session: current,
+          snapshot: null,
+        };
+      },
+      async resolveCodexRuntimeProfile(_, { target }) {
+        return target === "spike"
+          ? {
+              model: "gpt-5.4-mini",
+              modelSource: "topic",
+              reasoningEffort: "high",
+              reasoningSource: "topic",
+            }
+          : {
+              model: "gpt-5.4",
+              modelSource: "global",
+              reasoningEffort: "low",
+              reasoningSource: "global",
+            };
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "status");
+  assert.match(sent[0].text, /модель: gpt-5\.4-mini/u);
+  assert.match(sent[0].text, /reasoning: High \(high\)/u);
+  assert.match(sent[0].text, /omni model: gpt-5\.4/u);
+  assert.match(sent[0].text, /omni reasoning: Low \(low\)/u);
+});
+
+test("handleIncomingMessage sends the help card from General topic", async () => {
+  const documents = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendDocument(payload) {
+        documents.push(payload);
       },
     },
     botUsername: "gatewaybot",
@@ -459,7 +1976,7 @@ test("handleIncomingMessage sends the help card from General topic", async () =>
     message: {
       text: "/help",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
     },
     serviceState,
@@ -479,9 +1996,120 @@ test("handleIncomingMessage sends the help card from General topic", async () =>
   });
 
   assert.equal(result.command, "help");
-  assert.equal(photos.length, 1);
-  assert.equal(photos[0].photo.fileName, "severus-help-summer-rus.png");
-  assert.equal(photos[0].caption, undefined);
+  assert.equal(documents.length, 2);
+  assert.equal(documents[0].document.fileName, "severus-help-summer-rus-1.png");
+  assert.equal(documents[1].document.fileName, "severus-help-summer-rus-2.png");
+  assert.equal(documents[0].caption, undefined);
+  assert.equal(documents[1].caption, undefined);
+});
+
+test("handleIncomingMessage sends the guidebook PDF from General topic", async () => {
+  const documents = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendDocument(payload) {
+        documents.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/guide",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "guide");
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].document.fileName, "codex-telegram-guidebook-rus.pdf");
+  assert.match(documents[0].document.filePath, /codex-telegram-guidebook-rus\.pdf$/u);
+  const stats = await fs.stat(documents[0].document.filePath);
+  assert.ok(stats.size > 10_000);
+});
+
+test("handleIncomingMessage keeps /guide General-only", async () => {
+  const sent = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    topic_name: "Guide topic",
+    lifecycle_state: "active",
+    ui_language: "rus",
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/guide",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async recordHandledSession() {
+        return session;
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "guide");
+  assert.equal(result.reason, "guide-general-only");
+  assert.match(sent[0].text, /работает только в General/u);
 });
 
 test("handleIncomingMessage updates the topic UI language with /language eng", async () => {
@@ -501,10 +2129,10 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/workspace",
     },
   };
 
@@ -519,7 +2147,7 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     message: {
       text: "/language eng",
       entities: [{ type: "bot_command", offset: 0, length: 9 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
@@ -553,7 +2181,7 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
 });
 
 test("handleIncomingMessage sends the English help card inside an ENG topic", async () => {
-  const photos = [];
+  const documents = [];
   const serviceState = {
     ignoredUpdates: 0,
     handledCommands: 0,
@@ -563,8 +2191,8 @@ test("handleIncomingMessage sends the English help card inside an ENG topic", as
 
   const result = await handleIncomingMessage({
     api: {
-      async sendPhoto(payload) {
-        photos.push(payload);
+      async sendDocument(payload) {
+        documents.push(payload);
       },
     },
     botUsername: "gatewaybot",
@@ -572,7 +2200,7 @@ test("handleIncomingMessage sends the English help card inside an ENG topic", as
     message: {
       text: "/help",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 88,
     },
@@ -587,10 +2215,10 @@ test("handleIncomingMessage sends the English help card inside an ENG topic", as
           lifecycle_state: "active",
           ui_language: "eng",
           workspace_binding: {
-            repo_root: "/home/example/workspace",
-            cwd: "/home/example/workspace",
+            repo_root: "/workspace",
+            cwd: "/workspace",
             branch: "main",
-            worktree_path: "/home/example/workspace",
+            worktree_path: "/workspace",
           },
         };
       },
@@ -607,9 +2235,11 @@ test("handleIncomingMessage sends the English help card inside an ENG topic", as
   });
 
   assert.equal(result.command, "help");
-  assert.equal(photos.length, 1);
-  assert.equal(photos[0].photo.fileName, "severus-help-summer-eng.png");
-  assert.equal(photos[0].caption, undefined);
+  assert.equal(documents.length, 2);
+  assert.equal(documents[0].document.fileName, "severus-help-summer-eng-1.png");
+  assert.equal(documents[1].document.fileName, "severus-help-summer-eng-2.png");
+  assert.equal(documents[0].caption, undefined);
+  assert.equal(documents[1].caption, undefined);
 });
 
 test("handleIncomingMessage shows suffix help from General topic", async () => {
@@ -632,7 +2262,55 @@ test("handleIncomingMessage shows suffix help from General topic", async () => {
     message: {
       text: "/suffix help",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "suffix");
+  assert.match(sent[0].text, /Prompt suffix help/u);
+  assert.match(sent[0].text, /\/suffix global <text>/u);
+  assert.match(sent[0].text, /\/suffix topic off/u);
+});
+
+test("handleIncomingMessage keeps suffix help in ENG when General panel language is ENG", async () => {
+  const sent = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      ui_language: "eng",
+    }),
+    message: {
+      text: "/suffix help",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
     },
     serviceState,
@@ -653,8 +2331,7 @@ test("handleIncomingMessage shows suffix help from General topic", async () => {
 
   assert.equal(result.command, "suffix");
   assert.match(sent[0].text, /Suffix help/u);
-  assert.match(sent[0].text, /\/suffix global <text>/u);
-  assert.match(sent[0].text, /\/suffix topic off/u);
+  assert.doesNotMatch(sent[0].text, /Использование/u);
 });
 
 test("handleIncomingMessage creates new topic session and sends bootstrap", async () => {
@@ -678,7 +2355,7 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
     message: {
       text: "/new Slice 4 test",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
     },
     serviceState,
@@ -686,10 +2363,10 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
       async resolveInheritedBinding() {
         return {
           binding: {
-            repo_root: "/home/example/workspace",
-            cwd: "/home/example/workspace",
+            repo_root: "/workspace",
+            cwd: "/workspace",
             branch: "main",
-            worktree_path: "/home/example/workspace",
+            worktree_path: "/workspace",
           },
           inheritedFromSessionKey: null,
         };
@@ -705,10 +2382,10 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
             chat_id: "-1001234567890",
             topic_id: "55",
             workspace_binding: {
-              repo_root: "/home/example/workspace",
-              cwd: "/home/example/workspace",
+              repo_root: "/workspace",
+              cwd: "/workspace",
               branch: "main",
-              worktree_path: "/home/example/workspace",
+              worktree_path: "/workspace",
             },
           },
         };
@@ -733,6 +2410,109 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
   assert.equal(touched[0].commandName, "new");
 });
 
+test("handleIncomingMessage creates and pins a local control menu for a new topic", async () => {
+  const sent = [];
+  const pinned = [];
+  const topicControlPanelStore = createTopicControlPanelStore();
+
+  const session = {
+    session_key: "-1001234567890:58",
+    chat_id: "-1001234567890",
+    topic_id: "58",
+    ui_language: "rus",
+    prompt_suffix_topic_enabled: true,
+    prompt_suffix_text: null,
+    prompt_suffix_enabled: false,
+    spike_model_override: null,
+    spike_reasoning_effort_override: null,
+    omni_model_override: null,
+    omni_reasoning_effort_override: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 900 + sent.length };
+      },
+      async pinChatMessage(payload) {
+        pinned.push(payload);
+        return true;
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/new Local menu topic",
+      entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async resolveInheritedBinding() {
+        return {
+          binding: session.workspace_binding,
+          inheritedFromSessionKey: null,
+        };
+      },
+      async createTopicSession() {
+        return {
+          forumTopic: {
+            name: "Local menu topic",
+            message_thread_id: 58,
+          },
+          session,
+        };
+      },
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async recordHandledSession() {},
+    },
+    topicControlPanelStore,
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "new");
+  assert.equal(sent.length, 3);
+  assert.equal(sent[0].message_thread_id, 58);
+  assert.equal(sent[1].message_thread_id, 58);
+  assert.match(sent[1].text, /Topic control panel/u);
+  assert.equal(pinned.length, 1);
+  assert.equal(pinned[0].message_id, 902);
+  assert.equal(topicControlPanelStore.getState(session).menu_message_id, 902);
+});
+
 test("handleIncomingMessage creates new topic session with explicit binding path", async () => {
   const sent = [];
   const touched = [];
@@ -752,9 +2532,9 @@ test("handleIncomingMessage creates new topic session with explicit binding path
     botUsername: "gatewaybot",
     config,
     message: {
-      text: "/new cwd=homelab/infra/automation/codex-telegram-gateway Bound repo",
+      text: "/new cwd=projects/codex-telegram-gateway Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
     },
     serviceState,
@@ -762,13 +2542,13 @@ test("handleIncomingMessage creates new topic session with explicit binding path
       async resolveBindingPath(requestedPath) {
         assert.equal(
           requestedPath,
-          "homelab/infra/automation/codex-telegram-gateway",
+          "projects/codex-telegram-gateway",
         );
         return {
-          repo_root: "/path/to/codex-telegram-gateway",
-          cwd: "/path/to/codex-telegram-gateway",
+          repo_root: "/workspace/projects/codex-telegram-gateway",
+          cwd: "/workspace/projects/codex-telegram-gateway",
           branch: "main",
-          worktree_path: "/path/to/codex-telegram-gateway",
+          worktree_path: "/workspace/projects/codex-telegram-gateway",
         };
       },
       async createTopicSession({ title, workspaceBinding, inheritedFromSessionKey }) {
@@ -776,7 +2556,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
         assert.equal(inheritedFromSessionKey, null);
         assert.equal(
           workspaceBinding.cwd,
-          "/path/to/codex-telegram-gateway",
+          "/workspace/projects/codex-telegram-gateway",
         );
         return {
           forumTopic: {
@@ -811,6 +2591,176 @@ test("handleIncomingMessage creates new topic session with explicit binding path
   assert.equal(touched[0].commandName, "new");
 });
 
+test("handleIncomingMessage creates a new topic in English when General panel language is ENG", async () => {
+  const sent = [];
+  const store = createGlobalControlPanelStore({
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    message: {
+      text: "/new English topic",
+      entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async resolveInheritedBinding() {
+        return {
+          binding: {
+            repo_root: "/workspace",
+            cwd: "/workspace",
+            branch: "main",
+            worktree_path: "/workspace",
+          },
+          inheritedFromSessionKey: null,
+        };
+      },
+      async createTopicSession({ title, uiLanguage }) {
+        assert.equal(title, "English topic");
+        assert.equal(uiLanguage, "eng");
+        return {
+          forumTopic: {
+            name: "English topic",
+            message_thread_id: 57,
+          },
+          session: {
+            session_key: "-1001234567890:57",
+            chat_id: "-1001234567890",
+            topic_id: "57",
+            ui_language: "eng",
+            workspace_binding: {
+              repo_root: "/workspace",
+              cwd: "/workspace",
+              branch: "main",
+              worktree_path: "/workspace",
+            },
+          },
+        };
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "new");
+  assert.equal(sent.length, 2);
+  assert.match(sent[0].text, /Topic is ready\./u);
+  assert.match(sent[1].text, /Created topic "English topic"\./u);
+});
+
+test("handleIncomingMessage opens and pins the local topic control menu with /menu", async () => {
+  const sent = [];
+  const pinned = [];
+  const topicControlPanelStore = createTopicControlPanelStore();
+  const session = {
+    session_key: "-1001234567890:55",
+    chat_id: "-1001234567890",
+    topic_id: "55",
+    topic_name: "Slice 4 test",
+    ui_language: "rus",
+    prompt_suffix_topic_enabled: true,
+    prompt_suffix_text: null,
+    prompt_suffix_enabled: false,
+    spike_model_override: null,
+    spike_reasoning_effort_override: null,
+    omni_model_override: null,
+    omni_reasoning_effort_override: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 777 };
+      },
+      async pinChatMessage(payload) {
+        pinned.push(payload);
+        return true;
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/menu",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 55,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async recordHandledSession() {},
+    },
+    topicControlPanelStore,
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "menu");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].message_thread_id, 55);
+  assert.match(sent[0].text, /Topic control panel/u);
+  assert.match(sent[0].text, /global suffix routing: on/u);
+  assert.equal(pinned.length, 1);
+  assert.equal(topicControlPanelStore.getState(session).menu_message_id, 777);
+});
+
 test("handleIncomingMessage reports binding resolution failures for /new", async () => {
   const sent = [];
   const serviceState = {
@@ -831,7 +2781,7 @@ test("handleIncomingMessage reports binding resolution failures for /new", async
     message: {
       text: "/new cwd=/missing/path Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
     },
     serviceState,
@@ -860,6 +2810,59 @@ test("handleIncomingMessage reports binding resolution failures for /new", async
   );
 });
 
+test("handleIncomingMessage reports binding resolution failures for /new in English from General", async () => {
+  const sent = [];
+  const store = createGlobalControlPanelStore({
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    message: {
+      text: "/new cwd=/missing/path Bound repo",
+      entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async resolveBindingPath() {
+        throw new Error("ENOENT: no such file or directory");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "binding-error");
+  assert.equal(
+    sent[0].text,
+    buildBindingResolutionErrorMessage(
+      "/missing/path",
+      new Error("ENOENT: no such file or directory"),
+      "eng",
+    ),
+  );
+});
+
 test("handleIncomingMessage starts codex run for plain text in a topic", async () => {
   const serviceState = {
     ignoredUpdates: 0,
@@ -878,7 +2881,7 @@ test("handleIncomingMessage starts codex run for plain text in a topic", async (
     config,
     message: {
       text: "run a quick task",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
@@ -904,6 +2907,537 @@ test("handleIncomingMessage starts codex run for plain text in a topic", async (
   assert.equal(result.reason, "prompt-started");
 });
 
+test("handleIncomingMessage silently blocks direct human prompts to Spike in auto topics", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("should not reply when Omni owns the topic");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "continue from here",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          auto_mode: {
+            enabled: true,
+            phase: "running",
+            omni_bot_id: "222333444",
+          },
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        throw new Error("human prompt should never reach Spike run start");
+      },
+    },
+  });
+
+  assert.equal(result.reason, "auto-topic-human-input-blocked");
+});
+
+test("handleIncomingMessage accepts direct human prompts again when auto mode is off", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("should not reply on successful prompt start");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "continue without omni",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          auto_mode: {
+            enabled: false,
+            phase: "off",
+            omni_bot_id: "222333444",
+          },
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun({ prompt, session }) {
+        assert.equal(prompt, "continue without omni");
+        assert.equal(session.session_key, "-1001234567890:77");
+        return { ok: true };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-started");
+});
+
+test("handleIncomingMessage ignores Omni-owned /auto commands in Spike bot", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("Spike should stay silent for Omni-owned commands");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/auto",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {},
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "omni-owned-command");
+});
+
+test("handleIncomingMessage returns a clear unavailable message for /auto when Omni is disabled", async () => {
+  const sent = [];
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(params) {
+        sent.push(params);
+      },
+    },
+    botUsername: "gatewaybot",
+    config: {
+      ...config,
+      omniEnabled: false,
+    },
+    message: {
+      text: "/auto",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    lifecycleManager: null,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          topic_id: "77",
+          chat_id: "-1001234567890",
+          ui_language: "rus",
+        };
+      },
+      async recordHandledSession(_state, session) {
+        return session;
+      },
+    },
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "omni-disabled");
+  assert.match(sent[0].text, /Omni сейчас отключён/u);
+});
+
+test("handleIncomingMessage ignores foreign bot commands instead of starting a Spike run", async () => {
+  let canceled = 0;
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("Spike should stay silent for a foreign bot command");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/auto@omnibot",
+      entities: [{ type: "bot_command", offset: 0, length: 13 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    promptFragmentAssembler: {
+      getStateForMessage() {
+        return { active: false };
+      },
+      hasPendingForSameTopicMessage() {
+        return true;
+      },
+      cancelPendingForMessage() {
+        canceled += 1;
+      },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {},
+    workerPool: {
+      async startPromptRun() {
+        throw new Error("foreign bot command must not start a Spike run");
+      },
+    },
+  });
+
+  assert.equal(result.reason, "foreign-bot-command");
+  assert.equal(canceled, 0);
+});
+
+test("handleIncomingMessage ignores /omni because it belongs to Omni", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("Spike should stay silent for Omni-owned commands");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/omni what changed?",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {},
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "omni-owned-command");
+});
+
+test("handleIncomingMessage blocks destructive human Spike commands in auto topics", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("blocked auto-topic command should stay silent");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/purge",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          auto_mode: {
+            enabled: true,
+            phase: "running",
+            omni_bot_id: "222333444",
+          },
+        };
+      },
+      async purgeSession() {
+        throw new Error("purge must not run while Omni owns the topic");
+      },
+    },
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "auto-topic-human-command-blocked");
+});
+
+test("handleIncomingMessage rejects /q while /auto owns the topic", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 1 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/q подготовь следующий шаг",
+      entities: [{ type: "bot_command", offset: 0, length: 2 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 778,
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          chat_id: "-1001234567890",
+          topic_id: "77",
+          auto_mode: {
+            enabled: true,
+            phase: "running",
+            omni_bot_id: "222333444",
+          },
+        };
+      },
+    },
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "auto-topic-human-command-blocked");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Очередь Spike недоступна/u);
+});
+
+test("handleIncomingMessage ignores stale auto human-input locks when Omni is globally disabled", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("plain prompt should go to Spike directly");
+      },
+    },
+    botUsername: "gatewaybot",
+    config: {
+      ...config,
+      omniEnabled: false,
+    },
+    message: {
+      text: "continue without omni at all",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          auto_mode: {
+            enabled: true,
+            phase: "running",
+            omni_bot_id: "222333444",
+          },
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async getPendingPromptAttachments() {
+        return [];
+      },
+    },
+    workerPool: {
+      async startPromptRun({ prompt }) {
+        assert.equal(prompt, "continue without omni at all");
+        return { ok: true };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-started");
+});
+
+test("handleIncomingMessage ignores Omni bot chatter before the goal is captured", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("Spike should stay silent for Omni setup chatter");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "Auto setup started. Send the goal next.",
+      from: { id: 222333444, is_bot: true },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          auto_mode: {
+            enabled: true,
+            phase: "await_goal",
+            omni_bot_id: "222333444",
+          },
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        throw new Error("Omni setup chatter must not start a Spike run");
+      },
+    },
+  });
+
+  assert.equal(result.reason, "bot-prompt-ignored");
+});
+
+test("handleIncomingMessage accepts Omni bot continuation prompts in active auto topics", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("successful Omni prompt should not send a reply");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "Continuation task: finish the remaining validation work.",
+      from: { id: 222333444, is_bot: true },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          auto_mode: {
+            enabled: true,
+            phase: "running",
+            omni_bot_id: "222333444",
+          },
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun({ prompt }) {
+        assert.match(prompt, /Continuation task/u);
+        return { ok: true };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-started");
+});
+
+test("handleIncomingMessage does not buffer internal Omni handoff prompts", async () => {
+  const longPrompt = `Continuation task: ${"x".repeat(5000)}`;
+  let started = 0;
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+  promptFragmentAssembler.shouldBufferMessage = () => {
+    throw new Error("internal Omni handoff must bypass prompt buffering");
+  };
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("internal Omni handoff should not send a reply");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: longPrompt,
+      is_internal_omni_handoff: true,
+      from: { id: 222333444, is_bot: true },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    promptFragmentAssembler,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
+          auto_mode: {
+            enabled: true,
+            phase: "running",
+            omni_bot_id: "222333444",
+          },
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun({ prompt }) {
+        started += 1;
+        assert.equal(prompt, longPrompt);
+        return { ok: true };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-started");
+  assert.equal(started, 1);
+});
+
 test("handleIncomingMessage appends configured prompt suffix before starting a run", async () => {
   const result = await handleIncomingMessage({
     api: {
@@ -915,7 +3449,7 @@ test("handleIncomingMessage appends configured prompt suffix before starting a r
     config,
     message: {
       text: "run a quick task",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
@@ -960,7 +3494,7 @@ test("handleIncomingMessage lets topic prompt suffix override global prompt suff
     config,
     message: {
       text: "run a quick task",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
@@ -1010,7 +3544,7 @@ test("handleIncomingMessage suppresses both topic and global suffixes when topic
     config,
     message: {
       text: "run a quick task",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
@@ -1069,7 +3603,7 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_id: 501,
       message_thread_id: 77,
@@ -1124,7 +3658,7 @@ test("handleIncomingMessage appends prompt suffix to captioned media prompts", a
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_id: 501,
       message_thread_id: 77,
@@ -1185,16 +3719,16 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/workspace",
     },
   };
   const firstMessage = {
     caption: "Разбери оба файла вместе.",
     media_group_id: "docs-1",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 970,
     message_thread_id: 86,
@@ -1208,7 +3742,7 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
   };
   const secondMessage = {
     media_group_id: "docs-1",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 971,
     message_thread_id: 86,
@@ -1310,6 +3844,361 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
   );
 });
 
+test("handleIncomingMessage shows /q status with queued prompt previews", async () => {
+  const sent = [];
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    lifecycle_state: "active",
+    prompt_suffix_enabled: false,
+    prompt_suffix_text: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 1 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/q status",
+      entities: [{ type: "bot_command", offset: 0, length: 2 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 610,
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async listPromptQueue() {
+        return [
+          { raw_prompt: "первый queued prompt на проверку статуса" },
+          { raw_prompt: "второй queued prompt после него" },
+        ];
+      },
+      async recordHandledSession() {
+        return session;
+      },
+    },
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "queue-status");
+  assert.match(sent[0].text, /Очередь Spike: 2/u);
+  assert.match(sent[0].text, /1\./u);
+  assert.match(sent[0].text, /2\./u);
+});
+
+test("handleIncomingMessage deletes a queued prompt by position via /q delete", async () => {
+  const sent = [];
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    lifecycle_state: "active",
+    prompt_suffix_enabled: false,
+    prompt_suffix_text: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 1 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/q delete 2",
+      entities: [{ type: "bot_command", offset: 0, length: 2 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 611,
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async deletePromptQueueEntry(_session, position) {
+        assert.equal(position, 2);
+        return {
+          entry: { raw_prompt: "второй prompt на удаление из очереди" },
+          size: 1,
+        };
+      },
+      async recordHandledSession() {
+        return session;
+      },
+    },
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "queue-deleted");
+  assert.match(sent[0].text, /Удалил элемент очереди #2/u);
+  assert.match(sent[0].text, /Осталось: 1/u);
+});
+
+test("handleIncomingMessage queues /q captioned media with attachments when the topic is busy", async () => {
+  const sent = [];
+  const queued = [];
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    lifecycle_state: "active",
+    prompt_suffix_enabled: false,
+    prompt_suffix_text: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 1 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      caption: "/q Что на фото?",
+      caption_entities: [{ type: "bot_command", offset: 0, length: 2 }],
+      photo: [
+        { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
+        { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
+      ],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 612,
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async ensureRunnableSessionForMessage() {
+        return session;
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async getPendingPromptAttachments() {
+        return [];
+      },
+      async ingestIncomingAttachments() {
+        return [
+          {
+            kind: "photo",
+            file_path: "/tmp/incoming-photo.jpg",
+            is_image: true,
+          },
+        ];
+      },
+      async enqueuePromptQueue(_session, payload) {
+        queued.push(payload);
+        return {
+          position: 1,
+          size: 1,
+        };
+      },
+      async drainPromptQueue() {
+        return [
+          {
+            sessionKey: session.session_key,
+            result: { reason: "busy" },
+          },
+        ];
+      },
+      async clearPendingPromptAttachments() {
+        return session;
+      },
+      async recordHandledSession() {
+        return session;
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return { sessionKey: session.session_key };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-queued");
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0].rawPrompt, "Что на фото?");
+  assert.equal(queued[0].attachments.length, 1);
+  assert.equal(queued[0].attachments[0].file_path, "/tmp/incoming-photo.jpg");
+  assert.match(sent[0].text, /Поставил в очередь/u);
+});
+
+test("handleIncomingMessage buffers long /q prompts and queues the merged text once", async () => {
+  const sent = [];
+  const queued = [];
+  const queuePromptAssembler = new PromptFragmentAssembler({
+    flushDelayMs: 20,
+    flushGraceMs: 5,
+    longPromptThresholdChars: 3000,
+  });
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    lifecycle_state: "active",
+    prompt_suffix_enabled: false,
+    prompt_suffix_text: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+  };
+  const longHead = "A".repeat(3200);
+
+  const commonArgs = {
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: sent.length };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    queuePromptAssembler,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async ensureRunnableSessionForMessage() {
+        return session;
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async getPendingPromptAttachments() {
+        return [];
+      },
+      async ingestIncomingAttachments() {
+        return [];
+      },
+      async enqueuePromptQueue(_session, payload) {
+        queued.push(payload);
+        return {
+          position: 1,
+          size: 1,
+        };
+      },
+      async drainPromptQueue() {
+        return [
+          {
+            sessionKey: session.session_key,
+            result: { reason: "busy" },
+          },
+        ];
+      },
+      async recordHandledSession() {
+        return session;
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        return { ok: false, reason: "busy" };
+      },
+      getActiveRun() {
+        return { sessionKey: session.session_key };
+      },
+    },
+  };
+
+  const firstResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: {
+      text: `/q ${longHead}`,
+      entities: [{ type: "bot_command", offset: 0, length: 2 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 613,
+      message_thread_id: 77,
+    },
+  });
+  const secondResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: {
+      text: "tail fragment",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 614,
+      message_thread_id: 77,
+    },
+  });
+
+  assert.equal(firstResult.reason, "queue-buffered");
+  assert.equal(secondResult.reason, "queue-buffered");
+
+  await sleep(50);
+
+  assert.equal(queued.length, 1);
+  assert.match(queued[0].rawPrompt, new RegExp(`^${longHead}`));
+  assert.match(queued[0].rawPrompt, /tail fragment/u);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Поставил в очередь/u);
+});
+
 test("handleIncomingMessage stores prompt suffix text via /suffix", async () => {
   const sent = [];
   const session = {
@@ -1318,10 +4207,10 @@ test("handleIncomingMessage stores prompt suffix text via /suffix", async () => 
     prompt_suffix_text: null,
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/workspace",
     },
   };
 
@@ -1336,7 +4225,7 @@ test("handleIncomingMessage stores prompt suffix text via /suffix", async () => 
     message: {
       text: "/suffix P.S.\nKeep it short.",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
@@ -1375,7 +4264,7 @@ test("handleIncomingMessage stores prompt suffix text via /suffix", async () => 
   });
 
   assert.equal(result.command, "suffix");
-  assert.match(sent[0].text, /Prompt suffix обновлён\./u);
+  assert.match(sent[0].text, /Prompt suffix updated\./u);
   assert.match(sent[0].text, /scope: topic/u);
   assert.match(sent[0].text, /status: on/u);
   assert.match(sent[0].text, /P\.S\./u);
@@ -1395,7 +4284,7 @@ test("handleIncomingMessage stores global prompt suffix text via /suffix global"
     message: {
       text: "/suffix global P.S.\nKeep it short everywhere.",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
     },
     serviceState: {
@@ -1433,7 +4322,7 @@ test("handleIncomingMessage stores global prompt suffix text via /suffix global"
   });
 
   assert.equal(result.command, "suffix");
-  assert.match(sent[0].text, /Глобальный prompt suffix обновлён\./u);
+  assert.match(sent[0].text, /Global prompt suffix updated\./u);
   assert.match(sent[0].text, /scope: global/u);
   assert.match(sent[0].text, /status: on/u);
   assert.match(sent[0].text, /P\.S\./u);
@@ -1448,10 +4337,10 @@ test("handleIncomingMessage disables topic prompt suffix routing via /suffix top
     prompt_suffix_text: "TOPIC\nKeep it short.",
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/workspace",
     },
   };
 
@@ -1466,7 +4355,7 @@ test("handleIncomingMessage disables topic prompt suffix routing via /suffix top
     message: {
       text: "/suffix topic off",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
@@ -1503,7 +4392,7 @@ test("handleIncomingMessage disables topic prompt suffix routing via /suffix top
   });
 
   assert.equal(result.command, "suffix");
-  assert.match(sent[0].text, /Routing topic prompt suffix выключен\./u);
+  assert.match(sent[0].text, /Topic prompt suffix routing disabled\./u);
   assert.match(sent[0].text, /scope: topic-routing/u);
   assert.match(sent[0].text, /status: off/u);
 });
@@ -1522,7 +4411,7 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
     config,
     message: {
       photo: [{ file_id: "photo-1", file_unique_id: "photo-1", file_size: 10 }],
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 78,
     },
@@ -1543,7 +4432,17 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
         };
       },
       async ensureRunnableSessionForMessage() {
-        throw new Error("should not start run without prompt");
+        return {
+          session_key: "-1001234567890:78",
+          chat_id: "-1001234567890",
+          topic_id: "78",
+          lifecycle_state: "active",
+          ui_language: "rus",
+          auto_mode: {
+            enabled: false,
+            phase: "off",
+          },
+        };
       },
       async ingestIncomingAttachments() {
         return [
@@ -1586,10 +4485,10 @@ test("handleIncomingMessage carries attachment-only message into the next text p
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/workspace",
     },
   };
   const attachmentMessage = {
@@ -1600,14 +4499,14 @@ test("handleIncomingMessage carries attachment-only message into the next text p
       mime_type: "text/plain",
       file_size: 12345,
     },
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 2001,
     message_thread_id: 88,
   };
   const textMessage = {
     text: "Переделай это в нормальный формат и влепи в ридмишку.",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 2002,
     message_thread_id: 88,
@@ -1709,6 +4608,154 @@ test("handleIncomingMessage carries attachment-only message into the next text p
   assert.match(sent[0].text, /Вложение получил/u);
 });
 
+test("handleIncomingMessage keeps /q attachment buffering separate from direct Spike prompts", async () => {
+  const sent = [];
+  const startedRuns = [];
+  const directPendingByTopic = new Map();
+  const queuedPendingByTopic = new Map();
+  const session = {
+    session_key: "-1001234567890:89",
+    chat_id: "-1001234567890",
+    topic_id: "89",
+    lifecycle_state: "active",
+    ui_language: "rus",
+    prompt_suffix_enabled: false,
+    prompt_suffix_text: null,
+    workspace_binding: {
+      repo_root: "/workspace",
+      cwd: "/workspace",
+      branch: "main",
+      worktree_path: "/workspace",
+    },
+    auto_mode: {
+      enabled: false,
+      phase: "off",
+    },
+  };
+  const queuedAttachmentMessage = {
+    caption: "/q",
+    caption_entities: [{ type: "bot_command", offset: 0, length: 2 }],
+    document: {
+      file_id: "queue-file-1",
+      file_unique_id: "queue-uniq-file-1",
+      file_name: "queue.txt",
+      mime_type: "text/plain",
+      file_size: 100,
+    },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
+    message_id: 2101,
+    message_thread_id: 89,
+  };
+  const textMessage = {
+    text: "Сделай обычный Spike prompt без очереди.",
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
+    message_id: 2102,
+    message_thread_id: 89,
+  };
+
+  const commonArgs = {
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return { ...session };
+      },
+      async ensureRunnableSessionForMessage() {
+        return { ...session };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async ingestIncomingAttachments(_api, _session, message) {
+        if (message.message_id !== queuedAttachmentMessage.message_id) {
+          return [];
+        }
+
+        return [
+          {
+            file_path: "/tmp/queue.txt",
+            relative_path: "incoming/queue.txt",
+            mime_type: "text/plain",
+            size_bytes: 100,
+            is_image: false,
+          },
+        ];
+      },
+      async bufferPendingPromptAttachments(currentSession, attachments, options = {}) {
+        const store = options.scope === "queue"
+          ? queuedPendingByTopic
+          : directPendingByTopic;
+        store.set(currentSession.topic_id, attachments);
+      },
+      async getPendingPromptAttachments(currentSession, options = {}) {
+        const store = options.scope === "queue"
+          ? queuedPendingByTopic
+          : directPendingByTopic;
+        return [...(store.get(currentSession.topic_id) || [])];
+      },
+      async clearPendingPromptAttachments(currentSession, options = {}) {
+        const store = options.scope === "queue"
+          ? queuedPendingByTopic
+          : directPendingByTopic;
+        store.delete(currentSession.topic_id);
+        return currentSession;
+      },
+      async recordHandledSession() {},
+      async listPromptQueue() {
+        return [];
+      },
+      async enqueuePromptQueue() {
+        throw new Error("should not enqueue");
+      },
+    },
+    workerPool: {
+      async startPromptRun(args) {
+        startedRuns.push(args);
+        return { ok: true };
+      },
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  };
+
+  const queuedAttachmentResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: queuedAttachmentMessage,
+  });
+  const textResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: textMessage,
+  });
+
+  assert.equal(queuedAttachmentResult.reason, "queue-attachment-without-prompt");
+  assert.equal(textResult.reason, "prompt-started");
+  assert.equal(startedRuns.length, 1);
+  assert.equal(startedRuns[0].attachments.length, 0);
+  assert.equal(queuedPendingByTopic.get(session.topic_id)?.length, 1);
+  assert.equal(directPendingByTopic.has(session.topic_id), false);
+  assert.match(sent[0].text, /через \/q/u);
+});
+
 test("handleIncomingMessage assembles likely split long Telegram prompts into one run", async () => {
   const startedRuns = [];
   const promptFragmentAssembler = new PromptFragmentAssembler({
@@ -1723,14 +4770,14 @@ test("handleIncomingMessage assembles likely split long Telegram prompts into on
   };
   const firstMessage = {
     text: "A".repeat(3200),
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 880,
     message_thread_id: 78,
   };
   const secondMessage = {
     text: " second-fragment",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 881,
     message_thread_id: 78,
@@ -1829,7 +4876,7 @@ test("handleIncomingMessage assembles four Telegram-split prompt fragments into 
     },
   ].map((message) => ({
     ...message,
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_thread_id: 79,
   }));
@@ -1905,7 +4952,7 @@ test("handleIncomingMessage keeps buffered prompt flush behind promptStartGuard"
   };
   const message = {
     text: "A".repeat(3200),
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 894,
     message_thread_id: 79,
@@ -1981,7 +5028,7 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
   };
   const bufferedMessage = {
     text: "A".repeat(3200),
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 900,
     message_thread_id: 80,
@@ -1989,7 +5036,7 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
   const interruptMessage = {
     text: "/interrupt",
     entities: [{ type: "bot_command", offset: 0, length: 10 }],
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 901,
     message_thread_id: 80,
@@ -2021,10 +5068,10 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
           session_key: "-1001234567890:80",
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/home/example/workspace",
-            cwd: "/home/example/workspace",
+            repo_root: "/workspace",
+            cwd: "/workspace",
             branch: "main",
-            worktree_path: "/home/example/workspace",
+            worktree_path: "/workspace",
           },
         };
       },
@@ -2061,10 +5108,10 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
           session_key: "-1001234567890:80",
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/home/example/workspace",
-            cwd: "/home/example/workspace",
+            repo_root: "/workspace",
+            cwd: "/workspace",
             branch: "main",
-            worktree_path: "/home/example/workspace",
+            worktree_path: "/workspace",
           },
         };
       },
@@ -2086,7 +5133,7 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
   assert.match(sent.at(-1).text, /нет активного run/u);
 });
 
-test("handleIncomingMessage buffers mixed payloads after global wait and flushes them on single-word Все", async () => {
+test("handleIncomingMessage uses plain /wait as a local one-shot window and resets after the flushed prompt", async () => {
   const sent = [];
   const startedRuns = [];
   const promptFragmentAssembler = new PromptFragmentAssembler({
@@ -2107,21 +5154,21 @@ test("handleIncomingMessage buffers mixed payloads after global wait and flushes
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/workspace",
     },
   };
   const waitCommand = {
     text: "wait 600",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 910,
-    message_thread_id: 81,
+    message_thread_id: 82,
   };
   const attachmentMessage = {
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 911,
     message_thread_id: 82,
@@ -2135,7 +5182,7 @@ test("handleIncomingMessage buffers mixed payloads after global wait and flushes
     },
   };
   const secondAttachmentMessage = {
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 912,
     message_thread_id: 82,
@@ -2150,38 +5197,31 @@ test("handleIncomingMessage buffers mixed payloads after global wait and flushes
   };
   const textMessage = {
     text: "Ура!!! Значит всё работает отлично",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 913,
     message_thread_id: 82,
   };
   const secondTextMessage = {
     text: "Теперь я тестирую wait окно.",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 914,
     message_thread_id: 82,
   };
   const flushMessage = {
     text: "Все",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 915,
-    message_thread_id: 83,
+    message_thread_id: 82,
   };
   const followUpTextMessage = {
     text: "Это уже следующий prompt без повторного /wait.",
-    from: { id: 1234567890, is_bot: false },
+    from: { id: 123456789, is_bot: false },
     chat: { id: -1001234567890 },
     message_id: 916,
-    message_thread_id: 84,
-  };
-  const secondFlushMessage = {
-    text: "Все",
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
-    message_id: 917,
-    message_thread_id: 85,
+    message_thread_id: 82,
   };
 
   const commonArgs = {
@@ -2198,8 +5238,8 @@ test("handleIncomingMessage buffers mixed payloads after global wait and flushes
       async ensureSessionForMessage() {
         return {
           ...session,
-          session_key: `-1001234567890:${waitCommand.message_thread_id}`,
-          topic_id: String(waitCommand.message_thread_id),
+          session_key: `-1001234567890:${attachmentMessage.message_thread_id}`,
+          topic_id: String(attachmentMessage.message_thread_id),
         };
       },
       async ensureRunnableSessionForMessage(message) {
@@ -2284,10 +5324,6 @@ test("handleIncomingMessage buffers mixed payloads after global wait and flushes
     ...commonArgs,
     message: followUpTextMessage,
   });
-  const secondFlushResult = await handleIncomingMessage({
-    ...commonArgs,
-    message: secondFlushMessage,
-  });
 
   assert.equal(waitResult.command, "wait");
   assert.match(sent[0].text, /status: on/u);
@@ -2296,8 +5332,7 @@ test("handleIncomingMessage buffers mixed payloads after global wait and flushes
   assert.equal(textResult.reason, "prompt-buffered");
   assert.equal(secondTextResult.reason, "prompt-buffered");
   assert.equal(flushResult.reason, "prompt-buffer-flushed");
-  assert.equal(followUpTextResult.reason, "prompt-buffered");
-  assert.equal(secondFlushResult.reason, "prompt-buffer-flushed");
+  assert.equal(followUpTextResult.reason, "prompt-started");
   assert.equal(startedRuns.length, 2);
   assert.equal(
     startedRuns[0].rawPrompt,
@@ -2309,7 +5344,145 @@ test("handleIncomingMessage buffers mixed payloads after global wait and flushes
   assert.equal(startedRuns[1].rawPrompt, followUpTextMessage.text);
   assert.equal(startedRuns[1].attachments.length, 0);
   assert.equal(startedRuns[1].message.message_id, followUpTextMessage.message_id);
-  assert.equal(startedRuns[1].session.topic_id, "84");
+  assert.equal(startedRuns[1].session.topic_id, "82");
+});
+
+test("handleIncomingMessage keeps /wait global persistent across topics", async () => {
+  const sent = [];
+  const startedRuns = [];
+  const promptFragmentAssembler = new PromptFragmentAssembler({
+    flushDelayMs: 10000,
+    longPromptThresholdChars: 3000,
+  });
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+  const waitCommand = {
+    text: "/wait global 600",
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
+    message_id: 920,
+    message_thread_id: 81,
+    entities: [{ type: "bot_command", offset: 0, length: 5 }],
+  };
+  const firstTopicMessage = {
+    text: "first buffered part",
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
+    message_id: 921,
+    message_thread_id: 82,
+  };
+  const secondTopicMessage = {
+    text: "second buffered part",
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
+    message_id: 922,
+    message_thread_id: 83,
+  };
+  const flushMessage = {
+    text: "Все",
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
+    message_id: 923,
+    message_thread_id: 84,
+  };
+
+  const commonArgs = {
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    promptFragmentAssembler,
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage(message) {
+        return {
+          session_key: `-1001234567890:${message.message_thread_id}`,
+          chat_id: "-1001234567890",
+          topic_id: String(message.message_thread_id),
+          lifecycle_state: "active",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+          workspace_binding: {
+            repo_root: "/workspace",
+            cwd: "/workspace",
+            branch: "main",
+            worktree_path: "/workspace",
+          },
+        };
+      },
+      async ensureRunnableSessionForMessage(message) {
+        return {
+          session_key: `-1001234567890:${message.message_thread_id}`,
+          chat_id: "-1001234567890",
+          topic_id: String(message.message_thread_id),
+          lifecycle_state: "active",
+          workspace_binding: {
+            repo_root: "/workspace",
+            cwd: "/workspace",
+            branch: "main",
+            worktree_path: "/workspace",
+          },
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async ingestIncomingAttachments() {
+        return [];
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      async startPromptRun(args) {
+        startedRuns.push(args);
+        return { ok: true };
+      },
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  };
+
+  const waitResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: waitCommand,
+  });
+  const firstResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: firstTopicMessage,
+  });
+  const secondResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: secondTopicMessage,
+  });
+  const flushResult = await handleIncomingMessage({
+    ...commonArgs,
+    message: flushMessage,
+  });
+
+  assert.equal(waitResult.command, "wait");
+  assert.match(sent[0].text, /scope: global/u);
+  assert.equal(firstResult.reason, "prompt-buffered");
+  assert.equal(secondResult.reason, "prompt-buffered");
+  assert.equal(flushResult.reason, "prompt-buffer-flushed");
+  assert.equal(startedRuns.length, 1);
+  assert.equal(
+    startedRuns[0].rawPrompt,
+    `${firstTopicMessage.text}\n\n${secondTopicMessage.text}`,
+  );
 });
 
 test("handleIncomingMessage reports busy topic run", async () => {
@@ -2325,7 +5498,7 @@ test("handleIncomingMessage reports busy topic run", async () => {
     config,
     message: {
       text: "run a quick task",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 78,
     },
@@ -2368,7 +5541,7 @@ test("handleIncomingMessage steers the active run instead of returning busy when
     message: {
       text: "Докинь ещё вот это.",
       message_id: 990,
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 78,
     },

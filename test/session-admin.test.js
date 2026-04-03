@@ -10,10 +10,10 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/home/example/workspace",
-    cwd: "/home/example/workspace",
+    repo_root: "/workspace",
+    cwd: "/workspace",
     branch: "main",
-    worktree_path: "/home/example/workspace",
+    worktree_path: "/workspace",
   };
 }
 

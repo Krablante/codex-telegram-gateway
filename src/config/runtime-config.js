@@ -48,6 +48,22 @@ function normalizeIntegerString(value, key) {
   return value;
 }
 
+function parseIntegerList(value, key) {
+  if (!value) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => normalizeIntegerString(entry, key)),
+    ),
+  ];
+}
+
 function parseTopicList(value) {
   if (!value) {
     return [];
@@ -74,6 +90,22 @@ function parsePositiveInteger(value, key, fallback) {
   }
 
   return parsed;
+}
+
+function parseOptionalBoolean(value, key) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  throw new Error(`Expected ${key} to be a boolean-like value, got: ${value}`);
 }
 
 function parseTomlScalar(rawValue) {
@@ -156,21 +188,67 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     rawEnv.CODEX_SESSIONS_ROOT?.trim() || DEFAULT_CODEX_SESSIONS_ROOT;
 
   const telegramBotToken = readRequired(rawEnv, "TELEGRAM_BOT_TOKEN");
-  const telegramAllowedUserId = normalizeIntegerString(
-    readRequired(rawEnv, "TELEGRAM_ALLOWED_USER_ID"),
-    "TELEGRAM_ALLOWED_USER_ID",
+  const legacyAllowedUserId = rawEnv.TELEGRAM_ALLOWED_USER_ID?.trim()
+    ? normalizeIntegerString(
+        readRequired(rawEnv, "TELEGRAM_ALLOWED_USER_ID"),
+        "TELEGRAM_ALLOWED_USER_ID",
+      )
+    : null;
+  const telegramAllowedUserIds = [
+    ...new Set([
+      ...parseIntegerList(
+        rawEnv.TELEGRAM_ALLOWED_USER_IDS,
+        "TELEGRAM_ALLOWED_USER_IDS",
+      ),
+      ...(legacyAllowedUserId ? [legacyAllowedUserId] : []),
+    ]),
+  ];
+  if (telegramAllowedUserIds.length === 0) {
+    throw new Error(
+      "Missing required runtime setting: TELEGRAM_ALLOWED_USER_ID or TELEGRAM_ALLOWED_USER_IDS",
+    );
+  }
+  const telegramAllowedBotIds = parseIntegerList(
+    rawEnv.TELEGRAM_ALLOWED_BOT_IDS,
+    "TELEGRAM_ALLOWED_BOT_IDS",
   );
   const telegramForumChatId = normalizeIntegerString(
     readRequired(rawEnv, "TELEGRAM_FORUM_CHAT_ID"),
     "TELEGRAM_FORUM_CHAT_ID",
   );
+  const omniBotToken = rawEnv.OMNI_BOT_TOKEN?.trim() || null;
+  const omniBotId = rawEnv.OMNI_BOT_ID?.trim()
+    ? normalizeIntegerString(rawEnv.OMNI_BOT_ID.trim(), "OMNI_BOT_ID")
+    : null;
+  const spikeBotId = rawEnv.SPIKE_BOT_ID?.trim()
+    ? normalizeIntegerString(rawEnv.SPIKE_BOT_ID.trim(), "SPIKE_BOT_ID")
+    : null;
+  const omniEnabledSetting = parseOptionalBoolean(
+    rawEnv.OMNI_ENABLED,
+    "OMNI_ENABLED",
+  );
+  const omniEnabled =
+    omniEnabledSetting ?? Boolean(omniBotToken && omniBotId);
+  if (omniBotToken && !omniBotId && omniEnabledSetting !== false) {
+    throw new Error("Missing required runtime setting: OMNI_BOT_ID");
+  }
+  if (omniEnabled && (!omniBotToken || !omniBotId)) {
+    throw new Error(
+      "Omni is enabled but OMNI_BOT_TOKEN / OMNI_BOT_ID are not fully configured",
+    );
+  }
+  const effectiveAllowedBotIds = [
+    ...new Set([
+      ...telegramAllowedBotIds,
+      ...(omniEnabled && omniBotId ? [omniBotId] : []),
+    ]),
+  ];
 
   return {
     envFilePath,
     repoRoot,
     stateRoot,
     workspaceRoot,
-    atlasWorkspaceRoot: workspaceRoot,
     defaultSessionBindingPath,
     codexBinPath,
     codexConfigPath,
@@ -216,9 +294,15 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
       DEFAULT_RETENTION_SWEEP_INTERVAL_SECS,
     ),
     telegramBotToken,
-    telegramAllowedUserId,
+    telegramAllowedUserId: telegramAllowedUserIds[0],
+    telegramAllowedUserIds,
+    telegramAllowedBotIds: effectiveAllowedBotIds,
     telegramForumChatId,
     telegramExpectedTopics: parseTopicList(rawEnv.TELEGRAM_EXPECTED_TOPICS),
+    omniEnabled,
+    omniBotToken,
+    omniBotId,
+    spikeBotId,
   };
 }
 

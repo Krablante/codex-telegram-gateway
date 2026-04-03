@@ -1,10 +1,15 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 export const DEFAULT_ENV_FILE =
   process.env.ENV_FILE?.trim() ||
   process.env.CODEX_TELEGRAM_GATEWAY_ENV_FILE?.trim() ||
-  path.join(process.cwd(), ".env");
+  path.join(
+    process.env.XDG_CONFIG_HOME?.trim() || path.join(os.homedir(), ".config"),
+    "codex-telegram-gateway",
+    "runtime.env",
+  );
 
 function stripWrappingQuotes(value) {
   if (

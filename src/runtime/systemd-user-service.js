@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 export const SYSTEMD_USER_SERVICE_NAME = "codex-telegram-gateway.service";
+export const SYSTEMD_USER_OMNI_SERVICE_NAME = "codex-telegram-gateway-omni.service";
 
 function quoteEnvironment(name, value) {
   const escaped = String(value)
@@ -23,12 +24,14 @@ export function buildUserServiceUnit({
   nodePath,
   codexBinPath,
   pathEntries = [],
+  description = "Codex Telegram Gateway",
+  scriptPath = "src/cli/run.js",
 }) {
   const pathValue = [...new Set(pathEntries.filter(Boolean))].join(":");
 
   return [
     "[Unit]",
-    "Description=Codex Telegram Gateway",
+    `Description=${description}`,
     "After=network-online.target",
     "Wants=network-online.target",
     "",
@@ -39,7 +42,7 @@ export function buildUserServiceUnit({
     quoteEnvironment("NODE", nodePath),
     quoteEnvironment("CODEX_BIN_PATH", codexBinPath),
     quoteEnvironment("PATH", pathValue),
-    `ExecStart=${nodePath} src/cli/run.js`,
+    `ExecStart=${nodePath} ${scriptPath}`,
     "Restart=always",
     "RestartSec=5",
     "KillMode=control-group",

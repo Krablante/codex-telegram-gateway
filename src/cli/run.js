@@ -5,19 +5,30 @@ import { CodexWorkerPool } from "../pty-worker/worker-pool.js";
 import { createServiceState, markBootstrapDrop, markPollError, markUpdateSeen } from "../runtime/service-state.js";
 import { RuntimeObserver } from "../runtime/runtime-observer.js";
 import { SessionCompactor } from "../session-manager/session-compactor.js";
+import { SpikeFinalEventStore } from "../session-manager/spike-final-event-store.js";
+import { GlobalCodexSettingsStore } from "../session-manager/global-codex-settings-store.js";
+import { GlobalControlPanelStore } from "../session-manager/global-control-panel-store.js";
 import { GlobalPromptSuffixStore } from "../session-manager/global-prompt-suffix-store.js";
 import { SessionLifecycleManager } from "../session-manager/session-lifecycle-manager.js";
+import { SpikePromptQueueStore } from "../session-manager/prompt-queue.js";
 import { SessionService } from "../session-manager/session-service.js";
 import { SessionStore } from "../session-manager/session-store.js";
+import { TopicControlPanelStore } from "../session-manager/topic-control-panel-store.js";
 import { UpdateOffsetStore } from "../session-manager/update-offset-store.js";
 import { ensureStateLayout } from "../state/layout.js";
 import { TelegramBotApiClient } from "../telegram/bot-api-client.js";
-import { handleIncomingMessage } from "../telegram/command-router.js";
+import { syncTelegramCommandCatalog } from "../telegram/command-catalog.js";
+import {
+  handleIncomingCallbackQuery,
+  handleIncomingMessage,
+} from "../telegram/command-router.js";
 import { PromptFragmentAssembler } from "../telegram/prompt-fragment-assembler.js";
 import { runTelegramProbe } from "../telegram/probe.js";
 import { EmergencyPrivateChatRouter } from "../emergency/private-chat-router.js";
+import { OmniPromptHandoffStore, drainPendingOmniPrompts } from "../omni/prompt-handoff.js";
+import { disableOmniStateAcrossSessions } from "../omni/disabled-state.js";
 
-const MESSAGE_UPDATES_ONLY = ["message"];
+const TELEGRAM_ALLOWED_UPDATES = ["message", "callback_query"];
 const RUN_ONCE = process.env.RUN_ONCE === "1";
 
 function sleep(ms) {
@@ -69,9 +80,12 @@ async function processUpdates({
   emergencyRouter,
   lifecycleManager,
   promptFragmentAssembler,
+  queuePromptAssembler,
   runtimeObserver,
   offsetStore,
   sessionService,
+  globalControlPanelStore,
+  topicControlPanelStore,
   workerPool,
   serviceState,
   updates,
@@ -84,7 +98,23 @@ async function processUpdates({
     nextOffset = updateId + 1;
 
     try {
-      if (update.message) {
+      if (update.callback_query) {
+        await handleIncomingCallbackQuery({
+          api,
+          botUsername,
+          config,
+          callbackQuery: update.callback_query,
+          lifecycleManager,
+          promptStartGuard: emergencyRouter,
+          promptFragmentAssembler,
+          queuePromptAssembler,
+          serviceState,
+          sessionService,
+          globalControlPanelStore,
+          topicControlPanelStore,
+          workerPool,
+        });
+      } else if (update.message) {
         const emergencyResult = await emergencyRouter?.handleMessage(update.message);
         if (emergencyResult?.handled) {
           await offsetStore.save(nextOffset);
@@ -117,8 +147,11 @@ async function processUpdates({
           message: update.message,
           promptStartGuard: emergencyRouter,
           promptFragmentAssembler,
+          queuePromptAssembler,
           serviceState,
           sessionService,
+          globalControlPanelStore,
+          topicControlPanelStore,
           workerPool,
         });
       } else {
@@ -155,7 +188,13 @@ async function main() {
   });
   const offsetStore = new UpdateOffsetStore(layout.indexes);
   const globalPromptSuffixStore = new GlobalPromptSuffixStore(layout.settings);
+  const globalCodexSettingsStore = new GlobalCodexSettingsStore(layout.settings);
+  const globalControlPanelStore = new GlobalControlPanelStore(layout.settings);
   const sessionStore = new SessionStore(layout.sessions);
+  const promptQueueStore = new SpikePromptQueueStore(sessionStore);
+  const topicControlPanelStore = new TopicControlPanelStore(sessionStore);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const promptHandoffStore = new OmniPromptHandoffStore(sessionStore);
   const sessionCompactor = new SessionCompactor({ sessionStore, config });
   const sessionLifecycleManager = new SessionLifecycleManager({
     config,
@@ -169,16 +208,30 @@ async function main() {
     sessionCompactor,
     runtimeObserver,
     globalPromptSuffixStore,
+    globalCodexSettingsStore,
+    promptQueueStore,
   });
-  const workerPool = new CodexWorkerPool({
+  let workerPool = null;
+  const handleRunTerminated = async ({ session }) => {
+    if (!session) {
+      return;
+    }
+
+    await sessionService.drainPromptQueue(workerPool, { session });
+  };
+  workerPool = new CodexWorkerPool({
     api,
     config,
     sessionStore,
     serviceState,
     sessionCompactor,
     sessionLifecycleManager,
+    spikeFinalEventStore,
+    globalCodexSettingsStore,
+    onRunTerminated: handleRunTerminated,
   });
   const promptFragmentAssembler = new PromptFragmentAssembler();
+  const queuePromptAssembler = new PromptFragmentAssembler();
   const emergencyRouter = new EmergencyPrivateChatRouter({
     api,
     botUsername: serviceState.botUsername,
@@ -190,29 +243,102 @@ async function main() {
   });
   sessionLifecycleManager.workerPool = workerPool;
 
+  if (config.omniEnabled === false) {
+    const disabledSummary = await disableOmniStateAcrossSessions({
+      sessionStore,
+      promptHandoffStore,
+    });
+    if (disabledSummary.autoSessionsDisarmed > 0 || disabledSummary.handoffsCleared > 0) {
+      console.log(
+        `omni disabled: disarmed ${disabledSummary.autoSessionsDisarmed} session(s) and cleared ${disabledSummary.handoffsCleared} queued handoff(s)`,
+      );
+    }
+  }
+
   await ensureLongPollingReady(api, probe.webhookInfo);
+  try {
+    await syncTelegramCommandCatalog(api, "spike", config.telegramForumChatId, {
+      omniEnabled: config.omniEnabled,
+    });
+  } catch (error) {
+    console.warn(`Telegram command sync failed for Spike: ${error.message}`);
+  }
   let currentOffset = await bootstrapOffset({ api, offsetStore, serviceState });
   await runtimeObserver.start({ currentOffset });
   if (serviceState.bootstrapDroppedUpdateId !== null) {
     await runtimeObserver.noteBootstrapDrop(serviceState.bootstrapDroppedUpdateId);
   }
   let lastRetentionSweepAt = 0;
+  const abortController = new AbortController();
+  let shutdownPromise = null;
   const heartbeatTimer = setInterval(() => {
     void runtimeObserver.writeHeartbeat().catch(() => {});
   }, 15000);
   heartbeatTimer.unref();
+  let promptHandoffScanInFlight = false;
+  let promptQueueScanInFlight = false;
+  const scanPendingOmniPrompts = async () => {
+    if (config.omniEnabled === false) {
+      return;
+    }
+    if (promptHandoffScanInFlight || abortController.signal.aborted) {
+      return;
+    }
+
+    promptHandoffScanInFlight = true;
+    await drainPendingOmniPrompts({
+      api,
+      botUsername: serviceState.botUsername,
+      config,
+      lifecycleManager: sessionLifecycleManager,
+      promptFragmentAssembler,
+      serviceState,
+      sessionService,
+      sessionStore,
+      workerPool,
+      promptHandoffStore,
+    })
+      .catch((error) => {
+        console.error(`omni prompt handoff scan failed: ${error.message}`);
+      })
+      .finally(() => {
+        promptHandoffScanInFlight = false;
+      });
+  };
+  const scanPendingSpikeQueue = async () => {
+    if (promptQueueScanInFlight || abortController.signal.aborted) {
+      return;
+    }
+
+    promptQueueScanInFlight = true;
+    await sessionService.drainPromptQueue(workerPool)
+      .catch((error) => {
+        console.error(`spike prompt queue scan failed: ${error.message}`);
+      })
+      .finally(() => {
+        promptQueueScanInFlight = false;
+      });
+  };
+  const promptHandoffTimer = setInterval(() => {
+    void scanPendingOmniPrompts().then(() => scanPendingSpikeQueue());
+  }, 1000);
+  promptHandoffTimer.unref();
 
   console.log(
     `poller starting for @${serviceState.botUsername || "no-username"} in chat ${config.telegramForumChatId}`,
   );
 
-  const abortController = new AbortController();
-  let shutdownPromise = null;
   const stop = () => {
     const canceled = promptFragmentAssembler.cancelAll();
     if (canceled.canceledEntries > 0) {
       console.warn(
         `discarded ${canceled.canceledMessages} buffered Telegram fragment(s) across ${canceled.canceledEntries} prompt(s) during shutdown`,
+      );
+    }
+    const canceledQueued = queuePromptAssembler.cancelAll();
+    if (canceledQueued.canceledEntries > 0) {
+      console.warn(
+        `discarded ${canceledQueued.canceledMessages} buffered queue fragment(s) across ${canceledQueued.canceledEntries} prompt(s) during shutdown`,
       );
     }
     abortController.abort();
@@ -238,12 +364,14 @@ async function main() {
             offset: currentOffset ?? undefined,
             limit: 100,
             timeout: config.telegramPollTimeoutSecs,
-            allowed_updates: MESSAGE_UPDATES_ONLY,
+            allowed_updates: TELEGRAM_ALLOWED_UPDATES,
           },
           { signal: abortController.signal },
         );
 
         if (updates.length === 0) {
+          await scanPendingOmniPrompts();
+          await scanPendingSpikeQueue();
           const now = Date.now();
           if (
             now - lastRetentionSweepAt >=
@@ -258,6 +386,7 @@ async function main() {
 
           if (RUN_ONCE) {
             await promptFragmentAssembler.flushAll();
+            await queuePromptAssembler.flushAll();
             break;
           }
 
@@ -271,13 +400,17 @@ async function main() {
           emergencyRouter,
           lifecycleManager: sessionLifecycleManager,
           promptFragmentAssembler,
+          queuePromptAssembler,
           runtimeObserver,
           offsetStore,
           sessionService,
+          globalControlPanelStore,
+          topicControlPanelStore,
           workerPool,
           serviceState,
           updates,
         });
+        await scanPendingOmniPrompts();
         const now = Date.now();
         if (
           now - lastRetentionSweepAt >=
@@ -292,6 +425,7 @@ async function main() {
 
         if (RUN_ONCE) {
           await promptFragmentAssembler.flushAll();
+          await queuePromptAssembler.flushAll();
           break;
         }
       } catch (error) {
@@ -307,6 +441,7 @@ async function main() {
     }
   } finally {
     clearInterval(heartbeatTimer);
+    clearInterval(promptHandoffTimer);
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
     if (shutdownPromise) {

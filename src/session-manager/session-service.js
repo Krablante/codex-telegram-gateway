@@ -4,15 +4,41 @@ import { createWorkspaceDiffArtifact } from "../workspace/diff-artifact.js";
 import { resolveWorkspaceBinding } from "../workspace/binding-resolver.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import {
+  buildDefaultAutoModeState,
+  normalizeAutoModeState,
+  normalizeGoalInterpretation,
+} from "./auto-mode.js";
+import {
+  buildEmptyGlobalCodexSettingsState,
+  getGlobalRuntimeSettingFieldName,
+  getSessionRuntimeSettingFieldName,
+  loadAvailableCodexModels,
+  resolveCodexRuntimeProfile,
+} from "./codex-runtime-settings.js";
+import {
   buildLegacyContextSnapshot,
   normalizeContextSnapshot,
   readLatestContextSnapshot,
 } from "./context-snapshot.js";
+import { drainPendingSpikePromptQueue } from "./prompt-queue.js";
 import { normalizePromptSuffixText } from "./prompt-suffix.js";
 import { getSessionKey, getTopicIdFromMessage } from "./session-key.js";
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function appendUserInput(existingInput, nextInput) {
+  const base = String(existingInput || "").trim();
+  const next = String(nextInput || "").trim();
+  if (!base) {
+    return next || null;
+  }
+  if (!next) {
+    return base;
+  }
+
+  return `${base}\n\n${next}`;
 }
 
 function buildGeneratedTopicName() {
@@ -21,6 +47,18 @@ function buildGeneratedTopicName() {
 }
 
 const DEFAULT_PENDING_PROMPT_ATTACHMENT_TTL_MS = 15 * 60 * 1000;
+
+function resolvePendingAttachmentFieldNames(scope = "prompt") {
+  return scope === "queue"
+    ? {
+        attachments: "pending_queue_attachments",
+        expiresAt: "pending_queue_attachments_expires_at",
+      }
+    : {
+        attachments: "pending_prompt_attachments",
+        expiresAt: "pending_prompt_attachments_expires_at",
+      };
+}
 
 function normalizeTopicName(rawArgs) {
   const trimmed = rawArgs.trim();
@@ -41,14 +79,13 @@ function normalizePendingPromptAttachments(attachments) {
     .map((attachment) => cloneJson(attachment));
 }
 
-function readPendingPromptAttachmentsState(sessionLike) {
-  const attachments = normalizePendingPromptAttachments(
-    sessionLike?.pending_prompt_attachments,
-  );
+function readPendingPromptAttachmentsState(sessionLike, scope = "prompt") {
+  const fields = resolvePendingAttachmentFieldNames(scope);
+  const attachments = normalizePendingPromptAttachments(sessionLike?.[fields.attachments]);
   const expiresAt =
-    typeof sessionLike?.pending_prompt_attachments_expires_at === "string" &&
-    sessionLike.pending_prompt_attachments_expires_at.trim()
-      ? sessionLike.pending_prompt_attachments_expires_at
+    typeof sessionLike?.[fields.expiresAt] === "string" &&
+    sessionLike[fields.expiresAt].trim()
+      ? sessionLike[fields.expiresAt]
       : null;
   if (!expiresAt || attachments.length === 0) {
     return {
@@ -89,19 +126,23 @@ export class SessionService {
     sessionCompactor = null,
     runtimeObserver = null,
     globalPromptSuffixStore = null,
+    globalCodexSettingsStore = null,
+    promptQueueStore = null,
   }) {
     this.sessionStore = sessionStore;
     this.config = config;
     this.sessionCompactor = sessionCompactor;
     this.runtimeObserver = runtimeObserver;
     this.globalPromptSuffixStore = globalPromptSuffixStore;
+    this.globalCodexSettingsStore = globalCodexSettingsStore;
+    this.promptQueueStore = promptQueueStore;
     this.defaultBindingPromise = null;
   }
 
   async getDefaultBinding() {
     if (!this.defaultBindingPromise) {
       this.defaultBindingPromise = resolveWorkspaceBinding({
-        workspaceRoot: this.config.workspaceRoot ?? this.config.atlasWorkspaceRoot,
+        workspaceRoot: this.config.workspaceRoot,
         requestedPath: this.config.defaultSessionBindingPath,
       });
     }
@@ -111,7 +152,7 @@ export class SessionService {
 
   async resolveBindingPath(requestedPath) {
     return resolveWorkspaceBinding({
-      workspaceRoot: this.config.workspaceRoot ?? this.config.atlasWorkspaceRoot,
+      workspaceRoot: this.config.workspaceRoot,
       requestedPath,
     });
   }
@@ -144,6 +185,7 @@ export class SessionService {
     api,
     message,
     title,
+    uiLanguage = null,
     workspaceBinding,
     inheritedFromSessionKey,
   }) {
@@ -156,6 +198,7 @@ export class SessionService {
       chatId: message.chat.id,
       topicId: forumTopic.message_thread_id,
       topicName: forumTopic.name,
+      uiLanguage,
       workspaceBinding: resolvedBinding,
       createdVia: "command/new",
       inheritedFromSessionKey,
@@ -208,46 +251,97 @@ export class SessionService {
   async bufferPendingPromptAttachments(
     session,
     attachments,
-    { ttlMs = DEFAULT_PENDING_PROMPT_ATTACHMENT_TTL_MS } = {},
+    {
+      scope = "prompt",
+      ttlMs = DEFAULT_PENDING_PROMPT_ATTACHMENT_TTL_MS,
+    } = {},
   ) {
     const current =
       (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
-    const pendingState = readPendingPromptAttachmentsState(current);
+    const pendingState = readPendingPromptAttachmentsState(current, scope);
     const nextAttachments = [
       ...pendingState.attachments,
       ...normalizePendingPromptAttachments(attachments),
     ];
     const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    const fields = resolvePendingAttachmentFieldNames(scope);
 
     return this.sessionStore.patch(current, {
-      pending_prompt_attachments: nextAttachments,
-      pending_prompt_attachments_expires_at: nextAttachments.length > 0
-        ? expiresAt
-        : null,
+      [fields.attachments]: nextAttachments,
+      [fields.expiresAt]: nextAttachments.length > 0 ? expiresAt : null,
     });
   }
 
-  async getPendingPromptAttachments(session) {
+  async getPendingPromptAttachments(session, { scope = "prompt" } = {}) {
     const current =
       (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
-    const pendingState = readPendingPromptAttachmentsState(current);
+    const pendingState = readPendingPromptAttachmentsState(current, scope);
     if (!pendingState.expired) {
       return pendingState.attachments;
     }
 
+    const fields = resolvePendingAttachmentFieldNames(scope);
     await this.sessionStore.patch(current, {
-      pending_prompt_attachments: [],
-      pending_prompt_attachments_expires_at: null,
+      [fields.attachments]: [],
+      [fields.expiresAt]: null,
     });
     return [];
   }
 
-  async clearPendingPromptAttachments(session) {
+  async clearPendingPromptAttachments(session, { scope = "prompt" } = {}) {
     const current =
       (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    const fields = resolvePendingAttachmentFieldNames(scope);
     return this.sessionStore.patch(current, {
-      pending_prompt_attachments: [],
-      pending_prompt_attachments_expires_at: null,
+      [fields.attachments]: [],
+      [fields.expiresAt]: null,
+    });
+  }
+
+  async listPromptQueue(session) {
+    if (!this.promptQueueStore) {
+      return [];
+    }
+
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    return this.promptQueueStore.load(current);
+  }
+
+  async enqueuePromptQueue(session, payload) {
+    if (!this.promptQueueStore) {
+      throw new Error("Prompt queue store is not configured");
+    }
+
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    return this.promptQueueStore.enqueue(current, payload);
+  }
+
+  async deletePromptQueueEntry(session, position) {
+    if (!this.promptQueueStore) {
+      return {
+        entry: null,
+        position: null,
+        size: 0,
+      };
+    }
+
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    return this.promptQueueStore.deleteAt(current, position);
+  }
+
+  async drainPromptQueue(workerPool, { session = null } = {}) {
+    if (!this.promptQueueStore) {
+      return [];
+    }
+
+    return drainPendingSpikePromptQueue({
+      session,
+      sessionStore: this.sessionStore,
+      workerPool,
+      promptQueueStore: this.promptQueueStore,
     });
   }
 
@@ -363,6 +457,67 @@ export class SessionService {
     });
   }
 
+  async getGlobalCodexSettings() {
+    if (!this.globalCodexSettingsStore) {
+      return buildEmptyGlobalCodexSettingsState();
+    }
+
+    return this.globalCodexSettingsStore.load({ force: true });
+  }
+
+  async updateGlobalCodexSetting(target, kind, value) {
+    const fieldName = getGlobalRuntimeSettingFieldName(target, kind);
+    if (!fieldName) {
+      throw new Error(`Unsupported global Codex setting target=${target} kind=${kind}`);
+    }
+
+    if (!this.globalCodexSettingsStore) {
+      return {
+        ...(await this.getGlobalCodexSettings()),
+        [fieldName]: value,
+      };
+    }
+
+    return this.globalCodexSettingsStore.patch({
+      [fieldName]: value,
+    });
+  }
+
+  async clearGlobalCodexSetting(target, kind) {
+    return this.updateGlobalCodexSetting(target, kind, null);
+  }
+
+  async updateSessionCodexSetting(session, target, kind, value) {
+    const fieldName = getSessionRuntimeSettingFieldName(target, kind);
+    if (!fieldName) {
+      throw new Error(`Unsupported session Codex setting target=${target} kind=${kind}`);
+    }
+
+    return this.sessionStore.patch(session, {
+      [fieldName]: value,
+    });
+  }
+
+  async clearSessionCodexSetting(session, target, kind) {
+    return this.updateSessionCodexSetting(session, target, kind, null);
+  }
+
+  async resolveCodexRuntimeProfile(session, { target = "spike" } = {}) {
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    const globalSettings = await this.getGlobalCodexSettings();
+    const availableModels = await loadAvailableCodexModels({
+      configPath: this.config.codexConfigPath,
+    });
+    return resolveCodexRuntimeProfile({
+      session: current,
+      globalSettings,
+      config: this.config,
+      target,
+      availableModels,
+    });
+  }
+
   async resolveContextSnapshot(
     session,
     {
@@ -423,6 +578,185 @@ export class SessionService {
           contextWindow: this.config.codexContextWindow ?? null,
         }),
     };
+  }
+
+  getAutoMode(session) {
+    return normalizeAutoModeState(session?.auto_mode);
+  }
+
+  async loadCurrentAutoMode(session) {
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    return {
+      session: current,
+      autoMode: normalizeAutoModeState(current.auto_mode),
+    };
+  }
+
+  async updateAutoMode(session, patch = {}) {
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    const previous = normalizeAutoModeState(current.auto_mode);
+    const now = new Date().toISOString();
+    const next = normalizeAutoModeState({
+      ...previous,
+      ...cloneJson(patch),
+      updated_at: now,
+      last_state_changed_at:
+        patch.phase && patch.phase !== previous.phase
+          ? now
+          : previous.last_state_changed_at ?? now,
+    });
+
+    if (!next.enabled) {
+      next.phase = "off";
+    }
+
+    return this.sessionStore.patch(current, {
+      auto_mode: next,
+    });
+  }
+
+  async activateAutoMode(session, {
+    activatedByUserId = null,
+    omniBotId = null,
+    spikeBotId = null,
+  } = {}) {
+    const now = new Date().toISOString();
+    return this.updateAutoMode(session, {
+      ...buildDefaultAutoModeState(),
+      enabled: true,
+      phase: "await_goal",
+      activated_at: now,
+      last_state_changed_at: now,
+      updated_at: now,
+      activated_by_user_id: activatedByUserId,
+      omni_bot_id: omniBotId,
+      spike_bot_id: spikeBotId,
+    });
+  }
+
+  async clearAutoMode(session) {
+    return this.updateAutoMode(session, buildDefaultAutoModeState());
+  }
+
+  async captureAutoGoal(session, literalGoalText) {
+    const { session: currentSession, autoMode: currentAutoMode } =
+      await this.loadCurrentAutoMode(session);
+    return this.updateAutoMode(currentSession, {
+      ...currentAutoMode,
+      enabled: true,
+      phase: "await_initial_prompt",
+      literal_goal_text: String(literalGoalText || "").trim() || null,
+      normalized_goal_interpretation: normalizeGoalInterpretation(
+        literalGoalText,
+      ),
+      blocked_reason: null,
+      pending_user_input: null,
+    });
+  }
+
+  async captureAutoInitialPrompt(session, initialWorkerPrompt) {
+    const { session: currentSession, autoMode: currentAutoMode } =
+      await this.loadCurrentAutoMode(session);
+    return this.updateAutoMode(currentSession, {
+      ...currentAutoMode,
+      enabled: true,
+      phase: "await_initial_prompt",
+      initial_worker_prompt: String(initialWorkerPrompt || "").trim() || null,
+      blocked_reason: null,
+      pending_user_input: null,
+      last_result_summary: null,
+    });
+  }
+
+  async queueAutoUserInput(session, userInput) {
+    const { session: currentSession, autoMode: currentAutoMode } =
+      await this.loadCurrentAutoMode(session);
+    return this.updateAutoMode(currentSession, {
+      ...currentAutoMode,
+      pending_user_input: appendUserInput(
+        currentAutoMode.pending_user_input,
+        userInput,
+      ),
+      blocked_reason:
+        currentAutoMode.phase === "blocked"
+          ? currentAutoMode.blocked_reason
+          : null,
+    });
+  }
+
+  async scheduleAutoSleep(session, {
+    sleepMinutes,
+    nextPrompt,
+    resultSummary = null,
+    clearPendingUserInput = true,
+  } = {}) {
+    const { session: currentSession, autoMode: currentAutoMode } =
+      await this.loadCurrentAutoMode(session);
+    const wakeAt = new Date(Date.now() + (sleepMinutes * 60 * 1000)).toISOString();
+    return this.updateAutoMode(currentSession, {
+      ...currentAutoMode,
+      phase: "sleeping",
+      sleep_until: wakeAt,
+      sleep_next_prompt: String(nextPrompt || "").trim() || null,
+      blocked_reason: null,
+      last_result_summary: resultSummary,
+      last_evaluated_exchange_log_entries:
+        currentAutoMode.last_spike_exchange_log_entries,
+      pending_user_input: clearPendingUserInput
+        ? null
+        : currentAutoMode.pending_user_input,
+    });
+  }
+
+  async markAutoSpikeFinal(
+    session,
+    {
+      messageId = null,
+      exchangeLogEntries = 0,
+      summary = null,
+    } = {},
+  ) {
+    const { session: currentSession, autoMode: currentAutoMode } =
+      await this.loadCurrentAutoMode(session);
+    if (!currentAutoMode.enabled) {
+      return currentSession;
+    }
+
+    return this.updateAutoMode(currentSession, {
+      ...currentAutoMode,
+      phase: "evaluating",
+      last_spike_final_message_id: messageId,
+      last_spike_exchange_log_entries: exchangeLogEntries,
+      last_result_summary: summary,
+    });
+  }
+
+  async markAutoDecision(session, {
+    phase,
+    blockedReason = null,
+    resultSummary = null,
+    incrementContinuation = false,
+    clearPendingUserInput = false,
+  } = {}) {
+    const { session: currentSession, autoMode: currentAutoMode } =
+      await this.loadCurrentAutoMode(session);
+    return this.updateAutoMode(currentSession, {
+      ...currentAutoMode,
+      enabled: phase !== "off",
+      phase,
+      blocked_reason: blockedReason,
+      last_result_summary: resultSummary,
+      last_evaluated_exchange_log_entries:
+        currentAutoMode.last_spike_exchange_log_entries,
+      continuation_count: incrementContinuation
+        ? currentAutoMode.continuation_count + 1
+        : currentAutoMode.continuation_count,
+      pending_user_input: clearPendingUserInput
+        ? null
+        : currentAutoMode.pending_user_input,
+    });
   }
 
   getSessionKeyForMessage(message) {

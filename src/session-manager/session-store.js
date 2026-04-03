@@ -2,6 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { getSessionKey, normalizeSessionIds } from "./session-key.js";
+import {
+  AUTO_LAST_SPIKE_FINAL_FILE_NAME,
+  buildDefaultAutoModeState,
+  normalizeAutoModeState,
+} from "./auto-mode.js";
+import {
+  normalizeStoredModelOverride,
+  normalizeReasoningEffort,
+} from "./codex-runtime-settings.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import {
   cloneJson,
@@ -16,7 +25,23 @@ import {
 async function readMetaJson(filePath) {
   try {
     const text = await fs.readFile(filePath, "utf8");
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    return {
+      ...parsed,
+      auto_mode: normalizeAutoModeState(parsed.auto_mode),
+      spike_model_override: normalizeStoredModelOverride(parsed.spike_model_override),
+      spike_reasoning_effort_override: normalizeReasoningEffort(
+        parsed.spike_reasoning_effort_override,
+      ),
+      omni_model_override: normalizeStoredModelOverride(parsed.omni_model_override),
+      omni_reasoning_effort_override: normalizeReasoningEffort(
+        parsed.omni_reasoning_effort_override,
+      ),
+    };
   } catch (error) {
     if (error?.code === "ENOENT") {
       return null;
@@ -43,6 +68,15 @@ async function readOptionalText(filePath) {
   }
 }
 
+const META_LOCK_DIR_NAME = ".meta.lock";
+const META_LOCK_RETRY_MS = 10;
+const META_LOCK_TIMEOUT_MS = 5000;
+const META_LOCK_STALE_MS = 30000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function buildRuntimeStateFields() {
   return {
     last_command_name: null,
@@ -66,6 +100,8 @@ function buildRuntimeStateFields() {
     prompt_suffix_enabled: false,
     pending_prompt_attachments: [],
     pending_prompt_attachments_expires_at: null,
+    pending_queue_attachments: [],
+    pending_queue_attachments_expires_at: null,
     last_user_prompt: null,
     last_agent_reply: null,
     last_run_status: null,
@@ -74,9 +110,14 @@ function buildRuntimeStateFields() {
     last_token_usage: null,
     last_context_snapshot: null,
     last_progress_message_id: null,
+    spike_model_override: null,
+    spike_reasoning_effort_override: null,
+    omni_model_override: null,
+    omni_reasoning_effort_override: null,
     artifact_count: 0,
     last_artifact: null,
     last_diff_artifact: null,
+    auto_mode: buildDefaultAutoModeState(),
   };
 }
 
@@ -173,6 +214,10 @@ export class SessionStore {
     return path.join(this.getSessionDir(chatId, topicId), "meta.json");
   }
 
+  getMetaLockPath(chatId, topicId) {
+    return path.join(this.getSessionDir(chatId, topicId), META_LOCK_DIR_NAME);
+  }
+
   getArtifactsDir(chatId, topicId) {
     return path.join(this.getSessionDir(chatId, topicId), "artifacts");
   }
@@ -192,22 +237,86 @@ export class SessionStore {
     );
   }
 
+  getAutoLastSpikeFinalPath(chatId, topicId) {
+    return path.join(
+      this.getSessionDir(chatId, topicId),
+      AUTO_LAST_SPIKE_FINAL_FILE_NAME,
+    );
+  }
+
   async load(chatId, topicId) {
     return readMetaJson(this.getMetaPath(chatId, topicId));
   }
 
-  async save(meta) {
+  async withMetaLock(chatId, topicId, fn) {
+    const sessionDir = this.getSessionDir(chatId, topicId);
+    const lockPath = this.getMetaLockPath(chatId, topicId);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const startedAt = Date.now();
+
+    while (true) {
+      try {
+        await fs.mkdir(lockPath);
+        break;
+      } catch (error) {
+        if (error?.code !== "EEXIST") {
+          throw error;
+        }
+
+        if (Date.now() - startedAt >= META_LOCK_TIMEOUT_MS) {
+          try {
+            const stats = await fs.stat(lockPath);
+            if (Date.now() - stats.mtimeMs >= META_LOCK_STALE_MS) {
+              await fs.rm(lockPath, { recursive: true, force: true });
+              continue;
+            }
+          } catch (statError) {
+            if (statError?.code !== "ENOENT") {
+              throw statError;
+            }
+          }
+
+          throw new Error(
+            `Timed out acquiring session meta lock for ${getSessionKey(chatId, topicId)}`,
+          );
+        }
+
+        await sleep(META_LOCK_RETRY_MS);
+      }
+    }
+
+    try {
+      return await fn();
+    } finally {
+      await fs.rm(lockPath, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  async saveUnlocked(meta) {
     const sessionDir = this.getSessionDir(meta.chat_id, meta.topic_id);
+    const normalizedMeta = {
+      ...meta,
+      auto_mode: normalizeAutoModeState(meta.auto_mode),
+    };
     await fs.mkdir(sessionDir, { recursive: true });
     await writeTextAtomic(
       path.join(sessionDir, "meta.json"),
-      `${JSON.stringify(stripLegacyMetaFields(meta), null, 2)}\n`,
+      `${JSON.stringify(stripLegacyMetaFields(normalizedMeta), null, 2)}\n`,
     );
     await writeTextAtomic(
-      this.getTopicContextPath(meta.chat_id, meta.topic_id),
-      buildTopicContextFileText(meta, {
-        topicContextPath: this.getTopicContextPath(meta.chat_id, meta.topic_id),
+      this.getTopicContextPath(normalizedMeta.chat_id, normalizedMeta.topic_id),
+      buildTopicContextFileText(normalizedMeta, {
+        topicContextPath: this.getTopicContextPath(
+          normalizedMeta.chat_id,
+          normalizedMeta.topic_id,
+        ),
       }),
+    );
+  }
+
+  async save(meta) {
+    return this.withMetaLock(meta.chat_id, meta.topic_id, () =>
+      this.saveUnlocked(meta),
     );
   }
 
@@ -215,97 +324,105 @@ export class SessionStore {
     chatId,
     topicId,
     topicName = null,
+    uiLanguage = null,
     workspaceBinding,
     createdVia,
     inheritedFromSessionKey = null,
     reactivate = false,
   }) {
     const ids = normalizeSessionIds(chatId, topicId);
-    const existing = await this.load(ids.chatId, ids.topicId);
-    const now = new Date().toISOString();
+    return this.withMetaLock(ids.chatId, ids.topicId, async () => {
+      const existing = await readMetaJson(this.getMetaPath(ids.chatId, ids.topicId));
+      const now = new Date().toISOString();
 
-    if (existing) {
-      let updated = {
-        ...existing,
-        topic_name: topicName || existing.topic_name || null,
-        updated_at: now,
-      };
-
-      if (reactivate && existing.lifecycle_state !== "active") {
-        updated = {
-          ...updated,
-          lifecycle_state: "active",
-          purge_after: null,
-          workspace_binding: cloneJson(
-            existing.workspace_binding || workspaceBinding,
-          ),
-          reactivated_at: now,
-          lifecycle_reactivated_reason: createdVia,
+      if (existing) {
+        let updated = {
+          ...existing,
+          topic_name: topicName || existing.topic_name || null,
+          updated_at: now,
         };
 
-        if (existing.lifecycle_state === "purged") {
+        if (reactivate && existing.lifecycle_state !== "active") {
           updated = {
             ...updated,
-            ...buildRuntimeStateFields(),
             lifecycle_state: "active",
-            retention_pin: existing.retention_pin ?? false,
+            purge_after: null,
             workspace_binding: cloneJson(
               existing.workspace_binding || workspaceBinding,
             ),
-            ui_language: normalizeUiLanguage(existing.ui_language),
             reactivated_at: now,
             lifecycle_reactivated_reason: createdVia,
           };
+
+          if (existing.lifecycle_state === "purged") {
+            updated = {
+              ...updated,
+              ...buildRuntimeStateFields(),
+              lifecycle_state: "active",
+              retention_pin: existing.retention_pin ?? false,
+              workspace_binding: cloneJson(
+                existing.workspace_binding || workspaceBinding,
+              ),
+              ui_language: normalizeUiLanguage(existing.ui_language),
+              reactivated_at: now,
+              lifecycle_reactivated_reason: createdVia,
+            };
+          }
         }
+
+        await this.saveUnlocked(updated);
+        return updated;
       }
 
-      await this.save(updated);
-      return updated;
-    }
+      const meta = {
+        schema_version: 1,
+        session_key: getSessionKey(ids.chatId, ids.topicId),
+        chat_id: ids.chatId,
+        topic_id: ids.topicId,
+        topic_name: topicName,
+        lifecycle_state: "active",
+        created_at: now,
+        updated_at: now,
+        created_via: createdVia,
+        inherited_from_session_key: inheritedFromSessionKey,
+        workspace_binding: cloneJson(workspaceBinding),
+        ...buildRuntimeStateFields(),
+        ui_language: normalizeUiLanguage(uiLanguage),
+      };
 
-    const meta = {
-      schema_version: 1,
-      session_key: getSessionKey(ids.chatId, ids.topicId),
-      chat_id: ids.chatId,
-      topic_id: ids.topicId,
-      topic_name: topicName,
-      lifecycle_state: "active",
-      created_at: now,
-      updated_at: now,
-      created_via: createdVia,
-      inherited_from_session_key: inheritedFromSessionKey,
-      workspace_binding: cloneJson(workspaceBinding),
-      ...buildRuntimeStateFields(),
-    };
-
-    await this.save(meta);
-    return meta;
+      await this.saveUnlocked(meta);
+      return meta;
+    });
   }
 
   async touchCommand(meta, commandName) {
-    const commandAt = new Date().toISOString();
-    const current =
-      (await this.load(meta.chat_id, meta.topic_id)) || meta;
-    const updated = {
-      ...current,
-      updated_at: commandAt,
-      last_command_name: commandName,
-      last_command_at: commandAt,
-    };
-    await this.save(updated);
-    return updated;
+    return this.withMetaLock(meta.chat_id, meta.topic_id, async () => {
+      const commandAt = new Date().toISOString();
+      const current =
+        (await readMetaJson(this.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
+      const updated = {
+        ...current,
+        updated_at: commandAt,
+        last_command_name: commandName,
+        last_command_at: commandAt,
+      };
+      await this.saveUnlocked(updated);
+      return updated;
+    });
   }
 
   async patch(meta, patch) {
-    const current =
-      (await this.load(meta.chat_id, meta.topic_id)) || meta;
-    const updated = {
-      ...stripLegacyMetaFields(current),
-      ...cloneJson(stripLegacyMetaFields(patch)),
-      updated_at: new Date().toISOString(),
-    };
-    await this.save(updated);
-    return updated;
+    return this.withMetaLock(meta.chat_id, meta.topic_id, async () => {
+      const current =
+        (await readMetaJson(this.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
+      const updated = {
+        ...stripLegacyMetaFields(current),
+        ...cloneJson(stripLegacyMetaFields(patch)),
+        updated_at: new Date().toISOString(),
+      };
+      await this.saveUnlocked(updated);
+      return updated;
+    });
   }
 
   async listSessions() {
@@ -367,6 +484,17 @@ export class SessionStore {
     );
   }
 
+  async readSessionText(meta, relativePath) {
+    const current =
+      (await this.load(meta.chat_id, meta.topic_id)) || meta;
+    return readOptionalText(
+      path.join(
+        this.getSessionDir(current.chat_id, current.topic_id),
+        relativePath,
+      ),
+    );
+  }
+
   async loadExchangeLog(meta) {
     const current =
       (await this.load(meta.chat_id, meta.topic_id)) || meta;
@@ -416,32 +544,37 @@ export class SessionStore {
   }
 
   async appendExchangeLogEntry(meta, entry) {
-    const current =
-      (await this.load(meta.chat_id, meta.topic_id)) || meta;
-    const normalizedEntry = normalizeExchangeLogEntry(entry);
-    if (!normalizedEntry) {
-      return {
-        session: current,
-        entry: null,
-        exchangeLogEntries: current.exchange_log_entries ?? 0,
+    return this.withMetaLock(meta.chat_id, meta.topic_id, async () => {
+      const current =
+        (await readMetaJson(this.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
+      const normalizedEntry = normalizeExchangeLogEntry(entry);
+      if (!normalizedEntry) {
+        return {
+          session: current,
+          entry: null,
+          exchangeLogEntries: current.exchange_log_entries ?? 0,
+        };
+      }
+
+      const currentCount = Number.isInteger(current.exchange_log_entries)
+        ? current.exchange_log_entries
+        : (await this.loadExchangeLog(current)).length;
+      const filePath = this.getExchangeLogPath(current.chat_id, current.topic_id);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.appendFile(filePath, `${JSON.stringify(normalizedEntry)}\n`, "utf8");
+      const updated = {
+        ...stripLegacyMetaFields(current),
+        exchange_log_entries: currentCount + 1,
+        updated_at: new Date().toISOString(),
       };
-    }
+      await this.saveUnlocked(updated);
 
-    const currentCount = Number.isInteger(current.exchange_log_entries)
-      ? current.exchange_log_entries
-      : (await this.loadExchangeLog(current)).length;
-    const filePath = this.getExchangeLogPath(current.chat_id, current.topic_id);
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.appendFile(filePath, `${JSON.stringify(normalizedEntry)}\n`, "utf8");
-    const updated = await this.patch(current, {
-      exchange_log_entries: currentCount + 1,
+      return {
+        session: updated,
+        entry: normalizedEntry,
+        exchangeLogEntries: updated.exchange_log_entries ?? currentCount + 1,
+      };
     });
-
-    return {
-      session: updated,
-      entry: normalizedEntry,
-      exchangeLogEntries: updated.exchange_log_entries ?? currentCount + 1,
-    };
   }
 
   async writeSessionText(meta, relativePath, content) {

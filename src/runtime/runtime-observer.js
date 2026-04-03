@@ -24,7 +24,15 @@ function buildEvent(type, details = {}) {
 }
 
 export class RuntimeObserver {
-  constructor({ logsDir, config, serviceState, probe, mode }) {
+  constructor({
+    logsDir,
+    config,
+    serviceState,
+    probe,
+    mode,
+    heartbeatFileName = "runtime-heartbeat.json",
+    eventsFileName = "runtime-events.ndjson",
+  }) {
     this.logsDir = logsDir;
     this.config = config;
     this.serviceState = serviceState;
@@ -34,8 +42,8 @@ export class RuntimeObserver {
     this.currentOffset = null;
     this.lastRetentionSweepAt = null;
     this.lastErrorMessage = null;
-    this.heartbeatPath = path.join(logsDir, "runtime-heartbeat.json");
-    this.eventsPath = path.join(logsDir, "runtime-events.ndjson");
+    this.heartbeatPath = path.join(logsDir, heartbeatFileName);
+    this.eventsPath = path.join(logsDir, eventsFileName);
   }
 
   buildHeartbeat({ observedAt = new Date().toISOString() } = {}) {

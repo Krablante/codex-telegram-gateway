@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { loadRuntimeConfig } from "../config/runtime-config.js";
 import { CodexWorkerPool } from "../pty-worker/worker-pool.js";
 import { createServiceState } from "../runtime/service-state.js";
+import { GlobalCodexSettingsStore } from "../session-manager/global-codex-settings-store.js";
 import { GlobalPromptSuffixStore } from "../session-manager/global-prompt-suffix-store.js";
 import { SessionCompactor } from "../session-manager/session-compactor.js";
 import { SessionLifecycleManager } from "../session-manager/session-lifecycle-manager.js";
@@ -101,6 +102,7 @@ async function main() {
   const probe = await runTelegramProbe(config, api);
   const serviceState = createServiceState(config, probe);
   const globalPromptSuffixStore = new GlobalPromptSuffixStore(layout.settings);
+  const globalCodexSettingsStore = new GlobalCodexSettingsStore(layout.settings);
   const sessionStore = new SessionStore(layout.sessions);
   const sessionCompactor = new SessionCompactor({ sessionStore, config });
   const lifecycleManager = new SessionLifecycleManager({
@@ -113,6 +115,7 @@ async function main() {
     config,
     sessionCompactor,
     globalPromptSuffixStore,
+    globalCodexSettingsStore,
   });
   const workerPool = new CodexWorkerPool({
     api,
@@ -121,6 +124,7 @@ async function main() {
     serviceState,
     sessionCompactor,
     sessionLifecycleManager: lifecycleManager,
+    globalCodexSettingsStore,
   });
   lifecycleManager.workerPool = workerPool;
 

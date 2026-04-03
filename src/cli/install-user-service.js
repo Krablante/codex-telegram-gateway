@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
 import {
+  SYSTEMD_USER_OMNI_SERVICE_NAME,
   SYSTEMD_USER_SERVICE_NAME,
   buildUserServiceUnit,
   getUserServiceUnitPath,
@@ -68,33 +69,43 @@ async function runSystemctl(args) {
 
 async function main() {
   const config = await loadRuntimeConfig();
+  const omniVariant = process.env.SERVICE_VARIANT === "omni";
+  const serviceName = omniVariant
+    ? SYSTEMD_USER_OMNI_SERVICE_NAME
+    : SYSTEMD_USER_SERVICE_NAME;
+  const description = omniVariant
+    ? "Codex Telegram Gateway Omni"
+    : "Codex Telegram Gateway";
+  const scriptPath = omniVariant ? "src/cli/run-omni.js" : "src/cli/run.js";
   const nodePath = process.execPath;
   const codexBinPath = await resolveCodexBinPath(config);
-  const unitPath = getUserServiceUnitPath();
+  const unitPath = getUserServiceUnitPath(undefined, serviceName);
   const unitText = buildUserServiceUnit({
     repoRoot: config.repoRoot,
     envFilePath: config.envFilePath,
     nodePath,
     codexBinPath,
     pathEntries: buildRuntimePath(nodePath),
+    description,
+    scriptPath,
   });
 
   await fs.mkdir(path.dirname(unitPath), { recursive: true });
   await fs.writeFile(unitPath, unitText, "utf8");
 
   await runSystemctl(["daemon-reload"]);
-  await runSystemctl(["enable", "--now", SYSTEMD_USER_SERVICE_NAME]);
+  await runSystemctl(["enable", "--now", serviceName]);
 
   const { stdout } = await execFileAsync("systemctl", [
     "--user",
     "show",
-    SYSTEMD_USER_SERVICE_NAME,
+    serviceName,
     "--property=ActiveState,SubState,UnitFileState",
   ]);
 
   const linger = await readLingerState();
 
-  printLine("service", SYSTEMD_USER_SERVICE_NAME);
+  printLine("service", serviceName);
   printLine("unit_path", unitPath);
   printLine("node", nodePath);
   printLine("codex", codexBinPath);

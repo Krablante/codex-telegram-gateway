@@ -8,8 +8,8 @@ import {
 const OFFSET_FILE_NAME = "telegram-update-offset.json";
 
 export class UpdateOffsetStore {
-  constructor(indexesRoot) {
-    this.filePath = path.join(indexesRoot, OFFSET_FILE_NAME);
+  constructor(indexesRoot, { fileName = OFFSET_FILE_NAME } = {}) {
+    this.filePath = path.join(indexesRoot, fileName);
   }
 
   async load() {

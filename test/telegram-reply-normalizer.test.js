@@ -1,12 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeTelegramReply } from "../src/transport/telegram-reply-normalizer.js";
+import {
+  normalizeTelegramReply,
+  renderTelegramHtml,
+  splitTelegramReply,
+} from "../src/transport/telegram-reply-normalizer.js";
 
-test("normalizeTelegramReply removes inline markdown noise for Telegram chat", () => {
+const TELEGRAM_INDENT = "\u00A0\u00A0\u00A0\u00A0";
+
+test("normalizeTelegramReply keeps plain session-friendly text and strips local file targets", () => {
   const source = [
-    "Создан [`test.js`](/home/example/workspace/test.js).",
-    "Проверил `SIGTERM` и `atlas`.",
+    "Создан [`test.js`](/workspace/test.js).",
+    "Проверил `SIGTERM` и **workspace**.",
     "",
     "Смотри [документацию](https://example.com/docs).",
   ].join("\n");
@@ -15,41 +21,74 @@ test("normalizeTelegramReply removes inline markdown noise for Telegram chat", (
     normalizeTelegramReply(source),
     [
       "Создан test.js.",
-      "Проверил SIGTERM и atlas.",
+      "Проверил SIGTERM и workspace.",
       "",
       "Смотри документацию: https://example.com/docs.",
     ].join("\n"),
   );
 });
 
-test("normalizeTelegramReply preserves fenced code blocks", () => {
+test("renderTelegramHtml converts supported Codex markdown to Telegram HTML", () => {
   const source = [
-    "Открой [`test.js`](/home/example/workspace/test.js).",
+    "# Заголовок",
+    "",
+    "Смотри [`README.md#L5`](/workspace/README.md#L5) и [документацию](https://example.com/docs).",
+    "",
+    "> Цитата с `code`, **bold**, ~~strike~~ и ||spoiler||.",
     "",
     "```js",
-    "console.log(`keep backticks here`);",
+    "console.log('hello');",
     "```",
   ].join("\n");
 
   assert.equal(
-    normalizeTelegramReply(source),
+    renderTelegramHtml(source),
     [
-      "Открой test.js.",
+      "<b>Заголовок</b>",
       "",
-      "```js",
-      "console.log(`keep backticks here`);",
-      "```",
+      'Смотри <code>README.md#L5</code> и <a href="https://example.com/docs">документацию</a>.',
+      "",
+      "<blockquote>Цитата с <code>code</code>, <b>bold</b>, strike и spoiler.</blockquote>",
+      "",
+      '<pre><code class="language-js">console.log(\'hello\');</code></pre>',
     ].join("\n"),
   );
 });
 
-test("normalizeTelegramReply keeps only file labels for local code references", () => {
+test("renderTelegramHtml keeps nested list structure readable in Telegram", () => {
   const source = [
-    "Смотри [README.md#L5](/home/example/workspace/README.md#L5) и [worker-pool.js#L392](/home/example/workspace/src/worker-pool.js#L392).",
+    "- top bullet",
+    "  - nested bullet with `code`",
+    "    - deep bullet",
+    "1. first step",
+    "  1. nested numbered step",
   ].join("\n");
 
   assert.equal(
-    normalizeTelegramReply(source),
-    "Смотри README.md#L5 и worker-pool.js#L392.",
+    renderTelegramHtml(source),
+    [
+      "• top bullet",
+      `${TELEGRAM_INDENT}◦ nested bullet with <code>code</code>`,
+      `${TELEGRAM_INDENT}${TELEGRAM_INDENT}▪ deep bullet`,
+      "1. first step",
+      `${TELEGRAM_INDENT}1. nested numbered step`,
+    ].join("\n"),
   );
+});
+
+test("splitTelegramReply keeps fenced code blocks valid across chunks", () => {
+  const repeated = Array.from({ length: 12 }, (_, index) => `line-${index}-${"x".repeat(40)}`);
+  const source = [
+    "```txt",
+    ...repeated,
+    "```",
+  ].join("\n");
+
+  const chunks = splitTelegramReply(source, 220);
+  assert.ok(chunks.length > 1);
+  for (const chunk of chunks) {
+    assert.ok(chunk.length <= 220);
+    assert.match(chunk, /^<pre>/u);
+    assert.match(chunk, /<\/pre>$/u);
+  }
 });

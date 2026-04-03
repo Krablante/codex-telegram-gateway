@@ -17,14 +17,14 @@ test("PromptFragmentAssembler flushes buffered long prompt fragments after a qui
   const firstMessage = {
     text: "A".repeat(3200),
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 1,
     message_thread_id: 77,
   };
   const secondMessage = {
     text: "B",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 2,
     message_thread_id: 77,
   };
@@ -68,14 +68,14 @@ test("PromptFragmentAssembler auto-buffers Telegram media groups even when the c
     caption: "bundle these files",
     media_group_id: "docs-1",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 5,
     message_thread_id: 77,
   };
   const secondMessage = {
     media_group_id: "docs-1",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 6,
     message_thread_id: 77,
   };
@@ -107,14 +107,14 @@ test("PromptFragmentAssembler extends buffering when a tail fragment lands durin
   const firstMessage = {
     text: "A".repeat(3200),
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 10,
     message_thread_id: 88,
   };
   const secondMessage = {
     text: " tail",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 11,
     message_thread_id: 88,
   };
@@ -145,7 +145,7 @@ test("PromptFragmentAssembler restores buffered fragments after a flush failure"
   const message = {
     text: "A".repeat(3200),
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 20,
     message_thread_id: 89,
   };
@@ -165,7 +165,7 @@ test("PromptFragmentAssembler restores buffered fragments after a flush failure"
   assert.equal(assembler.cancelPendingForMessage(message).messageCount, 1);
 });
 
-test("PromptFragmentAssembler supports a manual wait window for short follow-up parts", async () => {
+test("PromptFragmentAssembler supports a topic-local one-shot wait window for short follow-up parts", async () => {
   const flushed = [];
   const assembler = new PromptFragmentAssembler({
     flushDelayMs: 20,
@@ -175,28 +175,28 @@ test("PromptFragmentAssembler supports a manual wait window for short follow-up 
   const manualWindowMessage = {
     text: "/wait 1m",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 30,
     message_thread_id: 90,
   };
   const firstPayload = {
     text: "short one",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 31,
     message_thread_id: 90,
   };
   const secondPayload = {
     text: " short two",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 32,
     message_thread_id: 90,
   };
   const thirdPayload = {
     text: "third prompt",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 33,
     message_thread_id: 91,
   };
@@ -220,18 +220,12 @@ test("PromptFragmentAssembler supports a manual wait window for short follow-up 
 
   await sleep(25);
   assert.deepEqual(flushed, [[31, 32]]);
-  assert.equal(assembler.getStateForMessage(firstPayload).active, true);
-  assert.equal(assembler.getStateForMessage(firstPayload).messageCount, 0);
-
-  assembler.enqueue({ message: thirdPayload });
-  await sleep(20);
-  assert.deepEqual(flushed, [[31, 32]]);
-
-  await sleep(25);
-  assert.deepEqual(flushed, [[31, 32], [33]]);
+  assert.equal(assembler.getStateForMessage(firstPayload).active, false);
+  assert.equal(assembler.getStateForMessage(firstPayload).local.active, false);
+  assert.equal(assembler.shouldBufferMessage(thirdPayload, thirdPayload.text), false);
 });
 
-test("PromptFragmentAssembler makes manual wait windows global across topics", async () => {
+test("PromptFragmentAssembler keeps a global wait window across topics until disabled", async () => {
   const flushed = [];
   const assembler = new PromptFragmentAssembler({
     flushDelayMs: 20,
@@ -241,27 +235,28 @@ test("PromptFragmentAssembler makes manual wait windows global across topics", a
   const manualWindowMessage = {
     text: "wait 600",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 40,
     message_thread_id: 90,
   };
   const firstPayload = {
     text: "first global part",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 41,
     message_thread_id: 91,
   };
   const secondPayload = {
     text: " second global part",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 42,
     message_thread_id: 92,
   };
 
   assembler.openWindow({
     message: manualWindowMessage,
+    scope: "global",
     flushDelayMs: 30,
     flush: async (messages) => {
       flushed.push(messages.map((message) => message.message_id));
@@ -277,28 +272,30 @@ test("PromptFragmentAssembler makes manual wait windows global across topics", a
 
   await sleep(25);
   assert.deepEqual(flushed, [[41, 42]]);
+  assert.equal(assembler.getStateForMessage(firstPayload).active, true);
+  assert.equal(assembler.getStateForMessage(firstPayload).global.active, true);
 });
 
-test("PromptFragmentAssembler does not treat another topic command as owning the pending manual wait draft", () => {
+test("PromptFragmentAssembler keeps a topic-local wait draft invisible to other topics", () => {
   const assembler = new PromptFragmentAssembler();
   const manualWindowMessage = {
     text: "wait 600",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 50,
     message_thread_id: 100,
   };
   const payload = {
     text: "pending draft",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 51,
     message_thread_id: 101,
   };
   const otherTopicCommand = {
     text: "/status",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 52,
     message_thread_id: 102,
   };
@@ -308,8 +305,48 @@ test("PromptFragmentAssembler does not treat another topic command as owning the
   });
   assembler.enqueue({ message: payload });
 
-  assert.equal(assembler.hasPendingForMessage(otherTopicCommand), true);
+  assert.equal(assembler.hasPendingForMessage(otherTopicCommand), false);
   assert.equal(assembler.hasPendingForSameTopicMessage(otherTopicCommand), false);
+});
+
+test("PromptFragmentAssembler gives topic-local wait priority over global wait", () => {
+  const assembler = new PromptFragmentAssembler();
+  const globalWaitMessage = {
+    text: "wait global 600",
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
+    message_id: 60,
+    message_thread_id: 100,
+  };
+  const localWaitMessage = {
+    text: "wait 60",
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
+    message_id: 61,
+    message_thread_id: 101,
+  };
+  const localPayload = {
+    text: "local draft",
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
+    message_id: 62,
+    message_thread_id: 101,
+  };
+  const otherTopicPayload = {
+    text: "global draft",
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
+    message_id: 63,
+    message_thread_id: 102,
+  };
+
+  assembler.openWindow({ message: globalWaitMessage, scope: "global" });
+  assembler.openWindow({ message: localWaitMessage, scope: "topic" });
+
+  assert.equal(assembler.shouldBufferMessage(localPayload, localPayload.text), true);
+  assert.equal(assembler.shouldBufferMessage(otherTopicPayload, otherTopicPayload.text), true);
+  assert.equal(assembler.getStateForMessage(localPayload).scope, "topic");
+  assert.equal(assembler.getStateForMessage(otherTopicPayload).scope, "global");
 });
 
 test("PromptFragmentAssembler keeps auto long-prompt buffering topic-local", async () => {
@@ -321,14 +358,14 @@ test("PromptFragmentAssembler keeps auto long-prompt buffering topic-local", asy
   const longMessage = {
     text: "A".repeat(3200),
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 50,
     message_thread_id: 101,
   };
   const otherTopicShortMessage = {
     text: "short",
     chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    from: { id: 123456789 },
     message_id: 51,
     message_thread_id: 102,
   };

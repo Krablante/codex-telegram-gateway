@@ -38,7 +38,24 @@ function buildManualWaitWindowKey(message) {
 
   return [
     "wait",
+    "global",
     normalizeKeyPart(chatId, "chat"),
+    normalizeKeyPart(fromId, "user"),
+  ].join(":");
+}
+
+function buildLocalManualWaitWindowKey(message) {
+  const chatId = message?.chat?.id;
+  const fromId = message?.from?.id;
+  if (chatId === undefined || chatId === null || fromId === undefined || fromId === null) {
+    return null;
+  }
+
+  return [
+    "wait",
+    "topic",
+    normalizeKeyPart(chatId, "chat"),
+    normalizeKeyPart(message?.message_thread_id, "general"),
     normalizeKeyPart(fromId, "user"),
   ].join(":");
 }
@@ -63,6 +80,47 @@ function buildEntry(key, { flush = null, flushDelayMs, mode = "auto" } = {}) {
   };
 }
 
+function isManualEntryMode(mode) {
+  return mode === "manual-local" || mode === "manual-global";
+}
+
+function describeEntry(entry, inFlight = false) {
+  if (!entry && !inFlight) {
+    return {
+      active: false,
+      key: null,
+      mode: null,
+      entryMode: null,
+      scope: null,
+      persistent: false,
+      messageCount: 0,
+      flushDelayMs: null,
+      flushing: false,
+    };
+  }
+
+  const entryMode = entry?.mode ?? null;
+  const manual = isManualEntryMode(entryMode);
+  const scope =
+    entryMode === "manual-global"
+      ? "global"
+      : entryMode === "manual-local"
+        ? "topic"
+        : "topic";
+
+  return {
+    active: true,
+    key: entry?.key ?? null,
+    mode: manual ? "manual" : entryMode,
+    entryMode,
+    scope,
+    persistent: entryMode === "manual-global",
+    messageCount: entry?.messages.length ?? 0,
+    flushDelayMs: entry?.flushDelayMs ?? null,
+    flushing: Boolean(entry?.flushing || inFlight),
+  };
+}
+
 export class PromptFragmentAssembler {
   constructor({
     flushDelayMs = DEFAULT_FLUSH_DELAY_MS,
@@ -80,18 +138,37 @@ export class PromptFragmentAssembler {
     this.inFlight = new Map();
   }
 
-  getActiveManualWindowKey(message) {
+  getActiveLocalManualWindowKey(message) {
+    const key = buildLocalManualWaitWindowKey(message);
+    if (!key) {
+      return null;
+    }
+
+    const entry = this.entries.get(key);
+    if (isManualEntryMode(entry?.mode) || this.inFlight.has(key)) {
+      return key;
+    }
+
+    return null;
+  }
+
+  getActiveGlobalManualWindowKey(message) {
     const key = buildManualWaitWindowKey(message);
     if (!key) {
       return null;
     }
 
     const entry = this.entries.get(key);
-    if (entry?.mode === "manual" || this.inFlight.has(key)) {
+    if (isManualEntryMode(entry?.mode) || this.inFlight.has(key)) {
       return key;
     }
 
     return null;
+  }
+
+  getActiveManualWindowKey(message) {
+    return this.getActiveLocalManualWindowKey(message)
+      || this.getActiveGlobalManualWindowKey(message);
   }
 
   getActiveTopicBufferKey(message) {
@@ -163,30 +240,29 @@ export class PromptFragmentAssembler {
 
   getStateForMessage(message) {
     const key = this.getPreferredActiveKey(message);
-    if (!key) {
-      return {
-        active: false,
-        key: null,
-        mode: null,
-        messageCount: 0,
-        flushDelayMs: null,
-        flushing: false,
-      };
-    }
+    const entry = key ? this.entries.get(key) : null;
+    const effective = describeEntry(entry, key ? this.inFlight.has(key) : false);
+    const localKey = buildLocalManualWaitWindowKey(message);
+    const globalKey = buildManualWaitWindowKey(message);
 
-    const entry = this.entries.get(key);
     return {
-      active: Boolean(entry || this.inFlight.has(key)),
-      key,
-      mode: entry?.mode ?? null,
-      messageCount: entry?.messages.length ?? 0,
-      flushDelayMs: entry?.flushDelayMs ?? null,
-      flushing: Boolean(entry?.flushing || this.inFlight.has(key)),
+      ...effective,
+      local: describeEntry(
+        localKey ? this.entries.get(localKey) : null,
+        localKey ? this.inFlight.has(localKey) : false,
+      ),
+      global: describeEntry(
+        globalKey ? this.entries.get(globalKey) : null,
+        globalKey ? this.inFlight.has(globalKey) : false,
+      ),
     };
   }
 
-  openWindow({ message, flushDelayMs = this.flushDelayMs, flush } = {}) {
-    const key = buildManualWaitWindowKey(message);
+  openWindow({ message, flushDelayMs = this.flushDelayMs, flush, scope = "topic" } = {}) {
+    const key =
+      scope === "global"
+        ? buildManualWaitWindowKey(message)
+        : buildLocalManualWaitWindowKey(message);
     if (!key) {
       return {
         buffered: false,
@@ -199,12 +275,12 @@ export class PromptFragmentAssembler {
       entry = buildEntry(key, {
         flushDelayMs,
         flush,
-        mode: "manual",
+        mode: scope === "global" ? "manual-global" : "manual-local",
       });
       this.entries.set(key, entry);
     }
 
-    entry.mode = "manual";
+    entry.mode = scope === "global" ? "manual-global" : "manual-local";
     entry.flushDelayMs = flushDelayMs;
     if (typeof flush === "function") {
       entry.flush = flush;
@@ -218,7 +294,8 @@ export class PromptFragmentAssembler {
     return {
       buffered: true,
       key,
-      mode: entry.mode,
+      mode: isManualEntryMode(entry.mode) ? "manual" : entry.mode,
+      scope,
       partCount: entry.messages.length,
       flushDelayMs: entry.flushDelayMs,
     };
@@ -266,7 +343,14 @@ export class PromptFragmentAssembler {
   }
 
   cancelPendingForMessage(message, options = {}) {
-    const key = this.getPreferredActiveKey(message);
+    let key = null;
+    if (options.scope === "global") {
+      key = buildManualWaitWindowKey(message);
+    } else if (options.scope === "topic") {
+      key = buildLocalManualWaitWindowKey(message);
+    } else {
+      key = this.getPreferredActiveKey(message);
+    }
     return this.cancelKey(key, options);
   }
 
@@ -344,7 +428,7 @@ export class PromptFragmentAssembler {
     entry.flushing = false;
     const messageCount = entry.messages.length;
 
-    if (preserveManualWindow && entry.mode === "manual") {
+    if (preserveManualWindow && isManualEntryMode(entry.mode)) {
       entry.messages = [];
     } else {
       this.entries.delete(key);
@@ -377,13 +461,13 @@ export class PromptFragmentAssembler {
 
     const messages = [...entry.messages];
     if (messages.length === 0) {
-      if (entry.mode !== "manual") {
+      if (entry.mode !== "manual-global") {
         this.entries.delete(key);
       }
       return false;
     }
 
-    const keepManualWindow = entry.mode === "manual";
+    const keepManualWindow = entry.mode === "manual-global";
     if (keepManualWindow) {
       entry.messages = [];
     } else {
