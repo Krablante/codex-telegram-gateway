@@ -61,6 +61,8 @@ Binding rules for `/new`:
 - if `DEFAULT_SESSION_BINDING_PATH` is unset, it falls back to `WORKSPACE_ROOT`
 - `/new cwd=backend/api Topic Name` resolves `backend/api` relative to `WORKSPACE_ROOT`
 - `/new cwd=/absolute/path Topic Name` uses that absolute path directly
+- on Windows, use a Windows absolute path such as `cwd=C:/Users/you/work/api`
+- avoid spaces inside `cwd=...` when using `/new`, because the command parser splits command arguments on spaces
 
 Current local panel coverage:
 

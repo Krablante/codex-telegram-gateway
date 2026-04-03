@@ -120,12 +120,21 @@ WORKSPACE_ROOT=/home/you/work
 DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo
 ```
 
+Windows example:
+
+```env
+WORKSPACE_ROOT=C:/Users/you/work
+DEFAULT_SESSION_BINDING_PATH=C:/Users/you/work/main-repo
+```
+
 What that means in practice:
 
 - `/new Backend Cleanup` starts in `/home/you/work/main-repo`
 - `/new cwd=experiments/prototype Prototype work` resolves to `/home/you/work/experiments/prototype`
 - if `DEFAULT_SESSION_BINDING_PATH` is unset, the gateway falls back to `WORKSPACE_ROOT`
 - if `WORKSPACE_ROOT` is also unset, the final fallback is your home directory, which is usually not what you want
+- on Windows, use Windows paths for both env values and absolute `cwd=...` values
+- for `/new cwd=...`, prefer paths without spaces because the command parser splits on spaces
 
 ## 5. Validate Before Running
 

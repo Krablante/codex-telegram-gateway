@@ -211,11 +211,24 @@ WORKSPACE_ROOT=/home/you/work
 DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo
 ```
 
+Windows example:
+
+```env
+WORKSPACE_ROOT=C:/Users/you/work
+DEFAULT_SESSION_BINDING_PATH=C:/Users/you/work/main-repo
+```
+
 With that setup:
 
 - `/new Backend Cleanup` starts in `/home/you/work/main-repo`
 - `/new cwd=experiments/lab Lab thread` starts in `/home/you/work/experiments/lab`
 - `/new cwd=/srv/shared/repo Hotfix` uses that absolute path directly
+
+Path rules:
+
+- use paths that make sense on the machine where the gateway itself is running
+- Linux examples in this repo use `/home/...`, but on Windows you should use paths such as `C:/Users/you/work`
+- for `/new cwd=...`, prefer paths without spaces because the slash-command parser treats spaces as argument separators
 
 ## Useful Repo Entry Points
 
