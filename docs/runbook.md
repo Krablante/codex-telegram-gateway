@@ -1,100 +1,63 @@
 # Codex Telegram Gateway Runbook
 
-## Goal
+Use this file for live operations and recovery. Product surface details live in:
 
-Keep the gateway running as a long-lived host service without inventing a separate supervisor stack.
+- [telegram-surface.md](./telegram-surface.md)
+- [omni-auto.md](./omni-auto.md)
+- [deployment.md](./deployment.md)
+- [testing.md](./testing.md)
 
-## Repo-local checks
+## Repo-Local Checks
 
 ```bash
 make admin ARGS='status'
 make admin ARGS='sessions --state parked'
 make doctor
 make test
-make test-live
-make soak
 ```
 
-## Manual foreground run
+## Manual Foreground Run
 
 ```bash
 make run
 ```
 
-## Manual collection window
+With Omni enabled:
 
-Inside a working topic you can enable a persistent buffered input mode:
-
-- `/wait 60`, `wait 600`, or `/wait 1m` enables one global buffered prompt mode for the same chat/user
-- the mode stays on until `/wait off` or a new `/wait <time>`
-- each new part inside the current prompt resets the timer
-- a standalone `Все` flushes the buffered payload immediately
-- `/wait` shows current state
-- `/wait off` disables the mode and drops buffered parts
-
-## Help card
-
-- `/help` returns the current quick-reference card with the live command set
-- `/language rus` or `/language eng` switches the topic UI language; `/help` follows that language too
-- if Telegram image delivery degrades, the bot falls back to a plain text cheat sheet
-
-## Emergency lane
-
-Use the bot's private chat as the operator-only emergency lane.
-
-- it activates on demand when the allowed operator writes to the bot in private chat
-- it bypasses normal topic/session routing and launches one isolated `codex exec` repair run
-- supported commands in private chat: `/help`, `/status`, `/interrupt`
-- file-first works there too: send the attachment first, then the task text in the next private message
-- while the emergency run is active, normal operator prompts in topics are blocked to keep the rescue path isolated
-- the lock disappears automatically when the emergency run finishes, or immediately after `/interrupt`
-
-## Runtime visibility
-
-Default state root:
-
-```text
-${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway
+```bash
+make run-omni
 ```
 
-Useful files:
+## Runtime Visibility
 
-- `logs/runtime-heartbeat.json`
-- `logs/runtime-events.ndjson`
-- `logs/doctor-last-run.json`
-- `sessions/<chat-id>/<topic-id>/exchange-log.jsonl`
-- `sessions/<chat-id>/<topic-id>/active-brief.md`
+- heartbeat: `${STATE_ROOT}/logs/runtime-heartbeat.json`
+- events: `${STATE_ROOT}/logs/runtime-events.ndjson`
+- doctor snapshot: `${STATE_ROOT}/logs/doctor-last-run.json`
+- per-session exchange log: `${STATE_ROOT}/sessions/<chat-id>/<topic-id>/exchange-log.jsonl`
+- per-session brief: `${STATE_ROOT}/sessions/<chat-id>/<topic-id>/active-brief.md`
 
-When the service is healthy, `runtime-heartbeat.json` should show:
+Healthy runtime usually means:
 
 - `lifecycle_state: running`
-- advancing `observed_at`
-- stable `bot.username`
-- sensible `service_state.active_run_count`
+- fresh `observed_at`
+- sensible `active_run_count`
+- expected bot usernames and forum chat id
 
-## Transport model
+## Local Admin Surface
 
-- each topic run is driven through `codex app-server`, not one-shot `codex exec`
-- active follow-up user messages can be injected into the same live turn through `turn/steer`
-- if the websocket drops mid-run, the gateway can keep tailing the rollout file and still wait for the final answer
-- progress bubbles should show only commentary text from the main run
-- the emergency private-chat lane intentionally stays on the simpler `codex exec` path so it can still operate if the topic/session transport is what broke
-
-## Local admin surface
+Use the repo-local admin CLI when a topic is already parked or deleted and Telegram commands are no longer reachable:
 
 ```bash
 make admin ARGS='status'
 make admin ARGS='sessions --state parked'
-make admin ARGS='show <chat-id> <topic-id>'
-make admin ARGS='pin <chat-id> <topic-id>'
-make admin ARGS='unpin <chat-id> <topic-id>'
-make admin ARGS='reactivate <chat-id> <topic-id>'
-make admin ARGS='purge <chat-id> <topic-id>'
+make admin ARGS='show -1001234567890 12345'
+make admin ARGS='pin -1001234567890 12345'
+make admin ARGS='unpin -1001234567890 12345'
+make admin ARGS='reactivate -1001234567890 12345'
+make admin ARGS='purge -1001234567890 12345'
 ```
 
-## Host wrapper
-
-This repo ships a minimal user `systemd` install path:
+## Services
 
 ```bash
 make service-install
@@ -103,14 +66,30 @@ make service-logs
 make service-restart
 ```
 
-The installed user unit runs `src/cli/run.js` directly under the resolved Node binary so `systemd` tracks the real poller PID.
+With Omni enabled:
 
-## Failure handling
+```bash
+make service-install-omni
+make service-status-omni
+make service-logs-omni
+make service-restart-omni
+```
 
-- run `make doctor` first to verify Telegram auth, chat access, and webhook state
-- use `make admin ARGS='status'` before restarting the service if you need a quick global snapshot
-- inspect `runtime-heartbeat.json` and `runtime-events.ndjson` before touching session state
-- if only one topic is wedged, prefer `/status`, `/interrupt`, or `/purge` inside that topic instead of restarting the whole service
-- if the topic path itself is what broke, switch to the bot's private chat and use the emergency lane there instead of poking the broken topic harder
-- if a stored `codex_thread_id` no longer resumes cleanly, the runtime retries resume once and only then regenerates `active-brief.md` from `exchange-log.jsonl`
-- after manual `/compact`, expect the next fresh run to start from that rebuilt brief instead of a near-empty context bootstrap
+## Failure Handling
+
+- run `make doctor` first
+- use `make admin ARGS='status'` before blind restarts
+- if only one topic is wedged, prefer topic-level `/status`, `/interrupt`, `/purge`
+- if a live run is still active, avoid blind `service-restart`
+- if the topic path itself is broken, switch to the emergency private chat lane
+- if the topic is already gone, use the local admin surface instead of poking Telegram harder
+- correlate `runtime-events.ndjson`, `meta.json`, `exchange-log.jsonl`, and `active-brief.md` before hand-editing state
+- after manual `/compact`, expect the next fresh run to bootstrap from `active-brief.md`
+
+## Recovery Notes
+
+- if a stored `codex_thread_id` no longer resumes cleanly, the runtime retries once before falling back to compact recovery
+- if Omni is disabled globally, old topic `auto_mode` state stays on disk but becomes inert
+- if Telegram reports a topic as unavailable, the session may move into `parked`
+- if Telegram loses the original reply target for a topic message, topic delivery falls back to a plain send in the same topic
+- expired parked sessions may be auto-purged by retention sweep

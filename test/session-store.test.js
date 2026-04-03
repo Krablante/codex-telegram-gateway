@@ -8,10 +8,10 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/workspace",
+    cwd: "/workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/workspace",
   };
 }
 
@@ -22,21 +22,24 @@ test("SessionStore creates and updates session meta", async () => {
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 55,
     topicName: "Slice 3 test",
     createdVia: "command/new",
     workspaceBinding: buildBinding(),
   });
 
-  assert.equal(created.session_key, "-1003577434463:55");
+  assert.equal(created.session_key, "-1001234567890:55");
   assert.equal(created.topic_name, "Slice 3 test");
   assert.equal(created.ui_language, "rus");
+  assert.equal(created.auto_mode.enabled, false);
+  assert.equal(created.auto_mode.phase, "off");
 
-  const loaded = await store.load("-1003577434463", "55");
-  assert.equal(loaded.session_key, "-1003577434463:55");
+  const loaded = await store.load("-1001234567890", "55");
+  assert.equal(loaded.session_key, "-1001234567890:55");
+  assert.equal(loaded.auto_mode.enabled, false);
   const topicContextText = await fs.readFile(
-    store.getTopicContextPath("-1003577434463", "55"),
+    store.getTopicContextPath("-1001234567890", "55"),
     "utf8",
   );
   assert.match(topicContextText, /topic_id: 55/u);
@@ -58,7 +61,7 @@ test("SessionStore tracks exchange log, artifacts, purge stubs, and reactivation
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 77,
     topicName: "Slice 5 test",
     createdVia: "command/new",
@@ -103,7 +106,7 @@ test("SessionStore tracks exchange log, artifacts, purge stubs, and reactivation
   );
 
   const reactivated = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 77,
     createdVia: "topic/reactivate",
     workspaceBinding: buildBinding(),
@@ -125,7 +128,7 @@ test("SessionStore loads compact state from active brief and exchange log", asyn
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 88,
     topicName: "Compact state test",
     createdVia: "command/new",
@@ -150,6 +153,29 @@ test("SessionStore loads compact state from active brief and exchange log", asyn
   assert.equal(compactState.exchangeLog[0].assistant_reply, "SENTINEL_FOX");
 });
 
+test("SessionStore preserves cache-only model overrides across reload", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const store = new SessionStore(sessionsRoot);
+
+  let session = await store.ensure({
+    chatId: -1001234567890,
+    topicId: 90,
+    topicName: "Model persistence",
+    createdVia: "command/new",
+    workspaceBinding: buildBinding(),
+  });
+  session = await store.patch(session, {
+    spike_model_override: "gpt-5.9-preview",
+    omni_model_override: "gpt-5.9-preview",
+  });
+
+  const reloaded = await store.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.spike_model_override, "gpt-5.9-preview");
+  assert.equal(reloaded.omni_model_override, "gpt-5.9-preview");
+});
+
 test("SessionStore strips legacy memory files on request", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -157,7 +183,7 @@ test("SessionStore strips legacy memory files on request", async () => {
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 89,
     topicName: "Legacy cleanup",
     createdVia: "command/new",
@@ -198,18 +224,18 @@ test("SessionStore skips malformed meta files and quarantines them", async () =>
   const store = new SessionStore(sessionsRoot);
 
   const valid = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 99,
     topicName: "Valid session",
     createdVia: "command/new",
     workspaceBinding: buildBinding(),
   });
 
-  const corruptDir = store.getSessionDir("-1003577434463", "100");
+  const corruptDir = store.getSessionDir("-1001234567890", "100");
   await fs.mkdir(corruptDir, { recursive: true });
   await fs.writeFile(path.join(corruptDir, "meta.json"), "{", "utf8");
 
-  assert.equal(await store.load("-1003577434463", "100"), null);
+  assert.equal(await store.load("-1001234567890", "100"), null);
   const quarantined = await fs.readdir(corruptDir);
   assert.equal(
     quarantined.some((entry) => entry.startsWith("meta.json.corrupt-")),
@@ -228,7 +254,7 @@ test("SessionStore quarantines malformed exchange logs instead of treating them 
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 111,
     topicName: "Corrupt exchange log",
     createdVia: "command/new",
@@ -250,4 +276,61 @@ test("SessionStore quarantines malformed exchange logs instead of treating them 
     filesAfterLoad.some((entry) => entry.startsWith("exchange-log.jsonl.corrupt-")),
     true,
   );
+});
+
+test("SessionStore serializes concurrent meta patches across writers", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const storeA = new SessionStore(sessionsRoot);
+  const storeB = new SessionStore(sessionsRoot);
+
+  const created = await storeA.ensure({
+    chatId: -1001234567890,
+    topicId: 120,
+    topicName: "Concurrent patch test",
+    createdVia: "command/new",
+    workspaceBinding: buildBinding(),
+  });
+
+  let patchFinished = false;
+  const slowWriter = storeA.withMetaLock(
+    created.chat_id,
+    created.topic_id,
+    async () => {
+      const current = await storeA.load(created.chat_id, created.topic_id);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await storeA.saveUnlocked({
+        ...current,
+        last_command_name: "status-locked",
+        last_command_at: "2026-04-01T18:11:00.000Z",
+      });
+    },
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const concurrentPatch = storeB.patch(created, {
+    prompt_suffix_enabled: true,
+    prompt_suffix_text: "suffix-locked",
+  }).then(() => {
+    patchFinished = true;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(
+    patchFinished,
+    false,
+    "concurrent patch should wait for the existing meta lock",
+  );
+
+  await Promise.all([slowWriter, concurrentPatch]);
+
+  const loaded = await storeA.load(created.chat_id, created.topic_id);
+  assert.equal(loaded.last_command_name, "status-locked");
+  assert.equal(
+    loaded.last_command_at,
+    "2026-04-01T18:11:00.000Z",
+  );
+  assert.equal(loaded.prompt_suffix_enabled, true);
+  assert.equal(loaded.prompt_suffix_text, "suffix-locked");
 });

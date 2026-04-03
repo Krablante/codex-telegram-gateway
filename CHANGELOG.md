@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.2.0] - 2026-04-03
+
+Highlights:
+
+- optional `Omni` bot and `/auto` now ship publicly, including goal-locked supervision, topic-scoped Omni memory, richer Spike handoffs, sleep/pivot decisions, and safe auto-compact at cycle boundaries
+- new Telegram control surface: `/guide`, `/global`, `/menu`, `/q`, `/omni_model`, `/omni_reasoning`, and topic/global runtime-setting menus
+- `/q` now supports true queued prompts, status/delete operations, attachment-aware queueing, and correct handoff across the short finalization window
+- `/guide` generates a beginner PDF guidebook from source markdown, with public-safe wording and no private workspace references
+- Telegram reply rendering is more robust: nested lists, code blocks, links, path-label shortening, and file-send blocks behave better in real topics
+- deployment can run cleanly in Spike-only mode; Omni is fully optional and its command surface disappears when disabled
+- docs were restructured into focused guides for setup, deployment, operator surface, `/auto`, testing, runbook, and state contract
+- public defaults are now generic again: XDG state/config paths, repo-local `.env` for `make`, generic `WORKSPACE_ROOT`, and public-safe examples/fixtures
+
 ## [0.1.2] - 2026-04-01
 
 Fixes:

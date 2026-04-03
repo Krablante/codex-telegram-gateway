@@ -6,9 +6,17 @@ import { markPromptAccepted, setActiveRunCount } from "../runtime/service-state.
 import { runCodexTask } from "./codex-runner.js";
 import { buildCompactResumePrompt, summarizeCompactState } from "./compact-resume.js";
 import { TelegramProgressMessage } from "../transport/progress-message.js";
-import { normalizeTelegramReply } from "../transport/telegram-reply-normalizer.js";
+import {
+  normalizeTelegramReply,
+  splitTelegramReply,
+} from "../transport/telegram-reply-normalizer.js";
 import { extractTelegramFileDirectives } from "../transport/telegram-file-directive.js";
 import { deliverDocumentToTopic } from "../transport/topic-document-delivery.js";
+import { isAutoModeEnabled } from "../session-manager/auto-mode.js";
+import {
+  loadAvailableCodexModels,
+  resolveCodexRuntimeProfile,
+} from "../session-manager/codex-runtime-settings.js";
 import { buildTopicContextPrompt } from "../session-manager/topic-context.js";
 
 const MAX_THREAD_RESUME_RETRIES = 1;
@@ -87,6 +95,12 @@ function isTransientTransportError(error) {
     message.includes("socket hang up") ||
     message.includes("timeout")
   );
+}
+
+function isMissingReplyTargetError(error) {
+  return String(error?.message || "")
+    .toLowerCase()
+    .includes("message to be replied not found");
 }
 
 function buildProgressSpinner() {
@@ -314,53 +328,6 @@ function normalizeTokenUsage(usage) {
   };
 }
 
-function splitTelegramText(text, limit = 3800) {
-  const normalized = String(text || "").trim();
-  if (!normalized) {
-    return [];
-  }
-
-  const paragraphs = normalized.split(/\n{2,}/u);
-  const chunks = [];
-  let current = "";
-
-  const pushChunk = (chunk) => {
-    if (chunk) {
-      chunks.push(chunk);
-    }
-  };
-
-  for (const paragraph of paragraphs) {
-    if (!paragraph) {
-      continue;
-    }
-
-    const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
-    if (candidate.length <= limit) {
-      current = candidate;
-      continue;
-    }
-
-    pushChunk(current);
-    current = "";
-
-    if (paragraph.length <= limit) {
-      current = paragraph;
-      continue;
-    }
-
-    let remaining = paragraph;
-    while (remaining.length > limit) {
-      pushChunk(remaining.slice(0, limit));
-      remaining = remaining.slice(limit);
-    }
-    current = remaining;
-  }
-
-  pushChunk(current);
-  return chunks;
-}
-
 function buildExchangeLogEntry({ prompt, state, finishedAt }) {
   return {
     created_at: finishedAt,
@@ -453,6 +420,7 @@ function buildReplyParams(session, text, replyToMessageId = null) {
   const params = {
     chat_id: Number(session.chat_id),
     text,
+    parse_mode: "HTML",
     message_thread_id: Number(session.topic_id),
   };
 
@@ -467,6 +435,14 @@ function stringifyMessageId(messageId) {
   return Number.isInteger(messageId) ? String(messageId) : null;
 }
 
+function resolveReplyToMessageId(message) {
+  if (message?.is_internal_omni_handoff) {
+    return null;
+  }
+
+  return Number.isInteger(message?.message_id) ? message.message_id : null;
+}
+
 export class CodexWorkerPool {
   constructor({
     api,
@@ -475,6 +451,9 @@ export class CodexWorkerPool {
     serviceState,
     sessionCompactor = null,
     sessionLifecycleManager = null,
+    spikeFinalEventStore = null,
+    globalCodexSettingsStore = null,
+    onRunTerminated = null,
     runTask = runCodexTask,
   }) {
     this.api = api;
@@ -483,6 +462,9 @@ export class CodexWorkerPool {
     this.serviceState = serviceState;
     this.sessionCompactor = sessionCompactor;
     this.sessionLifecycleManager = sessionLifecycleManager;
+    this.spikeFinalEventStore = spikeFinalEventStore;
+    this.globalCodexSettingsStore = globalCodexSettingsStore;
+    this.onRunTerminated = onRunTerminated;
     this.runTask = runTask;
     this.activeRuns = new Map();
     this.pendingLiveSteers = new Map();
@@ -583,8 +565,9 @@ export class CodexWorkerPool {
         .then((result) => {
           if (result?.ok) {
             run.exchangePrompt = appendPromptPart(run.exchangePrompt, exchangePrompt);
-            if (Number.isInteger(message?.message_id)) {
-              run.state.replyToMessageId = message.message_id;
+            const replyTargetMessageId = resolveReplyToMessageId(message);
+            if (Number.isInteger(replyTargetMessageId)) {
+              run.state.replyToMessageId = replyTargetMessageId;
             }
           }
 
@@ -607,8 +590,9 @@ export class CodexWorkerPool {
     }
     pending.input.push(...input);
     pending.exchangePrompt = appendPromptPart(pending.exchangePrompt, exchangePrompt);
-    if (Number.isInteger(message?.message_id)) {
-      pending.replyToMessageId = message.message_id;
+    const replyTargetMessageId = resolveReplyToMessageId(message);
+    if (Number.isInteger(replyTargetMessageId)) {
+      pending.replyToMessageId = replyTargetMessageId;
     }
     this.pendingLiveSteers.set(sessionKey, pending);
 
@@ -736,6 +720,7 @@ export class CodexWorkerPool {
       latestProgressMessage: null,
       latestCommandOutput: null,
       finalAgentMessage: null,
+      finalAgentMessageSource: null,
       replyDocuments: [],
       replyDocumentWarnings: [],
       warnings: [],
@@ -746,7 +731,7 @@ export class CodexWorkerPool {
       lastTokenUsage: session.last_token_usage ?? null,
       latestCommand: null,
       progress: null,
-      replyToMessageId: message.message_id ?? null,
+      replyToMessageId: resolveReplyToMessageId(message),
       lastTypingActionAt: 0,
       typingActionInFlight: false,
     };
@@ -809,6 +794,7 @@ export class CodexWorkerPool {
       });
 
       let resultPersisted = false;
+      let spikeFinalEventEmitted = false;
       run.lifecyclePromise = this.executeRunLifecycle(run, {
         prompt,
         attachments,
@@ -850,6 +836,13 @@ export class CodexWorkerPool {
               warnings: state.replyDocumentWarnings,
               language: getSessionUiLanguage(run.session),
             });
+            state.finalAgentMessageSource = buildFinalCompletedReplyText({
+              baseText: state.finalAgentMessageSource ?? state.finalAgentMessage,
+              successes: documentDelivery.successes,
+              failures: documentDelivery.failures,
+              warnings: state.replyDocumentWarnings,
+              language: getSessionUiLanguage(run.session),
+            });
           }
 
           const finalReplyText =
@@ -859,10 +852,22 @@ export class CodexWorkerPool {
               : state.status === "interrupted"
                 ? buildInterruptedText(getSessionUiLanguage(run.session))
                 : buildRunFailureText(result, getSessionUiLanguage(run.session));
+          const finalReplyDeliveryText =
+            state.status === "completed"
+              ? state.finalAgentMessageSource || finalReplyText
+              : finalReplyText;
           state.finalAgentMessage = finalReplyText;
+          state.finalAgentMessageSource = finalReplyDeliveryText;
+          const clearStoredThreadState = state.status === "interrupted";
 
           run.session = await this.sessionStore.patch(run.session, {
-            codex_thread_id: state.threadId,
+            codex_thread_id: clearStoredThreadState ? null : state.threadId,
+            ...(clearStoredThreadState
+              ? {
+                  codex_rollout_path: null,
+                  last_context_snapshot: null,
+                }
+              : {}),
             last_user_prompt: run.exchangePrompt,
             last_agent_reply: finalReplyText,
             last_run_status: state.status,
@@ -883,25 +888,51 @@ export class CodexWorkerPool {
           resultPersisted = true;
           this.stopProgressLoop(run);
           await this.finalizeProgress(run);
+          let replyDelivery = {
+            delivered: false,
+            messageIds: [],
+          };
           if (!documentDelivery.parked) {
-            await this.deliverRunReply(run.session, finalReplyText, {
+            replyDelivery = await this.deliverRunReply(run.session, finalReplyDeliveryText, {
               replyToMessageId: state.replyToMessageId,
             });
           }
+          await this.emitSpikeFinalEvent(run, {
+            finishedAt,
+            deliveryResult: replyDelivery,
+          });
+          spikeFinalEventEmitted = true;
           await progress.dismiss();
         })
         .catch(async (error) => {
           state.finalizing = true;
           this.stopProgressLoop(run);
           if (resultPersisted) {
+            if (!spikeFinalEventEmitted) {
+              await this.emitSpikeFinalEvent(run, {
+                finishedAt:
+                  run.session?.last_run_finished_at || new Date().toISOString(),
+                deliveryResult: {
+                  delivered: false,
+                  messageIds: [],
+                },
+              }).catch(() => null);
+            }
             await progress.dismiss().catch(() => false);
             throw error;
           }
 
           state.status = "failed";
           const finishedAt = new Date().toISOString();
+          const failureText = buildFailureText(
+            error,
+            getSessionUiLanguage(run.session),
+          );
+          state.finalAgentMessage = failureText;
+          state.finalAgentMessageSource = failureText;
           run.session = await this.sessionStore.patch(session, {
             last_user_prompt: run.exchangePrompt,
+            last_agent_reply: failureText,
             last_run_status: "failed",
             last_run_started_at: run.startedAt,
             last_run_finished_at: finishedAt,
@@ -917,13 +948,18 @@ export class CodexWorkerPool {
           );
           run.session = exchangeLogResult.session;
           await this.finalizeProgress(run);
-          await this.deliverRunReply(
+          const replyDelivery = await this.deliverRunReply(
             run.session,
-            buildFailureText(error, getSessionUiLanguage(run.session)),
+            failureText,
             {
               replyToMessageId: state.replyToMessageId,
             },
           );
+          await this.emitSpikeFinalEvent(run, {
+            finishedAt,
+            deliveryResult: replyDelivery,
+          });
+          spikeFinalEventEmitted = true;
           await progress.dismiss();
         })
         .finally(async () => {
@@ -931,6 +967,19 @@ export class CodexWorkerPool {
           this.activeRuns.delete(sessionKey);
           this.pendingLiveSteers.delete(sessionKey);
           setActiveRunCount(this.serviceState, this.activeRuns.size);
+          if (typeof this.onRunTerminated === "function") {
+            try {
+              await this.onRunTerminated({
+                session: run.session,
+                status: state.status,
+                run,
+              });
+            } catch (error) {
+              console.error(
+                `run termination hook failed for ${sessionKey}: ${error.message}`,
+              );
+            }
+          }
         })
         .catch((error) => {
           console.error(`run lifecycle failed for ${sessionKey}: ${error.message}`);
@@ -1059,7 +1108,10 @@ export class CodexWorkerPool {
       attachments,
       getSessionUiLanguage(run.session),
     );
-    const sessionThreadId = run.session.codex_thread_id ?? null;
+    const sessionThreadId =
+      run.session.last_run_status === "interrupted"
+        ? null
+        : run.session.codex_thread_id ?? null;
     const initialPrompt = sessionThreadId
       ? promptWithAttachments
       : await this.buildFreshBriefBootstrapPrompt(run, promptWithAttachments);
@@ -1155,12 +1207,33 @@ export class CodexWorkerPool {
 
   async runAttempt(run, { prompt, imagePaths = [], sessionThreadId }) {
     const { state } = run;
+    const currentSession =
+      (await this.sessionStore.load(run.session.chat_id, run.session.topic_id)) ||
+      run.session;
+    run.session = currentSession;
+    const globalCodexSettings = this.globalCodexSettingsStore
+      ? await this.globalCodexSettingsStore.load({ force: true })
+      : null;
+    const availableModels = await loadAvailableCodexModels({
+      configPath: this.config.codexConfigPath,
+    });
+    const runtimeProfile = resolveCodexRuntimeProfile({
+      session: currentSession,
+      globalSettings: globalCodexSettings,
+      config: this.config,
+      target: "spike",
+      availableModels,
+    });
+    state.model = runtimeProfile.model;
+    state.reasoningEffort = runtimeProfile.reasoningEffort;
     const task = this.runTask({
       codexBinPath: this.config.codexBinPath,
       cwd: run.session.workspace_binding.cwd,
       prompt,
       imagePaths,
       sessionThreadId,
+      model: runtimeProfile.model,
+      reasoningEffort: runtimeProfile.reasoningEffort,
       onEvent: async (summary, event) => {
         const primaryThreadEvent = summary.isPrimaryThreadEvent !== false;
         let shouldRefreshProgress = false;
@@ -1214,6 +1287,7 @@ export class CodexWorkerPool {
               language: getSessionUiLanguage(run.session),
             });
             state.finalAgentMessage = normalizeTelegramReply(parsedReply.text);
+            state.finalAgentMessageSource = parsedReply.text;
             state.replyDocuments = parsedReply.documents;
             state.replyDocumentWarnings = parsedReply.warnings;
           }
@@ -1450,8 +1524,35 @@ export class CodexWorkerPool {
     return roots;
   }
 
+  async emitSpikeFinalEvent(run, {
+    finishedAt,
+    deliveryResult = null,
+  } = {}) {
+    if (!this.spikeFinalEventStore || !run?.session) {
+      return null;
+    }
+
+    const currentSession =
+      (await this.sessionStore?.load?.(run.session.chat_id, run.session.topic_id))
+      || run.session;
+    if (!isAutoModeEnabled(currentSession)) {
+      return null;
+    }
+
+    return this.spikeFinalEventStore.write(currentSession, {
+      exchange_log_entries: currentSession.exchange_log_entries ?? 0,
+      status: run.state.status,
+      finished_at: finishedAt ?? new Date().toISOString(),
+      final_reply_text: run.state.finalAgentMessage,
+      telegram_message_ids: deliveryResult?.messageIds ?? [],
+      reply_to_message_id: stringifyMessageId(run.state.replyToMessageId),
+      thread_id: run.state.threadId ?? null,
+    });
+  }
+
   async deliverRunReply(session, text, { replyToMessageId = null } = {}) {
-    const chunks = splitTelegramText(normalizeTelegramReply(text));
+    const chunks = splitTelegramReply(text);
+    const messageIds = [];
 
     for (let index = 0; index < chunks.length; index += 1) {
       const chunk = chunks[index];
@@ -1460,19 +1561,33 @@ export class CodexWorkerPool {
         chunk,
         index === 0 ? replyToMessageId : null,
       );
+      let allowReplyTargetFallback = Boolean(params.reply_to_message_id);
 
       for (let attempt = 1; attempt <= FINAL_REPLY_MAX_ATTEMPTS; attempt += 1) {
         try {
-          await this.api.sendMessage(params);
+          const delivered = await this.api.sendMessage(params);
+          if (Number.isInteger(delivered?.message_id)) {
+            messageIds.push(String(delivered.message_id));
+          }
           break;
         } catch (error) {
+          if (allowReplyTargetFallback && isMissingReplyTargetError(error)) {
+            delete params.reply_to_message_id;
+            allowReplyTargetFallback = false;
+            continue;
+          }
+
           if (this.sessionLifecycleManager) {
             const lifecycleResult = await this.sessionLifecycleManager.handleTransportError(
               session,
               error,
             );
             if (lifecycleResult?.handled) {
-              return lifecycleResult;
+              return {
+                ...lifecycleResult,
+                delivered: false,
+                messageIds,
+              };
             }
           }
 
@@ -1486,6 +1601,9 @@ export class CodexWorkerPool {
       }
     }
 
-    return { delivered: true };
+    return {
+      delivered: true,
+      messageIds,
+    };
   }
 }

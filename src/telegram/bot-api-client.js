@@ -1,5 +1,38 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { renderTelegramHtml } from "../transport/telegram-reply-normalizer.js";
+
+const TELEGRAM_HTML_PARSE_MODE = "HTML";
+
+function withTelegramHtmlFormatting(method, params) {
+  if (!params || typeof params !== "object" || typeof params.parse_mode === "string") {
+    return params;
+  }
+
+  if (
+    (method === "sendMessage" || method === "editMessageText")
+    && typeof params.text === "string"
+  ) {
+    return {
+      ...params,
+      text: renderTelegramHtml(params.text),
+      parse_mode: TELEGRAM_HTML_PARSE_MODE,
+    };
+  }
+
+  if (
+    (method === "sendDocument" || method === "sendPhoto")
+    && typeof params.caption === "string"
+  ) {
+    return {
+      ...params,
+      caption: renderTelegramHtml(params.caption),
+      parse_mode: TELEGRAM_HTML_PARSE_MODE,
+    };
+  }
+
+  return params;
+}
 
 function buildMethodUrl(token, baseUrl, method) {
   return new URL(`/bot${token}/${method}`, baseUrl);
@@ -33,12 +66,13 @@ async function buildFileFormData(params, {
   methodName,
   defaultContentType,
 } = {}) {
-  if (!params?.[fieldName]) {
+  const formattedParams = withTelegramHtmlFormatting(methodName, params);
+  if (!formattedParams?.[fieldName]) {
     throw new Error(`${methodName} requires a ${fieldName} payload`);
   }
 
   const form = new FormData();
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, value] of Object.entries(formattedParams)) {
     if (key === fieldName) {
       continue;
     }
@@ -46,12 +80,12 @@ async function buildFileFormData(params, {
     appendFormValue(form, key, value);
   }
 
-  if (typeof params[fieldName] === "string") {
-    form.append(fieldName, params[fieldName]);
+  if (typeof formattedParams[fieldName] === "string") {
+    form.append(fieldName, formattedParams[fieldName]);
     return form;
   }
 
-  const filePath = params[fieldName].filePath;
+  const filePath = formattedParams[fieldName].filePath;
   if (!filePath) {
     throw new Error(
       `${methodName} requires ${fieldName}.filePath or ${fieldName} string`,
@@ -59,12 +93,12 @@ async function buildFileFormData(params, {
   }
 
   const fileName =
-    params[fieldName].fileName ||
-    params[fieldName].filename ||
+    formattedParams[fieldName].fileName ||
+    formattedParams[fieldName].filename ||
     path.basename(filePath);
   const fileBuffer = await fs.readFile(filePath);
   const blob = new Blob([fileBuffer], {
-    type: params[fieldName].contentType || defaultContentType,
+    type: formattedParams[fieldName].contentType || defaultContentType,
   });
   form.append(fieldName, blob, fileName);
   return form;
@@ -82,11 +116,12 @@ export class TelegramBotApiClient {
 
   async call(method, params = undefined, options = {}) {
     const url = buildMethodUrl(this.token, this.baseUrl, method);
-    const hasParams = params && Object.keys(params).length > 0;
+    const formattedParams = withTelegramHtmlFormatting(method, params);
+    const hasParams = formattedParams && Object.keys(formattedParams).length > 0;
     const response = await fetch(url, {
       method: hasParams ? "POST" : "GET",
       headers: hasParams ? { "content-type": "application/json" } : undefined,
-      body: hasParams ? JSON.stringify(params) : undefined,
+      body: hasParams ? JSON.stringify(formattedParams) : undefined,
       signal: options.signal,
     });
 
@@ -115,12 +150,28 @@ export class TelegramBotApiClient {
     return this.call("getUpdates", params, options);
   }
 
+  async getMyCommands(params = {}, options = {}) {
+    return this.call("getMyCommands", params, options);
+  }
+
+  async setMyCommands(params, options = {}) {
+    return this.call("setMyCommands", params, options);
+  }
+
+  async deleteMyCommands(params = {}, options = {}) {
+    return this.call("deleteMyCommands", params, options);
+  }
+
   async getFile(params, options = {}) {
     return this.call("getFile", params, options);
   }
 
   async sendMessage(params, options = {}) {
     return this.call("sendMessage", params, options);
+  }
+
+  async answerCallbackQuery(params, options = {}) {
+    return this.call("answerCallbackQuery", params, options);
   }
 
   async editMessageText(params, options = {}) {
@@ -133,6 +184,10 @@ export class TelegramBotApiClient {
 
   async deleteMessage(params, options = {}) {
     return this.call("deleteMessage", params, options);
+  }
+
+  async pinChatMessage(params, options = {}) {
+    return this.call("pinChatMessage", params, options);
   }
 
   async sendDocument(params, options = {}) {

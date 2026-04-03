@@ -4,17 +4,17 @@ import assert from "node:assert/strict";
 import { EmergencyPrivateChatRouter } from "../src/emergency/private-chat-router.js";
 
 const config = {
-  telegramAllowedUserId: "5825672398",
-  repoRoot: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-  stateRoot: "/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway",
+  telegramAllowedUserId: "123456789",
+  repoRoot: "/workspace/projects/codex-telegram-gateway",
+  stateRoot: "/workspace/state/projects/codex-telegram-gateway",
   codexBinPath: "codex",
 };
 
 function buildPrivateMessage(overrides = {}) {
   return {
     text: "fix the gateway",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: 5825672398, type: "private" },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: 123456789, type: "private" },
     message_id: 1,
     ...overrides,
   };
@@ -23,8 +23,8 @@ function buildPrivateMessage(overrides = {}) {
 function buildTopicMessage(overrides = {}) {
   return {
     text: "normal topic message",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463, type: "supergroup" },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890, type: "supergroup" },
     message_thread_id: 2203,
     message_id: 1,
     ...overrides,
@@ -273,7 +273,7 @@ test("EmergencyPrivateChatRouter refuses to start while normal topic runs are ac
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     normalRunState: {
       hasActiveRuns: () => true,
@@ -348,7 +348,7 @@ test("EmergencyPrivateChatRouter blocks normal topic prompts while emergency mod
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     startRun() {
       return {
@@ -380,7 +380,7 @@ test("EmergencyPrivateChatRouter lets topic commands pass through while emergenc
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     botUsername: "gatewaybot",
     startRun() {

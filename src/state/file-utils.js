@@ -23,9 +23,34 @@ export async function quarantineCorruptFile(filePath) {
   }
 }
 
-export async function writeTextAtomic(filePath, content) {
+export async function ensureFileMode(filePath, mode) {
+  try {
+    await fs.chmod(filePath, mode);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+export async function writeTextAtomic(filePath, content, { mode = null } = {}) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = buildTempPath(filePath);
-  await fs.writeFile(tempPath, content, "utf8");
+  await fs.writeFile(
+    tempPath,
+    content,
+    mode === null
+      ? "utf8"
+      : {
+          encoding: "utf8",
+          mode,
+        },
+  );
+  if (mode !== null) {
+    await ensureFileMode(tempPath, mode);
+  }
   await fs.rename(tempPath, filePath);
+  if (mode !== null) {
+    await ensureFileMode(filePath, mode);
+  }
 }

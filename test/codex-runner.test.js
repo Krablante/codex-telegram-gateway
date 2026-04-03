@@ -26,6 +26,22 @@ test("buildCodexArgs builds app-server args", () => {
   ]);
 });
 
+test("buildCodexArgs appends model and reasoning overrides", () => {
+  assert.deepEqual(buildCodexArgs({
+    listenUrl: "ws://127.0.0.1:40187",
+    model: "gpt-5.4-mini",
+    reasoningEffort: "high",
+  }), [
+    "app-server",
+    "--listen",
+    "ws://127.0.0.1:40187",
+    "-c",
+    'model="gpt-5.4-mini"',
+    "-c",
+    'model_reasoning_effort="high"',
+  ]);
+});
+
 test("buildTurnInput emits text and local images", () => {
   assert.deepEqual(buildTurnInput({
     prompt: "Посмотри на это.",

@@ -1,4 +1,5 @@
 import { runCodexTask } from "../pty-worker/codex-runner.js";
+import { normalizeAutoModeState } from "./auto-mode.js";
 
 const MAX_SUMMARIZER_RETRIES = 1;
 const COMPACTION_APP_SERVER_BOOT_TIMEOUT_MS = 60000;
@@ -238,6 +239,17 @@ export class SessionCompactor {
 
     await this.sessionStore.writeSessionText(current, "active-brief.md", activeBrief);
     await this.sessionStore.removeLegacyMemoryFiles(current);
+    const currentAutoMode = normalizeAutoModeState(current.auto_mode);
+    const nextAutoMode = currentAutoMode.enabled
+      ? {
+          ...currentAutoMode,
+          continuation_count_since_compact: 0,
+          updated_at: updatedAt,
+          last_auto_compact_at: String(reason || "").startsWith("auto-compact:")
+            ? updatedAt
+            : currentAutoMode.last_auto_compact_at,
+        }
+      : currentAutoMode;
     const updated = await this.sessionStore.patch(current, {
       last_compacted_at: updatedAt,
       last_compaction_reason: reason,
@@ -246,6 +258,7 @@ export class SessionCompactor {
       codex_rollout_path: null,
       last_context_snapshot: null,
       last_token_usage: null,
+      auto_mode: nextAutoMode,
     });
 
     return {

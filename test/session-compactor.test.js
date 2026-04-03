@@ -16,10 +16,10 @@ async function makeStore() {
 
 function buildBinding() {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/workspace",
+    cwd: "/workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/workspace",
   };
 }
 
@@ -53,8 +53,8 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
               "# Active brief",
               "",
               "updated_from_reason: command/compact",
-              "session_key: -1003577434463:101",
-              "cwd: /home/bloob/atlas",
+              "session_key: -1001234567890:101",
+              "cwd: /workspace",
               "",
               "## User preferences",
               "- concise",
@@ -81,7 +81,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 101,
     topicName: "Compact test",
     createdVia: "test",
@@ -205,7 +205,7 @@ test("SessionCompactor writes a stub brief when exchange log is empty", async ()
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 103,
     topicName: "Empty compact test",
     createdVia: "test",
@@ -228,6 +228,77 @@ test("SessionCompactor writes a stub brief when exchange log is empty", async ()
   assert.equal(updated.codex_rollout_path, null);
   assert.equal(updated.last_context_snapshot, null);
   assert.equal(updated.last_token_usage, null);
+});
+
+test("SessionCompactor resets Omni auto-compact counters but preserves active auto mode", async () => {
+  const sessionStore = await makeStore();
+  const compactor = new SessionCompactor({
+    sessionStore,
+    config: {
+      codexBinPath: "codex",
+    },
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent({
+          kind: "agent_message",
+          text: [
+            "# Active brief",
+            "",
+            "updated_from_reason: auto-compact:omni-cycle-boundary",
+            "session_key: -1001234567890:105",
+            "cwd: /workspace",
+            "",
+            "## Open work",
+            "- Continue the Omni loop.",
+          ].join("\n"),
+        });
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "compact-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    }),
+  });
+  let session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 105,
+    topicName: "Auto compact state test",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  session = await sessionStore.patch(session, {
+    auto_mode: {
+      enabled: true,
+      phase: "running",
+      omni_bot_id: "222333444",
+      spike_bot_id: "333444555",
+      continuation_count_since_compact: 33,
+      first_omni_prompt_at: "2026-04-03T10:00:00.000Z",
+    },
+  });
+  await sessionStore.appendExchangeLogEntry(session, {
+    created_at: "2026-04-03T18:00:00.000Z",
+    status: "completed",
+    user_prompt: "Continue the Omni loop",
+    assistant_reply: "The next move is ready.",
+  });
+
+  const compacted = await compactor.compact(session, {
+    reason: "auto-compact:omni-cycle-boundary",
+  });
+
+  assert.equal(compacted.reason, "auto-compact:omni-cycle-boundary");
+  const updated = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(updated.auto_mode.phase, "running");
+  assert.equal(updated.auto_mode.continuation_count_since_compact, 0);
+  assert.equal(
+    updated.auto_mode.last_auto_compact_at,
+    updated.last_compacted_at,
+  );
 });
 
 test("SessionCompactor retries the temporary Codex summarizer once before failing", async () => {
@@ -262,8 +333,8 @@ test("SessionCompactor retries the temporary Codex summarizer once before failin
               "# Active brief",
               "",
               "updated_from_reason: resume-fallback:stale-thread",
-              "session_key: -1003577434463:104",
-              "cwd: /home/bloob/atlas",
+              "session_key: -1001234567890:104",
+              "cwd: /workspace",
               "",
               "## User preferences",
               "- concise",
@@ -290,7 +361,7 @@ test("SessionCompactor retries the temporary Codex summarizer once before failin
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 104,
     topicName: "Retry compact test",
     createdVia: "test",
@@ -326,7 +397,7 @@ test("SessionCompactor skips purged sessions", async () => {
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 102,
     topicName: "Purged compact test",
     createdVia: "test",
@@ -359,7 +430,7 @@ test("SessionCompactor fails loudly on malformed exchange logs instead of compac
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 105,
     topicName: "Corrupt compact test",
     createdVia: "test",

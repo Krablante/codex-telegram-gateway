@@ -15,8 +15,8 @@ import {
 } from "../src/telegram/command-router.js";
 
 const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramForumChatId: "-1003577434463",
+  telegramAllowedUserId: "123456789",
+  telegramForumChatId: "-1001234567890",
   maxParallelSessions: 4,
 };
 
@@ -24,24 +24,24 @@ function buildTopicCommandMessage(text) {
   return {
     text,
     entities: [{ type: "bot_command", offset: 0, length: text.length }],
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_thread_id: 55,
   };
 }
 
 function buildSession(overrides = {}) {
   return {
-    session_key: "-1003577434463:55",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:55",
+    chat_id: "-1001234567890",
     topic_id: "55",
     topic_name: "Test topic 1",
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/workspace",
     },
     ...overrides,
   };
@@ -54,7 +54,7 @@ function buildServiceState() {
     lastCommandName: null,
     lastCommandAt: null,
     botUsername: "gatewaybot",
-    allowedUserId: "5825672398",
+    allowedUserId: "123456789",
     startedAt: "2026-03-22T12:00:00.000Z",
     handledUpdates: 3,
     acceptedPrompts: 1,
@@ -279,9 +279,9 @@ test("handleIncomingMessage parks the session when help-card delivery hits unava
 
   const result = await handleIncomingMessage({
     api: {
-      async sendPhoto() {
+      async sendDocument() {
         throw new Error(
-          "Telegram API sendPhoto failed: Bad Request: message thread not found",
+          "Telegram API sendDocument failed: Bad Request: message thread not found",
         );
       },
     },

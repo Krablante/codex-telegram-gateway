@@ -13,12 +13,28 @@ import {
   buildReplyMessageParams,
   extractBotCommand,
   getTopicLabel,
+  isForeignBotCommand,
   isAuthorizedMessage,
   parseLanguageCommandArgs,
   parseNewTopicCommandArgs,
   parsePromptSuffixCommandArgs,
+  parseQueueCommandArgs,
+  parseScopedRuntimeSettingCommandArgs,
   parseWaitCommandArgs,
 } from "./command-parsing.js";
+import {
+  GLOBAL_CONTROL_PANEL_COMMAND,
+  handleGlobalControlCallbackQuery,
+  handleGlobalControlCommand,
+  maybeHandleGlobalControlReply,
+} from "./global-control-panel.js";
+import {
+  TOPIC_CONTROL_PANEL_COMMAND,
+  ensureTopicControlPanelMessage,
+  handleTopicControlCallbackQuery,
+  handleTopicControlCommand,
+  maybeHandleTopicControlReply,
+} from "./topic-control-panel.js";
 import {
   composePromptWithSuffixes,
   isTopicPromptSuffixEnabled,
@@ -26,25 +42,43 @@ import {
   PROMPT_SUFFIX_MAX_CHARS,
 } from "../session-manager/prompt-suffix.js";
 import {
+  formatReasoningEffort,
+  getGlobalRuntimeSettingFieldName,
+  getSessionRuntimeSettingFieldName,
+  getSupportedReasoningLevelsForModel,
+  loadAvailableCodexModels,
+  normalizeModelOverride,
+  normalizeReasoningEffort,
+  resolveCodexRuntimeProfile,
+} from "../session-manager/codex-runtime-settings.js";
+import {
   buildLegacyContextSnapshot,
   normalizeContextSnapshot,
 } from "../session-manager/context-snapshot.js";
+import {
+  canAutoModeAcceptPromptFromMessage,
+  isAutoModeHumanInputLocked,
+} from "../session-manager/auto-mode.js";
+import { summarizeQueuedPrompt } from "../session-manager/prompt-queue.js";
 import { getTopicIdFromMessage } from "../session-manager/session-key.js";
-import { getHelpCardAsset } from "./help-card.js";
+import { getHelpCardAssets } from "./help-card.js";
+import { getGuidebookAsset } from "./guidebook.js";
 import {
   safeSendDocumentToTopic,
   safeSendMessage,
-  safeSendPhotoToTopic,
 } from "./topic-delivery.js";
 
 export {
   buildReplyMessageParams,
   extractBotCommand,
   getTopicLabel,
+  isForeignBotCommand,
   isAuthorizedMessage,
   parseLanguageCommandArgs,
   parseNewTopicCommandArgs,
   parsePromptSuffixCommandArgs,
+  parseQueueCommandArgs,
+  parseScopedRuntimeSettingCommandArgs,
   parseWaitCommandArgs,
 };
 
@@ -56,8 +90,32 @@ function isEnglish(language) {
   return normalizeUiLanguage(language) === "eng";
 }
 
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;");
+}
+
 function getLanguageLabel(language) {
   return formatUiLanguageLabel(language);
+}
+
+async function resolveGeneralUiLanguage(globalControlPanelStore = null) {
+  if (!globalControlPanelStore) {
+    return DEFAULT_UI_LANGUAGE;
+  }
+
+  try {
+    const state = await globalControlPanelStore.load({ force: true });
+    return normalizeUiLanguage(state?.ui_language);
+  } catch {
+    return DEFAULT_UI_LANGUAGE;
+  }
+}
+
+function isOmniEnabled(surface = null) {
+  return surface?.omniEnabled !== false;
 }
 
 function formatWaitWindow(seconds, language = DEFAULT_UI_LANGUAGE) {
@@ -70,6 +128,35 @@ function formatWaitWindow(seconds, language = DEFAULT_UI_LANGUAGE) {
   }
 
   return `${seconds}s`;
+}
+
+function getWaitScopeLabel(scope, language = DEFAULT_UI_LANGUAGE) {
+  const english = isEnglish(language);
+  if (scope === "global") {
+    return "global";
+  }
+
+  if (scope === "topic") {
+    return english ? "local one-shot" : "локальный одноразовый";
+  }
+
+  return english ? "effective" : "эффективный";
+}
+
+function selectWaitStateByScope(waitState, scope = "effective") {
+  if (!waitState) {
+    return null;
+  }
+
+  if (scope === "global") {
+    return waitState.global || null;
+  }
+
+  if (scope === "topic") {
+    return waitState.local || null;
+  }
+
+  return waitState;
 }
 
 export function buildNoSessionTopicMessage(language = DEFAULT_UI_LANGUAGE) {
@@ -106,6 +193,150 @@ function buildAttachmentNeedsCaptionMessage(language = DEFAULT_UI_LANGUAGE) {
   ].join("\n");
 }
 
+function buildQueueAttachmentNeedsPromptMessage(language = DEFAULT_UI_LANGUAGE) {
+  if (isEnglish(language)) {
+    return [
+      "Queue attachment received.",
+      "",
+      "Add a caption in the same message, or send the task text in the next message with /q and I will queue it with this attachment.",
+    ].join("\n");
+  }
+
+  return [
+    "Вложение для очереди получил.",
+    "",
+    "Добавь подпись в этом же сообщении, либо следующим сообщением пришли текст через /q, и я поставлю его в очередь вместе с этим вложением.",
+  ].join("\n");
+}
+
+function buildQueueUsageMessage(language = DEFAULT_UI_LANGUAGE) {
+  if (isEnglish(language)) {
+    return [
+      "Usage:",
+      "/q <text>",
+      "/q status",
+      "/q delete <position>",
+    ].join("\n");
+  }
+
+  return [
+    "Использование:",
+    "/q <текст>",
+    "/q status",
+    "/q delete <номер>",
+  ].join("\n");
+}
+
+function buildQueueAutoUnavailableMessage(language = DEFAULT_UI_LANGUAGE) {
+  if (isEnglish(language)) {
+    return [
+      "Spike queue is unavailable while /auto is active in this topic.",
+      "",
+      "Turn /auto off first if you want to use /q here.",
+    ].join("\n");
+  }
+
+  return [
+    "Очередь Spike недоступна, пока в этом топике активен /auto.",
+    "",
+    "Сначала выключи /auto, если хочешь использовать здесь /q.",
+  ].join("\n");
+}
+
+function buildQueueEmptyMessage(language = DEFAULT_UI_LANGUAGE) {
+  return isEnglish(language)
+    ? "Spike queue is empty."
+    : "Очередь Spike пуста.";
+}
+
+function buildQueueQueuedMessage({
+  position,
+  preview,
+  waitingForCapacity = false,
+  language = DEFAULT_UI_LANGUAGE,
+} = {}) {
+  const escapedPreview = preview ? escapeHtml(preview) : null;
+  if (isEnglish(language)) {
+    const lines = [
+      position > 1
+        ? `Queued as #${position}.`
+        : "Queued as #1.",
+      position > 1
+        ? "It will start in queue order."
+        : waitingForCapacity
+        ? "It will start as soon as Spike gets a free worker slot."
+        : "It will start right after the current run finishes.",
+    ];
+    if (escapedPreview) {
+      lines.push("", `Preview: <code>${escapedPreview}</code>`);
+    }
+    return lines.join("\n");
+  }
+
+  const lines = [
+    position > 1
+      ? `Поставил в очередь под номером ${position}.`
+      : "Поставил в очередь под номером 1.",
+    position > 1
+      ? "Запущу по порядку очереди."
+      : waitingForCapacity
+      ? "Запущу, как только у Spike освободится worker slot."
+      : "Запущу сразу после завершения текущего run.",
+  ];
+  if (escapedPreview) {
+    lines.push("", `Коротко: <code>${escapedPreview}</code>`);
+  }
+  return lines.join("\n");
+}
+
+function buildQueueDeletedMessage(
+  entry,
+  position,
+  remaining,
+  language = DEFAULT_UI_LANGUAGE,
+) {
+  const preview = escapeHtml(summarizeQueuedPrompt(entry?.raw_prompt || entry?.prompt));
+  if (isEnglish(language)) {
+    return [
+      `Removed queue item #${position}.`,
+      preview ? `Preview: <code>${preview}</code>` : null,
+      `Remaining: ${remaining}.`,
+    ].filter(Boolean).join("\n");
+  }
+
+  return [
+    `Удалил элемент очереди #${position}.`,
+    preview ? `Коротко: <code>${preview}</code>` : null,
+    `Осталось: ${remaining}.`,
+  ].filter(Boolean).join("\n");
+}
+
+function buildQueueDeleteMissingMessage(position, language = DEFAULT_UI_LANGUAGE) {
+  return isEnglish(language)
+    ? `Queue item #${position} does not exist.`
+    : `Элемента очереди #${position} не существует.`;
+}
+
+function buildQueueStatusMessage(entries = [], language = DEFAULT_UI_LANGUAGE) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return buildQueueEmptyMessage(language);
+  }
+
+  const heading = isEnglish(language)
+    ? `Spike queue: ${entries.length}`
+    : `Очередь Spike: ${entries.length}`;
+  return [
+    heading,
+    "",
+    ...entries.map((entry, index) => {
+      const preview = escapeHtml(
+        summarizeQueuedPrompt(entry?.raw_prompt || entry?.prompt),
+      );
+      return `${index + 1}. <code>${preview || "..."}</code>`;
+    }),
+  ].join("\n");
+}
+
 function formatBinding(binding) {
   return [
     `binding.repo_root: ${binding.repo_root}`,
@@ -127,6 +358,455 @@ function formatPercent(value, language = DEFAULT_UI_LANGUAGE) {
     : (isEnglish(language) ? "unknown" : "неизвестно");
 }
 
+function formatCodexSettingValue(kind, value, language = DEFAULT_UI_LANGUAGE) {
+  if (!value) {
+    return isEnglish(language) ? "default" : "по умолчанию";
+  }
+
+  if (kind === "reasoning") {
+    return formatReasoningEffort(value) ?? value;
+  }
+
+  return value;
+}
+
+function formatCodexSettingSource(source, language = DEFAULT_UI_LANGUAGE) {
+  const english = isEnglish(language);
+  switch (source) {
+    case "topic":
+      return english ? "topic" : "topic";
+    case "global":
+      return english ? "global" : "global";
+    case "default":
+      return english ? "default" : "default";
+    default:
+      return english ? "unset" : "unset";
+  }
+}
+
+function buildCodexSettingUsageMessage(
+  commandName,
+  language = DEFAULT_UI_LANGUAGE,
+) {
+  if (isEnglish(language)) {
+    return [
+      `Usage: /${commandName}`,
+      `/${commandName} list`,
+      `/${commandName} <value>`,
+      `/${commandName} clear`,
+      `/${commandName} global`,
+      `/${commandName} global list`,
+      `/${commandName} global <value>`,
+      `/${commandName} global clear`,
+    ].join("\n");
+  }
+
+  return [
+    `Использование: /${commandName}`,
+    `/${commandName} list`,
+    `/${commandName} <value>`,
+    `/${commandName} clear`,
+    `/${commandName} global`,
+    `/${commandName} global list`,
+    `/${commandName} global <value>`,
+    `/${commandName} global clear`,
+  ].join("\n");
+}
+
+function buildCodexSettingStateMessage({
+  title,
+  commandName,
+  kind,
+  language = DEFAULT_UI_LANGUAGE,
+  topicValue = null,
+  globalValue = null,
+  effectiveValue = null,
+  effectiveSource = "unset",
+  showTopicValue = true,
+}) {
+  const english = isEnglish(language);
+  return [
+    title,
+    "",
+    ...(showTopicValue
+      ? [
+          `${english ? "topic override" : "topic override"}: ${formatCodexSettingValue(kind, topicValue, language)}`,
+        ]
+      : []),
+    `${english ? "global default" : "global default"}: ${formatCodexSettingValue(kind, globalValue, language)}`,
+    `${english ? "effective" : "effective"}: ${formatCodexSettingValue(kind, effectiveValue, language)} (${formatCodexSettingSource(effectiveSource, language)})`,
+    "",
+    buildCodexSettingUsageMessage(commandName, language),
+  ].join("\n");
+}
+
+function buildCodexSettingListMessage({
+  title,
+  commandName,
+  entries,
+  language = DEFAULT_UI_LANGUAGE,
+}) {
+  const english = isEnglish(language);
+  return [
+    title,
+    "",
+    ...(entries.length > 0
+      ? entries
+      : [english ? "No values discovered." : "Не удалось определить значения."]),
+    "",
+    buildCodexSettingUsageMessage(commandName, language),
+  ].join("\n");
+}
+
+const CODEX_RUNTIME_COMMANDS = {
+  model: {
+    target: "spike",
+    kind: "model",
+    title: {
+      eng: "Spike model",
+      rus: "Spike model",
+    },
+  },
+  reasoning: {
+    target: "spike",
+    kind: "reasoning",
+    title: {
+      eng: "Spike reasoning",
+      rus: "Spike reasoning",
+    },
+  },
+  omni_model: {
+    target: "omni",
+    kind: "model",
+    title: {
+      eng: "Omni model",
+      rus: "Omni model",
+    },
+  },
+  omni_reasoning: {
+    target: "omni",
+    kind: "reasoning",
+    title: {
+      eng: "Omni reasoning",
+      rus: "Omni reasoning",
+    },
+  },
+};
+
+function getCodexRuntimeCommandSpec(commandName) {
+  return CODEX_RUNTIME_COMMANDS[commandName] ?? null;
+}
+
+function formatCodexModelListEntry(model) {
+  const details = [];
+  if (model.displayName && model.displayName !== model.slug) {
+    details.push(model.displayName);
+  }
+  if (model.defaultReasoningLevel) {
+    details.push(`default ${model.defaultReasoningLevel}`);
+  }
+
+  return details.length > 0
+    ? `- ${model.slug} — ${details.join(" · ")}`
+    : `- ${model.slug}`;
+}
+
+function formatCodexReasoningListEntry(entry) {
+  const base = `- ${entry.label} (${entry.value})`;
+  return entry.description ? `${base} — ${entry.description}` : base;
+}
+
+function buildInvalidCodexSettingMessage({
+  title,
+  commandName,
+  kind,
+  invalidValue,
+  entries,
+  language = DEFAULT_UI_LANGUAGE,
+}) {
+  const english = isEnglish(language);
+  return [
+    english
+      ? `${title}: unknown ${kind} "${invalidValue}".`
+      : `${title}: неизвестное значение "${invalidValue}".`,
+    "",
+    ...(entries.length > 0
+      ? entries
+      : [english ? "No values discovered." : "Не удалось определить значения."]),
+    "",
+    buildCodexSettingUsageMessage(commandName, language),
+  ].join("\n");
+}
+
+async function resolveRuntimeCommandState({
+  commandName,
+  spec,
+  session = null,
+  sessionService,
+  config,
+}) {
+  const availableModels = await loadAvailableCodexModels({
+    configPath: config.codexConfigPath,
+  });
+  const globalSettings = await sessionService.getGlobalCodexSettings();
+  const topicField = getSessionRuntimeSettingFieldName(spec.target, spec.kind);
+  const globalField = getGlobalRuntimeSettingFieldName(spec.target, spec.kind);
+  const effectiveProfile = session
+    ? await sessionService.resolveCodexRuntimeProfile(session, {
+        target: spec.target,
+      })
+    : resolveCodexRuntimeProfile({
+        session: null,
+        globalSettings,
+        config,
+        target: spec.target,
+      });
+
+  return {
+    availableModels,
+    globalSettings,
+    topicField,
+    globalField,
+    effectiveProfile,
+    title: spec.title[isEnglish(getSessionUiLanguage(session)) ? "eng" : "rus"],
+    commandName,
+  };
+}
+
+async function handleScopedRuntimeSettingCommand({
+  commandName,
+  parsedCommand,
+  session = null,
+  sessionService,
+  config,
+  language = DEFAULT_UI_LANGUAGE,
+}) {
+  const spec = getCodexRuntimeCommandSpec(commandName);
+  if (!spec) {
+    return {
+      handledSession: session,
+      responseText: buildUnknownCommandMessage(language),
+    };
+  }
+
+  const title = spec.title[isEnglish(language) ? "eng" : "rus"];
+  const {
+    availableModels,
+    globalSettings,
+    topicField,
+    globalField,
+    effectiveProfile,
+  } = await resolveRuntimeCommandState({
+    commandName,
+    spec,
+    session,
+    sessionService,
+    config,
+  });
+  const scopeReasoningModel =
+    parsedCommand.scope === "global"
+      ? resolveCodexRuntimeProfile({
+          session: null,
+          globalSettings,
+          config,
+          target: spec.target,
+        }).model
+      : effectiveProfile.model;
+
+  const currentTopicValue = topicField ? session?.[topicField] ?? null : null;
+  const currentGlobalValue = globalField ? globalSettings?.[globalField] ?? null : null;
+
+  if (parsedCommand.action === "list") {
+    const entries =
+      spec.kind === "model"
+        ? availableModels.map(formatCodexModelListEntry)
+        : getSupportedReasoningLevelsForModel(
+            availableModels,
+            scopeReasoningModel,
+          ).map(formatCodexReasoningListEntry);
+
+    return {
+      handledSession: session,
+      responseText: buildCodexSettingListMessage({
+        title,
+        commandName,
+        entries,
+        language,
+      }),
+    };
+  }
+
+  if (parsedCommand.action === "show") {
+    return {
+      handledSession: session,
+      responseText: buildCodexSettingStateMessage({
+        title,
+        commandName,
+        kind: spec.kind,
+        language,
+        topicValue: currentTopicValue,
+        globalValue: currentGlobalValue,
+        effectiveValue:
+          spec.kind === "model"
+            ? effectiveProfile.model
+            : effectiveProfile.reasoningEffort,
+        effectiveSource:
+          spec.kind === "model"
+            ? effectiveProfile.modelSource
+            : effectiveProfile.reasoningSource,
+        showTopicValue: Boolean(session),
+      }),
+    };
+  }
+
+  if (parsedCommand.action === "clear") {
+    const handledSession =
+      parsedCommand.scope === "global"
+        ? session
+        : await sessionService.clearSessionCodexSetting(
+            session,
+            spec.target,
+            spec.kind,
+          );
+    const nextGlobalSettings =
+      parsedCommand.scope === "global"
+        ? await sessionService.clearGlobalCodexSetting(spec.target, spec.kind)
+        : globalSettings;
+    const nextEffectiveProfile =
+      handledSession
+        ? await sessionService.resolveCodexRuntimeProfile(handledSession, {
+            target: spec.target,
+          })
+        : resolveCodexRuntimeProfile({
+            session: null,
+            globalSettings: nextGlobalSettings,
+            config,
+            target: spec.target,
+          });
+
+    return {
+      handledSession,
+      responseText: buildCodexSettingStateMessage({
+        title: isEnglish(language)
+          ? `${title} cleared.`
+          : `${title} очищен.`,
+        commandName,
+        kind: spec.kind,
+        language,
+        topicValue:
+          topicField && handledSession ? handledSession[topicField] ?? null : null,
+        globalValue: globalField ? nextGlobalSettings?.[globalField] ?? null : null,
+        effectiveValue:
+          spec.kind === "model"
+            ? nextEffectiveProfile.model
+            : nextEffectiveProfile.reasoningEffort,
+        effectiveSource:
+          spec.kind === "model"
+            ? nextEffectiveProfile.modelSource
+            : nextEffectiveProfile.reasoningSource,
+        showTopicValue: Boolean(handledSession),
+      }),
+    };
+  }
+
+  if (parsedCommand.action === "set") {
+    let normalizedValue;
+    let entries = [];
+
+    if (spec.kind === "model") {
+      normalizedValue = normalizeModelOverride(parsedCommand.value, availableModels);
+      entries = availableModels.map(formatCodexModelListEntry);
+    } else {
+      normalizedValue = normalizeReasoningEffort(parsedCommand.value);
+      entries = getSupportedReasoningLevelsForModel(
+        availableModels,
+        scopeReasoningModel,
+      ).map(formatCodexReasoningListEntry);
+      if (
+        normalizedValue &&
+        !getSupportedReasoningLevelsForModel(
+          availableModels,
+          scopeReasoningModel,
+        ).some((entry) => entry.value === normalizedValue)
+      ) {
+        normalizedValue = null;
+      }
+    }
+
+    if (!normalizedValue) {
+      return {
+        handledSession: session,
+        responseText: buildInvalidCodexSettingMessage({
+          title,
+          commandName,
+          kind: spec.kind,
+          invalidValue: parsedCommand.value,
+          entries,
+          language,
+        }),
+      };
+    }
+
+    const handledSession =
+      parsedCommand.scope === "global"
+        ? session
+        : await sessionService.updateSessionCodexSetting(
+            session,
+            spec.target,
+            spec.kind,
+            normalizedValue,
+          );
+    const nextGlobalSettings =
+      parsedCommand.scope === "global"
+        ? await sessionService.updateGlobalCodexSetting(
+            spec.target,
+            spec.kind,
+            normalizedValue,
+          )
+        : globalSettings;
+    const nextEffectiveProfile =
+      handledSession
+        ? await sessionService.resolveCodexRuntimeProfile(handledSession, {
+            target: spec.target,
+          })
+        : resolveCodexRuntimeProfile({
+            session: null,
+            globalSettings: nextGlobalSettings,
+            config,
+            target: spec.target,
+          });
+
+    return {
+      handledSession,
+      responseText: buildCodexSettingStateMessage({
+        title: isEnglish(language)
+          ? `${title} updated.`
+          : `${title} обновлён.`,
+        commandName,
+        kind: spec.kind,
+        language,
+        topicValue:
+          topicField && handledSession ? handledSession[topicField] ?? null : null,
+        globalValue: globalField ? nextGlobalSettings?.[globalField] ?? null : null,
+        effectiveValue:
+          spec.kind === "model"
+            ? nextEffectiveProfile.model
+            : nextEffectiveProfile.reasoningEffort,
+        effectiveSource:
+          spec.kind === "model"
+            ? nextEffectiveProfile.modelSource
+            : nextEffectiveProfile.reasoningSource,
+        showTopicValue: Boolean(handledSession),
+      }),
+    };
+  }
+
+  return {
+    handledSession: session,
+    responseText: buildCodexSettingUsageMessage(commandName, language),
+  };
+}
+
 function buildEffectiveContextSnapshot(
   state,
   session,
@@ -144,6 +824,32 @@ function buildEffectiveContextSnapshot(
       contextWindow: state.codexContextWindow ?? null,
     })
   );
+}
+
+async function resolveStatusRuntimeProfile(
+  sessionService,
+  session,
+  state,
+  target,
+) {
+  if (typeof sessionService.resolveCodexRuntimeProfile === "function") {
+    return sessionService.resolveCodexRuntimeProfile(session, { target });
+  }
+
+  const globalSettings =
+    typeof sessionService.getGlobalCodexSettings === "function"
+      ? await sessionService.getGlobalCodexSettings()
+      : null;
+  const availableModels = await loadAvailableCodexModels({
+    configPath: state.codexConfigPath,
+  });
+  return resolveCodexRuntimeProfile({
+    session,
+    globalSettings,
+    config: state,
+    target,
+    availableModels,
+  });
 }
 
 function buildContextStatusLines(contextSnapshot, language = DEFAULT_UI_LANGUAGE) {
@@ -195,9 +901,11 @@ export function buildStatusMessage(
   session,
   activeRun = null,
   contextSnapshot = null,
+  runtimeProfiles = null,
   language = getSessionUiLanguage(session),
 ) {
   const english = isEnglish(language);
+  const omniEnabled = isOmniEnabled(state);
   const runStatus = activeRun?.state.status ?? session.last_run_status ?? "idle";
   const effectiveContextSnapshot = buildEffectiveContextSnapshot(
     state,
@@ -208,6 +916,14 @@ export function buildStatusMessage(
   const contextWindow =
     effectiveContextSnapshot?.model_context_window ??
     (Number.isInteger(state.codexContextWindow) ? state.codexContextWindow : null);
+  const spikeProfile = runtimeProfiles?.spike ?? {
+    model: state.codexModel ?? null,
+    reasoningEffort: state.codexReasoningEffort ?? null,
+  };
+  const omniProfile = runtimeProfiles?.omni ?? {
+    model: state.codexModel ?? null,
+    reasoningEffort: state.codexReasoningEffort ?? null,
+  };
 
   return [
     english ? "Status" : "Статус",
@@ -219,8 +935,14 @@ export function buildStatusMessage(
     `${english ? "branch" : "ветка"}: ${session.workspace_binding.branch ?? "none"}`,
     "",
     `${english ? "language" : "язык"}: ${getLanguageLabel(language)}`,
-    `${english ? "model" : "модель"}: ${state.codexModel ?? (english ? "unknown" : "неизвестно")}`,
-    `thinking: ${state.codexReasoningEffort ?? "unknown"}`,
+    `${english ? "model" : "модель"}: ${spikeProfile.model ?? (english ? "unknown" : "неизвестно")}`,
+    `${english ? "reasoning" : "reasoning"}: ${formatCodexSettingValue("reasoning", spikeProfile.reasoningEffort, language)}`,
+    ...(omniEnabled
+      ? [
+          `${english ? "omni model" : "omni model"}: ${omniProfile.model ?? (english ? "unknown" : "неизвестно")}`,
+          `${english ? "omni reasoning" : "omni reasoning"}: ${formatCodexSettingValue("reasoning", omniProfile.reasoningEffort, language)}`,
+        ]
+      : []),
     `${english ? "context window" : "context window"}: ${formatNumber(contextWindow, language)}`,
     `${english ? "auto-compact" : "auto-compact"}: ${formatNumber(state.codexAutoCompactTokenLimit, language)}`,
     "",
@@ -245,24 +967,49 @@ export function buildInterruptMessage(
   ].join("\n");
 }
 
-export function buildUnknownCommandMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "Available commands: /help, /new, /status, /language, /wait, /suffix, /interrupt, /diff, /compact, and /purge."
-    : "Сейчас доступны /help, /new, /status, /language, /wait, /suffix, /interrupt, /diff, /compact и /purge.";
+export function buildUnknownCommandMessage(
+  language = DEFAULT_UI_LANGUAGE,
+  { omniEnabled = true } = {},
+) {
+  if (isEnglish(language)) {
+    return omniEnabled
+      ? "Available commands: /help, /guide, /new, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact, and /purge."
+      : "Available commands: /help, /guide, /new, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact, and /purge.";
+  }
+
+  return omniEnabled
+    ? "Сейчас доступны /help, /guide, /new, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact и /purge."
+    : "Сейчас доступны /help, /guide, /new, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact и /purge.";
 }
 
-function buildHelpTextMessage(language = DEFAULT_UI_LANGUAGE) {
+function buildHelpTextMessage(
+  language = DEFAULT_UI_LANGUAGE,
+  { omniEnabled = true } = {},
+) {
   if (isEnglish(language)) {
     return [
       "SEVERUS quick help",
       "",
       "/help — this cheat sheet",
+      "/guide — beginner PDF guidebook from General",
       "/new [cwd=...|path=...] [title] — create a new work topic",
       "/status — session, model, and context status",
+      "/global — pin-friendly global settings menu in General",
+      "/menu — pin-friendly local settings menu in this topic",
+      ...(omniEnabled
+        ? [
+            "/auto | /auto status | /auto off — Omni auto mode in this topic",
+            "/omni [question] — ask Omni, or just send a plain question during /auto",
+          ]
+        : []),
       "/language — show or change the UI language",
-      "/wait 60 | wait 600 — global manual collection window",
-      "`All` — flush the collected prompt immediately",
-      "/wait off — disable the collection window",
+      "/q <text> — add a prompt to the Spike queue",
+      "/q status | /q delete <n> — inspect or remove queued prompts",
+      "/wait 60 | wait 600 — local one-shot collection window",
+      "/wait global 60 — persistent global collection window",
+      "`All`, `Все`, or `Всё` — flush the collected prompt immediately",
+      "/wait off — cancel the local one-shot window",
+      "/wait global off — disable the global window",
       "/interrupt — stop the run",
       "/diff — diff for the current workspace",
       "/compact — rebuild the brief from the exchange log",
@@ -271,6 +1018,18 @@ function buildHelpTextMessage(language = DEFAULT_UI_LANGUAGE) {
       "/suffix global <text> — global prompt suffix",
       "/suffix topic on|off — routing suffixes for this topic",
       "/suffix help — separate suffix cheat sheet",
+      "/model [list|clear|<slug>] — Spike model for this topic",
+      "/model global [list|clear|<slug>] — global Spike model default",
+      "/reasoning [list|clear|<level>] — Spike reasoning for this topic",
+      "/reasoning global [list|clear|<level>] — global Spike reasoning default",
+      ...(omniEnabled
+        ? [
+            "/omni_model [list|clear|<slug>] — Omni model for this topic",
+            "/omni_model global [list|clear|<slug>] — global Omni model default",
+            "/omni_reasoning [list|clear|<level>] — Omni reasoning for this topic",
+            "/omni_reasoning global [list|clear|<level>] — global Omni reasoning default",
+          ]
+        : []),
     ].join("\n");
   }
 
@@ -278,107 +1037,254 @@ function buildHelpTextMessage(language = DEFAULT_UI_LANGUAGE) {
     "SEVERUS quick help",
     "",
     "/help — эта шпаргалка",
+    "/guide — PDF-гайдбук для новичка из General",
     "/new [cwd=...|path=...] [title] — новая рабочая тема",
     "/status — статус сессии, модели и контекста",
+    "/global — pin-friendly Global settings menu в General",
+    "/menu — pin-friendly menu локальных настроек в этом топике",
+    ...(omniEnabled
+      ? [
+          "/auto | /auto status | /auto off — режим Omni /auto в этом топике",
+          "/omni [вопрос] — спросить Omni, или просто прислать вопрос текстом во время /auto",
+        ]
+      : []),
     "/language — показать или сменить язык интерфейса",
-    "/wait 60 | wait 600 — global окно ручного сбора",
-    "`Все` — сразу отправить накопленное",
-    "/wait off — отменить окно сбора",
-    "/interrupt — остановить run",
+    "/q <текст> — поставить prompt в очередь Spike",
+    "/q status | /q delete <n> — посмотреть или удалить queued prompts",
+    "/wait 60 | wait 600 — local one-shot collection window",
+    "/wait global 60 — persistent global collection window",
+    "`Все`, `Всё` или `All` — сразу отправить накопленное",
+    "/wait off — выключить local one-shot window",
+    "/wait global off — выключить global collection window",
+    "/interrupt — остановить active run",
     "/diff — diff текущего workspace",
     "/compact — пересобрать brief из exchange log",
     "/purge — очистить local session state",
     "/suffix <text> — topic prompt suffix",
     "/suffix global <text> — global prompt suffix",
-    "/suffix topic on|off — routing suffixes for this topic",
-    "/suffix help — отдельная шпаргалка по suffix",
+    "/suffix topic on|off — topic prompt suffix routing",
+    "/suffix help — отдельная шпаргалка по prompt suffix",
+    "/model [list|clear|<slug>] — Spike model для этого топика",
+    "/model global [list|clear|<slug>] — global default для Spike model",
+    "/reasoning [list|clear|<level>] — Spike reasoning для этого топика",
+    "/reasoning global [list|clear|<level>] — global default для Spike reasoning",
+    ...(omniEnabled
+      ? [
+          "/omni_model [list|clear|<slug>] — Omni model для этого топика",
+          "/omni_model global [list|clear|<slug>] — global default для Omni model",
+          "/omni_reasoning [list|clear|<level>] — Omni reasoning для этого топика",
+          "/omni_reasoning global [list|clear|<level>] — global default для Omni reasoning",
+        ]
+      : []),
   ].join("\n");
 }
+
+function buildHelpCardPartialFailureMessage(language = DEFAULT_UI_LANGUAGE) {
+  if (isEnglish(language)) {
+    return [
+      "I sent part of the help card, but a later page failed.",
+      "",
+      "Run /help again if you still need the missing page.",
+    ].join("\n");
+  }
+
+  return [
+    "Часть help-card отправил, но следующая страница не доехала.",
+    "",
+    "Если нужна недостающая часть, просто повтори /help.",
+  ].join("\n");
+}
+
+function buildGuideGeneralOnlyMessage(language = DEFAULT_UI_LANGUAGE) {
+  if (isEnglish(language)) {
+    return [
+      "/guide works in General only.",
+      "",
+      "Run it there to receive the beginner PDF guidebook.",
+    ].join("\n");
+  }
+
+  return [
+    "/guide работает только в General.",
+    "",
+    "Запусти его там, чтобы получить PDF-гайдбук для новичка.",
+  ].join("\n");
+}
+
+function buildGuideGenerationFailureMessage(
+  language = DEFAULT_UI_LANGUAGE,
+  error = null,
+) {
+  const detail = error?.message ? `\n\n${isEnglish(language) ? "Error" : "Ошибка"}: ${error.message}` : "";
+  return isEnglish(language)
+    ? `Could not generate the guidebook right now.${detail}`
+    : `Сейчас не смог собрать guidebook.${detail}`;
+}
+
+function buildOmniUnavailableMessage(
+  language = DEFAULT_UI_LANGUAGE,
+  commandName = "omni",
+) {
+  if (isEnglish(language)) {
+    return [
+      `/${commandName} is unavailable right now.`,
+      "",
+      "Omni is disabled in this deployment, so Spike is running alone.",
+      "Use plain prompts here like in a normal single-bot topic.",
+    ].join("\n");
+  }
+
+  return [
+    `/${commandName} сейчас недоступен.`,
+    "",
+    "Omni сейчас отключён, поэтому Spike работает один.",
+    "Просто пиши сюда обычные prompt'ы как в обычную single-bot тему.",
+  ].join("\n");
+}
+
+const AUTO_MODE_ALLOWED_HUMAN_COMMANDS = new Set([
+  "help",
+  "status",
+  "interrupt",
+  "language",
+  "diff",
+  GLOBAL_CONTROL_PANEL_COMMAND,
+  "model",
+  "reasoning",
+  "omni_model",
+  "omni_reasoning",
+]);
 
 function buildWaitUsageMessage(language = DEFAULT_UI_LANGUAGE) {
   if (isEnglish(language)) {
     return [
-      "Collection window",
+      "Collection windows",
       "",
       "Usage:",
       "/wait 60",
       "wait 600",
       "/wait 1m",
+      "/wait global 60",
+      "/wait global 1m",
       "/wait",
       "/wait off",
+      "/wait global off",
       "",
-      "This mode is global across all topics in the same chat.",
-      "It stays enabled until you change the timeout or send /wait off.",
-      "Each new message inside the current prompt resets the timer.",
-      "Send a separate `All` message to flush immediately.",
+      "Plain /wait <time> arms a local one-shot window for the next prompt in this topic.",
+      "The local window resets automatically after that prompt is sent.",
+      "/wait global <time> enables the persistent global window across topics in this chat.",
+      "If both exist, the local one-shot window wins in this topic.",
+      "Each new message inside the active prompt resets the timer.",
+      "Send a separate `All`, `Все`, or `Всё` message to flush immediately.",
     ].join("\n");
   }
 
   return [
-    "Окно сбора",
+    "Collection windows",
     "",
     "Использование:",
     "/wait 60",
     "wait 600",
     "/wait 1m",
+    "/wait global 60",
+    "/wait global 1m",
     "/wait",
     "/wait off",
+    "/wait global off",
     "",
-    "Режим глобальный для всех тем этого чата.",
-    "Он остается включенным, пока ты не поменяешь таймаут или не дашь /wait off.",
-    "Каждое новое сообщение внутри текущего prompt сбрасывает таймер.",
-    "Отправь отдельным сообщением `Все`, чтобы запустить сразу.",
+    "Обычный /wait <время> включает local one-shot window для следующего prompt в этом топике.",
+    "Local one-shot window само сбрасывается после отправки этого prompt.",
+    "/wait global <время> включает persistent global window для всех тем этого чата.",
+    "Если активны оба режима, в этом топике приоритет у local one-shot window.",
+    "Каждое новое сообщение внутри активного prompt сбрасывает таймер.",
+    "Отправь отдельным сообщением `Все`, `Всё` или `All`, чтобы запустить сразу.",
   ].join("\n");
 }
 
 function buildWaitStateMessage(
   waitState,
-  heading = "Окно сбора",
+  heading = "Collection windows",
   language = DEFAULT_UI_LANGUAGE,
+  scope = "effective",
 ) {
   const english = isEnglish(language);
-  if (!waitState?.active) {
+  const selectedState = selectWaitStateByScope(waitState, scope);
+  if (!selectedState?.active) {
     return [
       heading,
       "",
       "status: off",
       "",
-      english
-        ? "Enable it with: /wait 60, wait 600, or /wait 1m"
-        : "Включить: /wait 60, wait 600 или /wait 1m",
+      scope === "global"
+        ? (english
+          ? "Enable it with: /wait global 60 or /wait global 1m"
+          : "Включить: /wait global 60 или /wait global 1m")
+        : scope === "topic"
+          ? (english
+            ? "Enable it with: /wait 60, wait 600, or /wait 1m"
+            : "Включить: /wait 60, wait 600 или /wait 1m")
+          : (english
+            ? "Enable local with /wait 60 or global with /wait global 60"
+            : "Включить локальный через /wait 60 или global через /wait global 60"),
     ].join("\n");
   }
 
-  const seconds = Number.isInteger(waitState.flushDelayMs)
-    ? Math.round(waitState.flushDelayMs / 1000)
+  const seconds = Number.isInteger(selectedState.flushDelayMs)
+    ? Math.round(selectedState.flushDelayMs / 1000)
     : null;
-
-  return [
+  const lines = [
     heading,
     "",
-    `status: on`,
+    "status: on",
+    `scope: ${getWaitScopeLabel(selectedState.scope, language)}`,
     `timeout: ${formatWaitWindow(seconds, language)}`,
-    `buffered parts: ${waitState.messageCount ?? 0}`,
+    `buffered parts: ${selectedState.messageCount ?? 0}`,
+  ];
+
+  if (scope === "effective") {
+    lines.push(
+      "",
+      english
+        ? `local one-shot: ${waitState?.local?.active ? "on" : "off"}`
+        : `local one-shot: ${waitState?.local?.active ? "on" : "off"}`,
+      english
+        ? `global persistent: ${waitState?.global?.active ? "on" : "off"}`
+        : `global persistent: ${waitState?.global?.active ? "on" : "off"}`,
+    );
+  }
+
+  lines.push(
     "",
+    selectedState.scope === "global"
+      ? (english
+        ? "This window stays enabled until /wait global off or a new /wait global <time>."
+        : "Это окно остается включенным до /wait global off или нового /wait global <время>.")
+      : (english
+        ? "This window is local to this topic and resets after the next prompt is sent."
+        : "Это окно локально для этого топика и само сбрасывается после отправки следующего prompt."),
     english
-      ? "This mode is global across all topics in the same chat."
-      : "Режим глобальный для всех тем этого чата.",
+      ? "Each new message inside the active prompt resets the timer."
+      : "Каждое новое сообщение внутри активного prompt сбрасывает таймер.",
     english
-      ? "It stays enabled until /wait off or a new /wait <time>."
-      : "Он остается включенным до /wait off или нового /wait <time>.",
-    english
-      ? "Each new message inside the current prompt resets the timer."
-      : "Каждое новое сообщение внутри текущего prompt сбрасывает таймер.",
-    english
-      ? "Send a separate `All` message to flush immediately."
-      : "Отправь отдельным сообщением `Все`, чтобы запустить сразу.",
-    english ? "Disable it: /wait off" : "Отключить: /wait off",
-  ].join("\n");
+      ? "Send a separate `All`, `Все`, or `Всё` message to flush immediately."
+      : "Отправь отдельным сообщением `Все`, `Всё` или `All`, чтобы запустить сразу.",
+    selectedState.scope === "global"
+      ? (english ? "Disable it: /wait global off" : "Отключить: /wait global off")
+      : (english ? "Disable it: /wait off" : "Отключить: /wait off"),
+  );
+
+  return lines.join("\n");
 }
 
-function buildWaitDisabledMessage(canceled, language = DEFAULT_UI_LANGUAGE) {
+function buildWaitDisabledMessage(canceled, scope = "topic", language = DEFAULT_UI_LANGUAGE) {
   return [
-    isEnglish(language) ? "Wait mode is off." : "Режим wait выключен.",
+    isEnglish(language)
+      ? scope === "global"
+        ? "Global wait is off."
+        : "Local wait is off."
+      : scope === "global"
+        ? "Global wait is off."
+        : "Local wait is off.",
     "",
     `discarded parts: ${canceled?.messageCount ?? 0}`,
   ].join("\n");
@@ -387,7 +1293,7 @@ function buildWaitDisabledMessage(canceled, language = DEFAULT_UI_LANGUAGE) {
 function buildWaitUnavailableMessage(language = DEFAULT_UI_LANGUAGE) {
   return isEnglish(language)
     ? "The collection window is unavailable in this runtime."
-    : "Окно сбора недоступно в этом runtime.";
+    : "Collection window недоступно в этом runtime.";
 }
 
 function buildLanguageStateMessage(session, language = getSessionUiLanguage(session)) {
@@ -486,7 +1392,7 @@ function buildPromptSuffixEmptyMessage(
   return [
     isEnglish(language)
       ? "Prompt suffix text is empty."
-      : "Текст prompt suffix пустой.",
+      : "Текст Prompt suffix пустой.",
     "",
     isEnglish(language)
       ? `Set it first with ${setCommand}.`
@@ -522,14 +1428,14 @@ function buildPromptSuffixHelpMessage(language = DEFAULT_UI_LANGUAGE) {
   }
 
   return [
-    "Suffix help",
+    "Prompt suffix help",
     "",
-    "Локальный suffix в текущем топике:",
+    "Local prompt suffix в текущем топике:",
     "/suffix <text>",
     "/suffix",
     "/suffix on | off | clear",
     "",
-    "Глобальный suffix для всего gateway:",
+    "Global prompt suffix для всего gateway:",
     "/suffix global <text>",
     "/suffix global",
     "/suffix global on | off | clear",
@@ -540,9 +1446,9 @@ function buildPromptSuffixHelpMessage(language = DEFAULT_UI_LANGUAGE) {
     "/suffix topic on",
     "",
     "Приоритет:",
-    "1. /suffix topic off => suffixes не применяются в этом топике",
-    "2. локальный suffix on => локальный перекрывает глобальный",
-    "3. иначе применяется глобальный suffix, если он включён",
+    "1. /suffix topic off => prompt suffixes не применяются в этом топике",
+    "2. local suffix on => local перекрывает global",
+    "3. иначе применяется global prompt suffix, если он включён",
   ].join("\n");
 }
 
@@ -559,7 +1465,7 @@ function buildTopicPromptSuffixStateMessage(
     "",
     isEnglish(language)
       ? "When off, this topic ignores both local and global prompt suffixes."
-      : "Когда выключено, этот топик игнорирует и локальный, и глобальный prompt suffix.",
+      : "Когда выключено, этот топик игнорирует и local, и global prompt suffix.",
     isEnglish(language)
       ? "Use /suffix topic on or /suffix topic off."
       : "Используй /suffix topic on или /suffix topic off.",
@@ -570,7 +1476,7 @@ function buildTopicPromptSuffixUsageMessage(language = DEFAULT_UI_LANGUAGE) {
   return [
     isEnglish(language)
       ? "Topic prompt suffix routing command is invalid."
-      : "Команда routing для topic prompt suffix некорректна.",
+      : "Команда Topic prompt suffix routing некорректна.",
     "",
     isEnglish(language)
       ? "Use /suffix topic on, /suffix topic off, or /suffix topic."
@@ -846,6 +1752,22 @@ function markCommandHandled(serviceState, commandName) {
   serviceState.lastCommandAt = new Date().toISOString();
 }
 
+function buildSyntheticCommandMessage(actor, chat, commandText) {
+  const rawCommand = String(commandText ?? "").trim().split(/\s+/u)[0] ?? "";
+  return {
+    text: commandText,
+    entities: rawCommand.startsWith("/")
+      ? [{ type: "bot_command", offset: 0, length: rawCommand.length }]
+      : undefined,
+    from: actor,
+    chat,
+    message_thread_id: Number.isInteger(chat?.message_thread_id)
+      ? chat.message_thread_id
+      : undefined,
+    is_internal_global_control_dispatch: true,
+  };
+}
+
 function launchCompactionInBackground({
   api,
   lifecycleManager,
@@ -931,6 +1853,7 @@ function buildPromptFromMessages(messages, { bufferMode = "auto" } = {}) {
 
 function buildBufferedPromptFlush({
   api,
+  botUsername,
   config,
   lifecycleManager,
   promptStartGuard = null,
@@ -946,6 +1869,7 @@ function buildBufferedPromptFlush({
     await startTopicPromptRun({
       api,
       bufferMode: flushState.mode ?? "auto",
+      botUsername,
       config,
       lifecycleManager,
       messages: bufferedMessages,
@@ -955,6 +1879,435 @@ function buildBufferedPromptFlush({
       sessionService,
       workerPool,
     });
+  };
+}
+
+function buildQueuedPromptFromMessages(messages, botUsername) {
+  const promptMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  if (promptMessages.length === 0) {
+    return "";
+  }
+
+  const firstMessage = promptMessages[0];
+  const firstCommand = extractBotCommand(firstMessage, botUsername);
+  if (firstCommand?.name !== "q") {
+    return buildPromptFromMessages(promptMessages);
+  }
+
+  const parts = [];
+  const commandText = String(firstCommand.args || "").trim();
+  if (commandText) {
+    parts.push(commandText);
+  }
+
+  for (const entry of promptMessages.slice(1)) {
+    const text = extractPromptText(entry, { trim: true });
+    if (text) {
+      parts.push(text);
+    }
+  }
+
+  return parts.join("\n\n").trim();
+}
+
+function buildBufferedQueueFlush({
+  api,
+  botUsername,
+  config,
+  lifecycleManager,
+  promptStartGuard = null,
+  queuePromptAssembler = null,
+  serviceState,
+  sessionService,
+  workerPool,
+}) {
+  return async (bufferedMessages) => {
+    if (!Array.isArray(bufferedMessages) || bufferedMessages.length === 0) {
+      return;
+    }
+
+    await queueTopicPrompt({
+      api,
+      botUsername,
+      config,
+      lifecycleManager,
+      messages: bufferedMessages,
+      promptStartGuard,
+      queuePromptAssembler: null,
+      serviceState,
+      sessionService,
+      workerPool,
+    });
+  };
+}
+
+async function queueTopicPrompt({
+  api,
+  botUsername,
+  config,
+  lifecycleManager = null,
+  messages,
+  promptStartGuard = null,
+  queuePromptAssembler = null,
+  serviceState,
+  sessionService,
+  workerPool,
+}) {
+  const promptMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  const message = promptMessages.at(-1) ?? null;
+  if (!message) {
+    serviceState.ignoredUpdates += 1;
+    return { handled: false, reason: "missing-message", handledSession: null };
+  }
+
+  const promptStartGuardResult =
+    await promptStartGuard?.handleCompetingTopicMessage(message);
+  if (promptStartGuardResult?.handled) {
+    return {
+      handled: true,
+      reason: promptStartGuardResult.reason,
+      handledSession: null,
+    };
+  }
+
+  const topicId = getTopicIdFromMessage(message);
+  if (!topicId) {
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(message, buildNoSessionTopicMessage()),
+      null,
+      lifecycleManager,
+    );
+    return { handled: true, reason: "general-topic", handledSession: null };
+  }
+
+  let session = await sessionService.ensureRunnableSessionForMessage(message);
+  if (
+    config.omniEnabled !== false &&
+    isAutoModeHumanInputLocked(session)
+  ) {
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        buildQueueAutoUnavailableMessage(getSessionUiLanguage(session)),
+      ),
+      session,
+      lifecycleManager,
+    );
+    return {
+      handled: true,
+      reason: "queue-auto-disabled",
+      handledSession: session,
+    };
+  }
+
+  const rawPrompt = buildQueuedPromptFromMessages(promptMessages, botUsername);
+  const shouldBuffer =
+    queuePromptAssembler?.shouldBufferMessage(message, rawPrompt);
+  if (shouldBuffer) {
+    queuePromptAssembler.enqueue({
+      message,
+      flush: buildBufferedQueueFlush({
+        api,
+        botUsername,
+        config,
+        lifecycleManager,
+        promptStartGuard,
+        queuePromptAssembler,
+        serviceState,
+        sessionService,
+        workerPool,
+      }),
+    });
+    return {
+      handled: true,
+      reason: "queue-buffered",
+      handledSession: session,
+    };
+  }
+
+  if (!rawPrompt) {
+    if (promptMessages.some((entry) => hasIncomingAttachments(entry))) {
+      const pendingAttachments = [];
+      for (const promptMessage of promptMessages) {
+        if (!hasIncomingAttachments(promptMessage)) {
+          continue;
+        }
+
+        pendingAttachments.push(
+          ...(await sessionService.ingestIncomingAttachments(
+            api,
+            session,
+            promptMessage,
+          )),
+        );
+      }
+
+      if (
+        pendingAttachments.length > 0 &&
+        typeof sessionService.bufferPendingPromptAttachments === "function"
+      ) {
+        await sessionService.bufferPendingPromptAttachments(
+          session,
+          pendingAttachments,
+          { scope: "queue" },
+        );
+      }
+      await safeSendMessage(
+        api,
+        buildReplyMessageParams(
+          message,
+          buildQueueAttachmentNeedsPromptMessage(getSessionUiLanguage(session)),
+        ),
+        session,
+        lifecycleManager,
+      );
+      return {
+        handled: true,
+        reason: "queue-attachment-without-prompt",
+        handledSession: session,
+      };
+    }
+
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        buildQueueUsageMessage(getSessionUiLanguage(session)),
+      ),
+      session,
+      lifecycleManager,
+    );
+    return {
+      handled: true,
+      reason: "queue-usage",
+      handledSession: session,
+    };
+  }
+
+  const globalPromptSuffix =
+    typeof sessionService.getGlobalPromptSuffix === "function"
+      ? await sessionService.getGlobalPromptSuffix()
+      : null;
+  const effectivePrompt = applyPromptSuffix(rawPrompt, session, globalPromptSuffix);
+  const attachments =
+    typeof sessionService.getPendingPromptAttachments === "function"
+      ? await sessionService.getPendingPromptAttachments(session, {
+          scope: "queue",
+        })
+      : [];
+  for (const promptMessage of promptMessages) {
+    if (!hasIncomingAttachments(promptMessage)) {
+      continue;
+    }
+
+    attachments.push(
+      ...(await sessionService.ingestIncomingAttachments(
+        api,
+        session,
+        promptMessage,
+      )),
+    );
+  }
+
+  const queued = await sessionService.enqueuePromptQueue(session, {
+    rawPrompt,
+    prompt: effectivePrompt,
+    attachments,
+    replyToMessageId: Number.isInteger(message.message_id) ? message.message_id : null,
+  });
+
+  if (
+    attachments.length > 0 &&
+    typeof sessionService.clearPendingPromptAttachments === "function"
+  ) {
+    session = await sessionService.clearPendingPromptAttachments(session, {
+      scope: "queue",
+    });
+  }
+
+  if (
+    queued.position === 1 &&
+    typeof sessionService.drainPromptQueue === "function"
+  ) {
+    const drainResults = await sessionService.drainPromptQueue(workerPool, {
+      session,
+    });
+    const drainResult = drainResults.find(
+      (entry) => entry.sessionKey === session.session_key,
+    );
+    if (drainResult?.result?.reason === "prompt-started") {
+      return {
+        handled: true,
+        reason: "prompt-started",
+        handledSession: session,
+      };
+    }
+  }
+
+  const delivery = await safeSendMessage(
+    api,
+    buildReplyMessageParams(
+      message,
+      buildQueueQueuedMessage({
+        position: queued.position,
+        preview: summarizeQueuedPrompt(rawPrompt),
+        waitingForCapacity:
+          queued.position === 1 &&
+          !(typeof workerPool.getActiveRun === "function"
+            && workerPool.getActiveRun(session.session_key)),
+        language: getSessionUiLanguage(session),
+      }),
+    ),
+    session,
+    lifecycleManager,
+  );
+  if (delivery.parked) {
+    return {
+      handled: true,
+      reason: "topic-unavailable",
+      handledSession: delivery.session || session,
+    };
+  }
+
+  return {
+    handled: true,
+    reason: "prompt-queued",
+    handledSession: session,
+  };
+}
+
+async function handleQueueCommand({
+  api,
+  botUsername,
+  config,
+  lifecycleManager = null,
+  message,
+  parsedCommand,
+  promptStartGuard = null,
+  queuePromptAssembler = null,
+  serviceState,
+  sessionService,
+  workerPool,
+}) {
+  if (!getTopicIdFromMessage(message)) {
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(message, buildNoSessionTopicMessage()),
+      null,
+      lifecycleManager,
+    );
+    return { handled: true, reason: "general-topic", handledSession: null };
+  }
+
+  const session = await sessionService.ensureSessionForMessage(message);
+  const language = getSessionUiLanguage(session);
+
+  if (parsedCommand.action === "status") {
+    const entries = await sessionService.listPromptQueue(session);
+    const delivery = await safeSendMessage(
+      api,
+      buildReplyMessageParams(message, buildQueueStatusMessage(entries, language)),
+      session,
+      lifecycleManager,
+    );
+    return {
+      handled: true,
+      reason: delivery.parked ? "topic-unavailable" : "queue-status",
+      handledSession: delivery.session || session,
+    };
+  }
+
+  if (parsedCommand.action === "delete") {
+    const deleted = await sessionService.deletePromptQueueEntry(
+      session,
+      parsedCommand.position,
+    );
+    const delivery = await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        deleted.entry
+          ? buildQueueDeletedMessage(
+              deleted.entry,
+              parsedCommand.position,
+              deleted.size,
+              language,
+            )
+          : buildQueueDeleteMissingMessage(parsedCommand.position, language),
+      ),
+      session,
+      lifecycleManager,
+    );
+    return {
+      handled: true,
+      reason: delivery.parked ? "topic-unavailable" : "queue-deleted",
+      handledSession: delivery.session || session,
+    };
+  }
+
+  return queueTopicPrompt({
+    api,
+    botUsername,
+    config,
+    lifecycleManager,
+    messages: [message],
+    promptStartGuard,
+    queuePromptAssembler,
+    serviceState,
+    sessionService,
+    workerPool,
+  });
+}
+
+function buildApplyTopicWaitChange({
+  api,
+  botUsername,
+  config,
+  lifecycleManager,
+  promptStartGuard,
+  promptFragmentAssembler = null,
+  serviceState,
+  sessionService,
+  workerPool,
+}) {
+  return async ({
+    message,
+    value,
+  }) => {
+    if (!promptFragmentAssembler) {
+      return { available: false };
+    }
+
+    if (value === "off") {
+      promptFragmentAssembler.cancelPendingForMessage(message, {
+        scope: "topic",
+      });
+      return { available: true };
+    }
+
+    const seconds = Number(value);
+    if (!Number.isInteger(seconds) || seconds <= 0) {
+      return { available: false };
+    }
+
+    promptFragmentAssembler.openWindow({
+      message,
+      flushDelayMs: seconds * 1000,
+      scope: "topic",
+      flush: buildBufferedPromptFlush({
+        api,
+        botUsername,
+        config,
+        lifecycleManager,
+        promptStartGuard,
+        serviceState,
+        sessionService,
+        workerPool,
+      }),
+    });
+    return { available: true };
   };
 }
 
@@ -1012,9 +2365,20 @@ async function startTopicPromptRun({
     return { handled: true, reason: "general-topic" };
   }
 
+  const lockedSession = await sessionService.ensureRunnableSessionForMessage(message);
+  if (
+    config.omniEnabled !== false &&
+    isAutoModeHumanInputLocked(lockedSession)
+    && !canAutoModeAcceptPromptFromMessage(lockedSession, message)
+  ) {
+    return { handled: true, reason: "auto-topic-human-input-blocked" };
+  }
+
   const rawPrompt = buildPromptFromMessages(promptMessages, { bufferMode });
   const prompt = rawPrompt;
-  const shouldBuffer = promptFragmentAssembler?.shouldBufferMessage(message, rawPrompt);
+  const shouldBuffer =
+    !message?.is_internal_omni_handoff
+    && promptFragmentAssembler?.shouldBufferMessage(message, rawPrompt);
   if (shouldBuffer) {
     promptFragmentAssembler.enqueue({
       message,
@@ -1083,7 +2447,7 @@ async function startTopicPromptRun({
     return { handled: false, reason: "empty-prompt" };
   }
 
-  let session = await sessionService.ensureRunnableSessionForMessage(message);
+  let session = lockedSession;
   const globalPromptSuffix =
     typeof sessionService.getGlobalPromptSuffix === "function"
       ? await sessionService.getGlobalPromptSuffix()
@@ -1182,9 +2546,12 @@ export async function handleIncomingMessage({
   botUsername,
   config,
   lifecycleManager = null,
+  globalControlPanelStore = null,
+  topicControlPanelStore = null,
   message,
   promptStartGuard = null,
   promptFragmentAssembler = null,
+  queuePromptAssembler = null,
   serviceState,
   sessionService,
   workerPool,
@@ -1194,15 +2561,100 @@ export async function handleIncomingMessage({
     return { handled: false, reason: "unauthorized" };
   }
 
+  const dispatchGlobalControlCommand = async ({
+    actor,
+    chat,
+    commandText,
+  }) =>
+    handleIncomingMessage({
+      api,
+      botUsername,
+      config,
+      lifecycleManager,
+      globalControlPanelStore,
+      topicControlPanelStore,
+      message: buildSyntheticCommandMessage(actor, chat, commandText),
+      promptStartGuard,
+      promptFragmentAssembler,
+      queuePromptAssembler,
+      serviceState,
+      sessionService,
+      workerPool,
+    });
+  const applyTopicWaitChange = buildApplyTopicWaitChange({
+    api,
+    botUsername,
+    config,
+    lifecycleManager,
+    promptStartGuard,
+    promptFragmentAssembler,
+    serviceState,
+    sessionService,
+    workerPool,
+  });
+
+  if (
+    !message.is_internal_global_control_dispatch
+    && globalControlPanelStore
+  ) {
+    const globalControlReplyResult = await maybeHandleGlobalControlReply({
+      api,
+      config,
+      dispatchCommand: dispatchGlobalControlCommand,
+      globalControlPanelStore,
+      message,
+      promptFragmentAssembler,
+      sessionService,
+    });
+    if (globalControlReplyResult?.handled) {
+      return globalControlReplyResult;
+    }
+  }
+
+  if (topicControlPanelStore) {
+    const topicControlReplyResult = await maybeHandleTopicControlReply({
+      api,
+      config,
+      message,
+      promptFragmentAssembler,
+      sessionService,
+      topicControlPanelStore,
+      applyTopicWaitChange,
+    });
+    if (topicControlReplyResult?.handled) {
+      return topicControlReplyResult;
+    }
+  }
+
   if (isManualWaitFlushMessage(message, promptFragmentAssembler)) {
     await promptFragmentAssembler.flushPendingForMessage(message);
     return { handled: true, reason: "prompt-buffer-flushed" };
   }
 
   const command = extractBotCommand(message, botUsername);
+  const foreignBotCommand = !command && isForeignBotCommand(message, botUsername);
+  if (
+    queuePromptAssembler?.hasPendingForSameTopicMessage(message)
+    && !message.from?.is_bot
+  ) {
+    if (command?.name === "q") {
+      await queuePromptAssembler.flushPendingForMessage(message);
+    } else if (
+      !command &&
+      !foreignBotCommand &&
+      (message.text || message.caption || hasIncomingAttachments(message))
+    ) {
+      queuePromptAssembler.enqueue({ message });
+      return { handled: true, reason: "queue-buffered" };
+    } else if (command) {
+      queuePromptAssembler.cancelPendingForMessage(message);
+    }
+  }
   if (
     command &&
     command.name !== "wait" &&
+    command.name !== TOPIC_CONTROL_PANEL_COMMAND &&
+    command.name !== "auto" &&
     promptFragmentAssembler?.hasPendingForSameTopicMessage(message)
   ) {
     promptFragmentAssembler.cancelPendingForMessage(message, {
@@ -1210,6 +2662,28 @@ export async function handleIncomingMessage({
     });
   }
   if (!command) {
+    if (message.from?.is_bot) {
+      const botSession =
+        getTopicIdFromMessage(message) &&
+        typeof sessionService.ensureRunnableSessionForMessage === "function"
+          ? await sessionService.ensureRunnableSessionForMessage(message)
+          : null;
+      if (
+        !botSession ||
+        config.omniEnabled === false ||
+        !isAutoModeHumanInputLocked(botSession) ||
+        !canAutoModeAcceptPromptFromMessage(botSession, message)
+      ) {
+        serviceState.ignoredUpdates += 1;
+        return { handled: false, reason: "bot-prompt-ignored" };
+      }
+    }
+
+    if (foreignBotCommand) {
+      serviceState.ignoredUpdates += 1;
+      return { handled: false, reason: "foreign-bot-command" };
+    }
+
     if (!message.text && !message.caption && !hasIncomingAttachments(message)) {
       serviceState.ignoredUpdates += 1;
       return { handled: false, reason: "not-a-text-message" };
@@ -1228,8 +2702,118 @@ export async function handleIncomingMessage({
     });
   }
 
+  const runtimeCommandSpec = getCodexRuntimeCommandSpec(command.name);
+  const omniSpecificCommand =
+    command.name === "auto"
+    || command.name === "omni"
+    || runtimeCommandSpec?.target === "omni";
+  if (config.omniEnabled === false && omniSpecificCommand) {
+    const topicId = getTopicIdFromMessage(message);
+    const handledSession = topicId
+      ? await sessionService.ensureSessionForMessage(message)
+      : null;
+    const language = handledSession
+      ? getSessionUiLanguage(handledSession)
+      : await resolveGeneralUiLanguage(globalControlPanelStore);
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        buildOmniUnavailableMessage(language, command.name),
+      ),
+      handledSession,
+      lifecycleManager,
+    );
+    if (handledSession) {
+      await sessionService.recordHandledSession(
+        serviceState,
+        handledSession,
+        command.name,
+      );
+    }
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name, reason: "omni-disabled" };
+  }
+
+  if (command.name === "auto" || command.name === "omni") {
+    serviceState.ignoredUpdates += 1;
+    return { handled: false, reason: "omni-owned-command" };
+  }
+
+  const parsedQueueCommand =
+    command.name === "q"
+      ? parseQueueCommandArgs(command.args)
+      : null;
+  const effectiveQueueCommand =
+    parsedQueueCommand?.action === "status" && hasIncomingAttachments(message)
+      ? {
+          action: "enqueue",
+          text: "",
+          position: null,
+        }
+      : parsedQueueCommand;
+
+  const autoCommandLockSession =
+    getTopicIdFromMessage(message) &&
+    typeof sessionService.ensureRunnableSessionForMessage === "function"
+      ? await sessionService.ensureRunnableSessionForMessage(message)
+      : null;
+  if (
+    autoCommandLockSession &&
+    config.omniEnabled !== false &&
+    isAutoModeHumanInputLocked(autoCommandLockSession) &&
+    !canAutoModeAcceptPromptFromMessage(autoCommandLockSession, message) &&
+    !AUTO_MODE_ALLOWED_HUMAN_COMMANDS.has(command.name)
+  ) {
+    if (command.name === "q") {
+      await safeSendMessage(
+        api,
+        buildReplyMessageParams(
+          message,
+          buildQueueAutoUnavailableMessage(
+            getSessionUiLanguage(autoCommandLockSession),
+          ),
+        ),
+        autoCommandLockSession,
+        lifecycleManager,
+      );
+    }
+    return { handled: true, reason: "auto-topic-human-command-blocked" };
+  }
+
+  if (command.name === "q") {
+    const result = await handleQueueCommand({
+      api,
+      botUsername,
+      config,
+      lifecycleManager,
+      message,
+      parsedCommand: effectiveQueueCommand,
+      promptStartGuard,
+      queuePromptAssembler,
+      serviceState,
+      sessionService,
+      workerPool,
+    });
+    if (result.handledSession) {
+      await sessionService.recordHandledSession(
+        serviceState,
+        result.handledSession,
+        command.name,
+      );
+    }
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name, reason: result.reason };
+  }
+
   if (command.name === "new") {
     const newTopicArgs = parseNewTopicCommandArgs(command.args);
+    const sourceSession = getTopicIdFromMessage(message)
+      ? await sessionService.ensureSessionForMessage(message)
+      : null;
+    const sourceLanguage = sourceSession
+      ? getSessionUiLanguage(sourceSession)
+      : await resolveGeneralUiLanguage(globalControlPanelStore);
     let workspaceBinding;
     let inheritedFromSessionKey = null;
 
@@ -1243,7 +2827,11 @@ export async function handleIncomingMessage({
           api,
           buildReplyMessageParams(
             message,
-            buildBindingResolutionErrorMessage(newTopicArgs.bindingPath, error),
+            buildBindingResolutionErrorMessage(
+              newTopicArgs.bindingPath,
+              error,
+              sourceLanguage,
+            ),
           ),
           null,
           lifecycleManager,
@@ -1261,6 +2849,7 @@ export async function handleIncomingMessage({
       api,
       message,
       title: newTopicArgs.title,
+      uiLanguage: sourceLanguage,
       workspaceBinding,
       inheritedFromSessionKey,
     });
@@ -1268,13 +2857,30 @@ export async function handleIncomingMessage({
     await safeSendMessage(api, {
       chat_id: message.chat.id,
       message_thread_id: forumTopic.message_thread_id,
-      text: buildNewTopicBootstrapMessage(session, forumTopic),
+      text: buildNewTopicBootstrapMessage(session, forumTopic, sourceLanguage),
     }, session, lifecycleManager);
+    if (topicControlPanelStore) {
+      await ensureTopicControlPanelMessage({
+        activeScreen: "root",
+        actor: {
+          chat: { id: message.chat.id },
+          from: message.from,
+          message_thread_id: forumTopic.message_thread_id,
+        },
+        api,
+        config,
+        promptFragmentAssembler,
+        session,
+        sessionService,
+        topicControlPanelStore,
+        pin: true,
+      });
+    }
     const ack = await safeSendMessage(
       api,
       buildReplyMessageParams(
         message,
-        buildNewTopicAckMessage(session, forumTopic),
+        buildNewTopicAckMessage(session, forumTopic, sourceLanguage),
       ),
       session,
       lifecycleManager,
@@ -1306,14 +2912,48 @@ export async function handleIncomingMessage({
     command.name === "language"
       ? parseLanguageCommandArgs(command.args)
       : null;
+  const scopedRuntimeSettingCommand = getCodexRuntimeCommandSpec(command.name)
+    ? parseScopedRuntimeSettingCommandArgs(command.args)
+    : null;
   const topicId = getTopicIdFromMessage(message);
+  const generalUiLanguage = !topicId
+    ? await resolveGeneralUiLanguage(globalControlPanelStore)
+    : DEFAULT_UI_LANGUAGE;
+  if (command.name === GLOBAL_CONTROL_PANEL_COMMAND) {
+    const result = await handleGlobalControlCommand({
+      api,
+      config,
+      dispatchCommand: dispatchGlobalControlCommand,
+      globalControlPanelStore,
+      message,
+      promptFragmentAssembler,
+      sessionService,
+    });
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name, reason: result.reason };
+  }
+
+  if (command.name === TOPIC_CONTROL_PANEL_COMMAND) {
+    const result = await handleTopicControlCommand({
+      api,
+      config,
+      fallbackLanguage: generalUiLanguage,
+      message,
+      promptFragmentAssembler,
+      sessionService,
+      topicControlPanelStore,
+    });
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name, reason: result.reason };
+  }
+
   if (command.name === "suffix" && suffixCommand?.scope === "help") {
     const handledSession = topicId
       ? await sessionService.ensureSessionForMessage(message)
       : null;
     const language = handledSession
       ? getSessionUiLanguage(handledSession)
-      : DEFAULT_UI_LANGUAGE;
+      : generalUiLanguage;
     const delivery = await safeSendMessage(
       api,
       buildReplyMessageParams(message, buildPromptSuffixHelpMessage(language)),
@@ -1350,18 +2990,116 @@ export async function handleIncomingMessage({
       : null;
     const language = handledSession
       ? getSessionUiLanguage(handledSession)
-      : DEFAULT_UI_LANGUAGE;
-    const helpCard = getHelpCardAsset(language);
+      : await resolveGeneralUiLanguage(globalControlPanelStore);
+    const helpCards = getHelpCardAssets(language);
 
-    try {
-      const delivery = await safeSendPhotoToTopic(
+    if (config.omniEnabled === false) {
+      const fallbackDelivery = await safeSendMessage(
         api,
-        message,
-        {
-          filePath: helpCard.filePath,
-          fileName: helpCard.fileName,
-          contentType: "image/png",
-        },
+        buildReplyMessageParams(
+          message,
+          buildHelpTextMessage(language, { omniEnabled: false }),
+        ),
+        handledSession,
+        lifecycleManager,
+      );
+      if (fallbackDelivery.parked) {
+        handledSession = fallbackDelivery.session || handledSession;
+        if (handledSession) {
+          await sessionService.recordHandledSession(
+            serviceState,
+            handledSession,
+            command.name,
+          );
+        }
+        markCommandHandled(serviceState, command.name);
+        return { handled: true, command: command.name, reason: "topic-unavailable" };
+      }
+    } else {
+      let deliveredPages = 0;
+      try {
+        for (const helpCard of helpCards) {
+          const delivery = await safeSendDocumentToTopic(
+            api,
+            message,
+            {
+              filePath: helpCard.filePath,
+              fileName: helpCard.fileName,
+              contentType: "image/png",
+            },
+            handledSession,
+            lifecycleManager,
+          );
+          if (delivery.parked) {
+            handledSession = delivery.session || handledSession;
+            if (handledSession) {
+              await sessionService.recordHandledSession(
+                serviceState,
+                handledSession,
+                command.name,
+              );
+            }
+            markCommandHandled(serviceState, command.name);
+            return { handled: true, command: command.name, reason: "topic-unavailable" };
+          }
+          deliveredPages += 1;
+        }
+      } catch {
+        const fallbackDelivery = await safeSendMessage(
+          api,
+          buildReplyMessageParams(
+            message,
+            deliveredPages > 0
+              ? buildHelpCardPartialFailureMessage(language)
+              : buildHelpTextMessage(language, { omniEnabled: true }),
+          ),
+          handledSession,
+          lifecycleManager,
+        );
+        if (fallbackDelivery.parked) {
+          handledSession = fallbackDelivery.session || handledSession;
+          if (handledSession) {
+            await sessionService.recordHandledSession(
+              serviceState,
+              handledSession,
+              command.name,
+            );
+          }
+          markCommandHandled(serviceState, command.name);
+          return { handled: true, command: command.name, reason: "topic-unavailable" };
+        }
+      }
+    }
+
+    if (handledSession) {
+      await sessionService.recordHandledSession(
+        serviceState,
+        handledSession,
+        command.name,
+      );
+    }
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name };
+  }
+
+  if (command.name === "guide") {
+    let handledSession = topicId
+      ? await sessionService.ensureSessionForMessage(message)
+      : null;
+    const language = handledSession
+      ? getSessionUiLanguage(handledSession)
+      : await resolveGeneralUiLanguage(globalControlPanelStore);
+    const inGeneralTopic =
+      !topicId
+      && String(message.chat?.id ?? "") === String(config.telegramForumChatId ?? "");
+
+    if (!inGeneralTopic) {
+      const delivery = await safeSendMessage(
+        api,
+        buildReplyMessageParams(
+          message,
+          buildGuideGeneralOnlyMessage(language),
+        ),
         handledSession,
         lifecycleManager,
       );
@@ -1377,10 +3115,48 @@ export async function handleIncomingMessage({
         markCommandHandled(serviceState, command.name);
         return { handled: true, command: command.name, reason: "topic-unavailable" };
       }
-    } catch {
+
+      if (handledSession) {
+        await sessionService.recordHandledSession(
+          serviceState,
+          handledSession,
+          command.name,
+        );
+      }
+      markCommandHandled(serviceState, command.name);
+      return { handled: true, command: command.name, reason: "guide-general-only" };
+    }
+
+    try {
+      const guidebook = await getGuidebookAsset(language, {
+        stateRoot: config.stateRoot,
+      });
+      const delivery = await safeSendDocumentToTopic(
+        api,
+        message,
+        guidebook,
+        handledSession,
+        lifecycleManager,
+      );
+      if (delivery.parked) {
+        handledSession = delivery.session || handledSession;
+        if (handledSession) {
+          await sessionService.recordHandledSession(
+            serviceState,
+            handledSession,
+            command.name,
+          );
+        }
+        markCommandHandled(serviceState, command.name);
+        return { handled: true, command: command.name, reason: "topic-unavailable" };
+      }
+    } catch (error) {
       const fallbackDelivery = await safeSendMessage(
         api,
-        buildReplyMessageParams(message, buildHelpTextMessage(language)),
+        buildReplyMessageParams(
+          message,
+          buildGuideGenerationFailureMessage(language, error),
+        ),
         handledSession,
         lifecycleManager,
       );
@@ -1415,13 +3191,13 @@ export async function handleIncomingMessage({
       : null;
     const language = handledSession
       ? getSessionUiLanguage(handledSession)
-      : DEFAULT_UI_LANGUAGE;
+      : generalUiLanguage;
     let responseText = null;
 
     if (suffixCommand.action === "show") {
       responseText = buildPromptSuffixMessage(
         await sessionService.getGlobalPromptSuffix(),
-        isEnglish(language) ? "Global prompt suffix" : "Глобальный prompt suffix",
+        "Global prompt suffix",
         "global",
         language,
       );
@@ -1438,9 +3214,7 @@ export async function handleIncomingMessage({
         });
         responseText = buildPromptSuffixMessage(
           updated,
-          isEnglish(language)
-            ? "Global prompt suffix updated."
-            : "Глобальный prompt suffix обновлён.",
+          "Global prompt suffix updated.",
           "global",
           language,
         );
@@ -1455,9 +3229,7 @@ export async function handleIncomingMessage({
         });
         responseText = buildPromptSuffixMessage(
           updated,
-          isEnglish(language)
-            ? "Global prompt suffix enabled."
-            : "Глобальный prompt suffix включён.",
+          "Global prompt suffix enabled.",
           "global",
           language,
         );
@@ -1468,9 +3240,7 @@ export async function handleIncomingMessage({
       });
       responseText = buildPromptSuffixMessage(
         updated,
-        isEnglish(language)
-          ? "Global prompt suffix disabled."
-          : "Глобальный prompt suffix выключен.",
+        "Global prompt suffix disabled.",
         "global",
         language,
       );
@@ -1478,9 +3248,7 @@ export async function handleIncomingMessage({
       const updated = await sessionService.clearGlobalPromptSuffix();
       responseText = buildPromptSuffixMessage(
         updated,
-        isEnglish(language)
-          ? "Global prompt suffix cleared."
-          : "Глобальный prompt suffix очищен.",
+        "Global prompt suffix cleared.",
         "global",
         language,
       );
@@ -1516,10 +3284,116 @@ export async function handleIncomingMessage({
     return { handled: true, command: command.name };
   }
 
+  if (
+    scopedRuntimeSettingCommand &&
+    scopedRuntimeSettingCommand.scope === "global"
+  ) {
+    let handledSession = topicId
+      ? await sessionService.ensureSessionForMessage(message)
+      : null;
+    const language = handledSession
+      ? getSessionUiLanguage(handledSession)
+      : generalUiLanguage;
+    const result = await handleScopedRuntimeSettingCommand({
+      commandName: command.name,
+      parsedCommand: scopedRuntimeSettingCommand,
+      session: handledSession,
+      sessionService,
+      config,
+      language,
+    });
+    handledSession = result.handledSession;
+    const delivery = await safeSendMessage(
+      api,
+      buildReplyMessageParams(message, result.responseText),
+      handledSession,
+      lifecycleManager,
+    );
+    if (delivery.parked) {
+      handledSession = delivery.session || handledSession;
+      if (handledSession) {
+        await sessionService.recordHandledSession(
+          serviceState,
+          handledSession,
+          command.name,
+        );
+      }
+      markCommandHandled(serviceState, command.name);
+      return { handled: true, command: command.name, reason: "topic-unavailable" };
+    }
+
+    if (handledSession) {
+      await sessionService.recordHandledSession(
+        serviceState,
+        handledSession,
+        command.name,
+      );
+    }
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name };
+  }
+
+  if (
+    command.name === "wait"
+    && waitCommand?.scope === "global"
+    && !topicId
+  ) {
+    const language = generalUiLanguage;
+    let responseText = null;
+
+    if (!promptFragmentAssembler) {
+      responseText = buildWaitUnavailableMessage(language);
+    } else if (waitCommand.action === "show") {
+      responseText = buildWaitStateMessage(
+        promptFragmentAssembler.getStateForMessage(message),
+        "Global collection window",
+        language,
+        "global",
+      );
+    } else if (waitCommand.action === "off") {
+      const canceled = promptFragmentAssembler.cancelPendingForMessage(message, {
+        scope: "global",
+      });
+      responseText = buildWaitDisabledMessage(canceled, "global", language);
+    } else if (waitCommand.action === "set") {
+      promptFragmentAssembler.openWindow({
+        message,
+        flushDelayMs: waitCommand.delayMs,
+        scope: "global",
+        flush: buildBufferedPromptFlush({
+          api,
+          config,
+          lifecycleManager,
+          promptStartGuard,
+          serviceState,
+          sessionService,
+          workerPool,
+        }),
+      });
+      responseText = buildWaitStateMessage(
+        promptFragmentAssembler.getStateForMessage(message),
+        "Global collection window enabled.",
+        language,
+        "global",
+      );
+    } else {
+      responseText = buildWaitUsageMessage(language);
+    }
+
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(message, responseText),
+      null,
+      lifecycleManager,
+    );
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name };
+  }
+
   if (!topicId) {
     await safeSendMessage(
       api,
-      buildReplyMessageParams(message, buildNoSessionTopicMessage(DEFAULT_UI_LANGUAGE)),
+      buildReplyMessageParams(message, buildNoSessionTopicMessage(generalUiLanguage)),
       null,
       lifecycleManager,
     );
@@ -1554,12 +3428,33 @@ export async function handleIncomingMessage({
         handledSession.codex_rollout_path ??
         null;
     }
+    const spikeRuntimeProfile = await resolveStatusRuntimeProfile(
+      sessionService,
+      handledSession,
+      serviceState,
+      "spike",
+    );
+    const omniRuntimeProfile =
+      config.omniEnabled !== false
+        ? await resolveStatusRuntimeProfile(
+            sessionService,
+            handledSession,
+            serviceState,
+            "omni",
+          )
+        : null;
     responseText = buildStatusMessage(
       serviceState,
       message,
       handledSession,
       activeRun,
       contextState.snapshot,
+      {
+        spike: spikeRuntimeProfile,
+        ...(config.omniEnabled !== false
+          ? { omni: omniRuntimeProfile }
+          : {}),
+      },
       language,
     );
   } else if (command.name === "interrupt") {
@@ -1584,18 +3479,28 @@ export async function handleIncomingMessage({
     if (!promptFragmentAssembler) {
       responseText = buildWaitUnavailableMessage(language);
     } else if (waitCommand.action === "show") {
+      const heading =
+        waitCommand.scope === "global"
+          ? "Global collection window"
+          : waitCommand.scope === "topic"
+            ? "Local collection window"
+            : "Collection windows";
       responseText = buildWaitStateMessage(
         promptFragmentAssembler.getStateForMessage(message),
-        isEnglish(language) ? "Collection window" : "Окно сбора",
+        heading,
         language,
+        waitCommand.scope,
       );
     } else if (waitCommand.action === "off") {
-      const canceled = promptFragmentAssembler.cancelPendingForMessage(message);
-      responseText = buildWaitDisabledMessage(canceled, language);
+      const canceled = promptFragmentAssembler.cancelPendingForMessage(message, {
+        scope: waitCommand.scope,
+      });
+      responseText = buildWaitDisabledMessage(canceled, waitCommand.scope, language);
     } else if (waitCommand.action === "set") {
       promptFragmentAssembler.openWindow({
         message,
         flushDelayMs: waitCommand.delayMs,
+        scope: waitCommand.scope,
         flush: buildBufferedPromptFlush({
           api,
           config,
@@ -1606,10 +3511,15 @@ export async function handleIncomingMessage({
           workerPool,
         }),
       });
+      const heading =
+        waitCommand.scope === "global"
+          ? "Global collection window enabled."
+          : "Local collection window enabled.";
       responseText = buildWaitStateMessage(
         promptFragmentAssembler.getStateForMessage(message),
-        isEnglish(language) ? "Collection window enabled." : "Окно сбора включено.",
+        heading,
         language,
+        waitCommand.scope,
       );
     } else {
       responseText = buildWaitUsageMessage(language);
@@ -1626,7 +3536,7 @@ export async function handleIncomingMessage({
           filePath: diffArtifact.filePath,
           fileName: diffArtifact.artifact.file_name,
           caption: [
-            isEnglish(language) ? "Workspace diff snapshot" : "Снимок workspace diff",
+            isEnglish(language) ? "Workspace diff snapshot" : "Workspace diff snapshot",
             `session_key: ${session.session_key}`,
           ].join("\n"),
         },
@@ -1667,9 +3577,7 @@ export async function handleIncomingMessage({
       if (suffixCommand.action === "show") {
         responseText = buildTopicPromptSuffixStateMessage(
           session,
-          isEnglish(language)
-            ? "Topic prompt suffix routing"
-            : "Routing topic prompt suffix",
+          "Topic prompt suffix routing",
           language,
         );
       } else if (suffixCommand.action === "on") {
@@ -1678,9 +3586,7 @@ export async function handleIncomingMessage({
         });
         responseText = buildTopicPromptSuffixStateMessage(
           handledSession,
-          isEnglish(language)
-            ? "Topic prompt suffix routing enabled."
-            : "Routing topic prompt suffix включён.",
+          "Topic prompt suffix routing enabled.",
           getSessionUiLanguage(handledSession),
         );
       } else if (suffixCommand.action === "off") {
@@ -1689,9 +3595,7 @@ export async function handleIncomingMessage({
         });
         responseText = buildTopicPromptSuffixStateMessage(
           handledSession,
-          isEnglish(language)
-            ? "Topic prompt suffix routing disabled."
-            : "Routing topic prompt suffix выключен.",
+          "Topic prompt suffix routing disabled.",
           getSessionUiLanguage(handledSession),
         );
       } else {
@@ -1717,7 +3621,7 @@ export async function handleIncomingMessage({
         });
         responseText = buildPromptSuffixMessage(
           handledSession,
-          isEnglish(language) ? "Prompt suffix updated." : "Prompt suffix обновлён.",
+          "Prompt suffix updated.",
           "topic",
           getSessionUiLanguage(handledSession),
         );
@@ -1731,7 +3635,7 @@ export async function handleIncomingMessage({
         });
         responseText = buildPromptSuffixMessage(
           handledSession,
-          isEnglish(language) ? "Prompt suffix enabled." : "Prompt suffix включён.",
+          "Prompt suffix enabled.",
           "topic",
           getSessionUiLanguage(handledSession),
         );
@@ -1742,7 +3646,7 @@ export async function handleIncomingMessage({
       });
       responseText = buildPromptSuffixMessage(
         handledSession,
-        isEnglish(language) ? "Prompt suffix disabled." : "Prompt suffix выключен.",
+        "Prompt suffix disabled.",
         "topic",
         getSessionUiLanguage(handledSession),
       );
@@ -1750,11 +3654,22 @@ export async function handleIncomingMessage({
       handledSession = await sessionService.clearPromptSuffix(session);
       responseText = buildPromptSuffixMessage(
         handledSession,
-        isEnglish(language) ? "Prompt suffix cleared." : "Prompt suffix очищен.",
+        "Prompt suffix cleared.",
         "topic",
         getSessionUiLanguage(handledSession),
       );
     }
+  } else if (scopedRuntimeSettingCommand) {
+    const result = await handleScopedRuntimeSettingCommand({
+      commandName: command.name,
+      parsedCommand: scopedRuntimeSettingCommand,
+      session,
+      sessionService,
+      config,
+      language,
+    });
+    handledSession = result.handledSession ?? handledSession;
+    responseText = result.responseText;
   } else if (command.name === "purge") {
     if (workerPool.getActiveRun(session.session_key)) {
       responseText = buildPurgeBusyMessage(session, language);
@@ -1766,7 +3681,9 @@ export async function handleIncomingMessage({
       );
     }
   } else {
-    responseText = buildUnknownCommandMessage(language);
+    responseText = buildUnknownCommandMessage(language, {
+      omniEnabled: config.omniEnabled !== false,
+    });
   }
 
   if (responseText) {
@@ -1805,4 +3722,126 @@ export async function handleIncomingMessage({
   }
 
   return { handled: true, command: command.name };
+}
+
+export async function handleIncomingCallbackQuery({
+  api,
+  botUsername,
+  callbackQuery,
+  config,
+  lifecycleManager = null,
+  globalControlPanelStore = null,
+  topicControlPanelStore = null,
+  promptStartGuard = null,
+  promptFragmentAssembler = null,
+  queuePromptAssembler = null,
+  serviceState,
+  sessionService,
+  workerPool,
+}) {
+  const dispatchGlobalControlCommand = async ({
+    actor,
+    chat,
+    commandText,
+  }) =>
+    handleIncomingMessage({
+      api,
+      botUsername,
+      config,
+      lifecycleManager,
+      globalControlPanelStore,
+      topicControlPanelStore,
+      message: buildSyntheticCommandMessage(actor, chat, commandText),
+      promptStartGuard,
+      promptFragmentAssembler,
+      queuePromptAssembler,
+      serviceState,
+      sessionService,
+      workerPool,
+    });
+  const applyGlobalWaitChange = async ({
+    actor,
+    chat,
+    value,
+  }) => {
+    if (!promptFragmentAssembler) {
+      return { available: false };
+    }
+
+    const syntheticMessage = buildSyntheticCommandMessage(
+      actor,
+      chat,
+      value === "off" ? "/wait global off" : `/wait global ${value}`,
+    );
+
+    if (value === "off") {
+      promptFragmentAssembler.cancelPendingForMessage(syntheticMessage, {
+        scope: "global",
+      });
+      return { available: true };
+    }
+
+    const seconds = Number(value);
+    if (!Number.isInteger(seconds) || seconds <= 0) {
+      return { available: false };
+    }
+
+    promptFragmentAssembler.openWindow({
+      message: syntheticMessage,
+      flushDelayMs: seconds * 1000,
+      scope: "global",
+      flush: buildBufferedPromptFlush({
+        api,
+        config,
+        lifecycleManager,
+        promptStartGuard,
+        serviceState,
+        sessionService,
+        workerPool,
+      }),
+    });
+    return { available: true };
+  };
+  const applyTopicWaitChange = buildApplyTopicWaitChange({
+    api,
+    config,
+    lifecycleManager,
+    promptStartGuard,
+    promptFragmentAssembler,
+    serviceState,
+    sessionService,
+    workerPool,
+  });
+
+  const topicResult = await handleTopicControlCallbackQuery({
+    applyTopicWaitChange,
+    api,
+    callbackQuery,
+    config,
+    dispatchCommand: dispatchGlobalControlCommand,
+    promptFragmentAssembler,
+    sessionService,
+    topicControlPanelStore,
+  });
+
+  if (topicResult.handled) {
+    return topicResult;
+  }
+
+  const result = await handleGlobalControlCallbackQuery({
+    applyGlobalWaitChange,
+    api,
+    callbackQuery,
+    config,
+    dispatchCommand: dispatchGlobalControlCommand,
+    globalControlPanelStore,
+    promptFragmentAssembler,
+    sessionService,
+  });
+
+  if (!result.handled) {
+    serviceState.ignoredUpdates += 1;
+  }
+
+  return result;
 }

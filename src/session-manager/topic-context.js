@@ -10,6 +10,9 @@ function buildTopicContextLines(session, topicContextPath = null) {
   const lines = [
     "# Telegram topic context",
     "",
+    "The live run prompt carries only a short Telegram routing stub.",
+    "Read this file only when you need the fuller routing or file-delivery contract.",
+    "",
     `session_key: ${session.session_key}`,
     `chat_id: ${session.chat_id}`,
     `topic_id: ${session.topic_id}`,
@@ -46,18 +49,15 @@ export function buildTopicContextFileText(session, { topicContextPath = null } =
 export function buildTopicContextPrompt(session, { topicContextPath = null } = {}) {
   return [
     "Telegram topic routing context:",
-    `- session_key: ${session.session_key}`,
     `- topic_id: ${session.topic_id}`,
-    `- topic_name: ${formatTopicName(session)}`,
     `- cwd: ${session.workspace_binding?.cwd ?? "unknown"}`,
-    ...(topicContextPath ? [`- topic_context_file: ${topicContextPath}`] : []),
-    "- Current conversation and default delivery target: this topic.",
-    '- If the user says "this topic", "here", "сюда", or "в этот топик", they mean this topic.',
+    "- Default delivery target is this current Telegram topic.",
+    '- Words like "this topic", "here", "сюда", or "в этот топик" mean this topic.',
     ...(topicContextPath
-      ? ["- If you need Telegram routing or file-send details, read topic_context_file."]
+      ? [
+          `- topic_context_file: ${topicContextPath}`,
+          "- Read topic_context_file only if you need routing or file-send details.",
+        ]
       : []),
-    "- For normal delivery, use the gateway flow instead of the raw Telegram Bot API.",
-    "- Send local files only from the current worktree, this session state directory, or /tmp.",
-    "- Use a `telegram-file` block only when you actually want to send a file.",
   ].join("\n");
 }

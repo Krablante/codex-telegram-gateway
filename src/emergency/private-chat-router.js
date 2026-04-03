@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { normalizeTelegramReply } from "../transport/telegram-reply-normalizer.js";
+import { splitTelegramReply } from "../transport/telegram-reply-normalizer.js";
 import {
   extractPromptText,
   hasIncomingAttachments,
@@ -13,7 +13,6 @@ import {
 import { startEmergencyExecRun } from "./exec-runner.js";
 
 const PENDING_ATTACHMENT_TTL_MS = 15 * 60 * 1000;
-const TELEGRAM_TEXT_LIMIT = 3800;
 const EMERGENCY_INTERRUPT_GRACE_MS = 5000;
 
 function sleep(ms) {
@@ -147,53 +146,6 @@ function buildEmergencyFailureMessage(result) {
   ].join("\n");
 }
 
-function splitTelegramText(text, limit = TELEGRAM_TEXT_LIMIT) {
-  const normalized = String(text || "").trim();
-  if (!normalized) {
-    return [];
-  }
-
-  const paragraphs = normalized.split(/\n{2,}/u);
-  const chunks = [];
-  let current = "";
-
-  const pushChunk = (chunk) => {
-    if (chunk) {
-      chunks.push(chunk);
-    }
-  };
-
-  for (const paragraph of paragraphs) {
-    if (!paragraph) {
-      continue;
-    }
-
-    const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
-    if (candidate.length <= limit) {
-      current = candidate;
-      continue;
-    }
-
-    pushChunk(current);
-    current = "";
-
-    if (paragraph.length <= limit) {
-      current = paragraph;
-      continue;
-    }
-
-    let remaining = paragraph;
-    while (remaining.length > limit) {
-      pushChunk(remaining.slice(0, limit));
-      remaining = remaining.slice(limit);
-    }
-    current = remaining;
-  }
-
-  pushChunk(current);
-  return chunks;
-}
-
 function getAttachmentIdentity(attachment) {
   return (
     attachment?.telegram_file_unique_id ||
@@ -320,13 +272,16 @@ export class EmergencyPrivateChatRouter {
   }
 
   async reply(message, text) {
-    const chunks = splitTelegramText(normalizeTelegramReply(text));
+    const chunks = splitTelegramReply(text);
     if (chunks.length === 0) {
       return;
     }
 
     for (const chunk of chunks) {
-      await this.api.sendMessage(buildReplyMessageParams(message, chunk));
+      await this.api.sendMessage({
+        ...buildReplyMessageParams(message, chunk),
+        parse_mode: "HTML",
+      });
     }
   }
 

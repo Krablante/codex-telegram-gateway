@@ -1,4 +1,4 @@
-# Codex Telegram Gateway Setup
+# Setup
 
 ## Goal
 
@@ -11,23 +11,23 @@ Get one operator, one Telegram bot, and one forum-enabled supergroup into a stat
 - one Telegram account that will operate the bot
 - one Telegram supergroup with topics enabled
 
-## 1. Create the bot
+## 1. Create The Spike Bot
 
-1. Open `@BotFather`
-2. Run `/newbot`
-3. Copy the bot token into `TELEGRAM_BOT_TOKEN`
-4. Run `/setprivacy`
-5. Choose the bot
-6. Set privacy mode to `Disable`
+1. Open `@BotFather`.
+2. Run `/newbot`.
+3. Copy the bot token into `TELEGRAM_BOT_TOKEN`.
+4. Run `/setprivacy`.
+5. Choose the bot.
+6. Set privacy mode to `Disable`.
 
-Without that privacy change, the bot may only see commands and misses normal prompt text in topics.
+Without that privacy change, the bot may only see commands and will miss ordinary prompt text in topics.
 
-## 2. Prepare the Telegram chat
+## 2. Prepare The Telegram Chat
 
-1. Create or reuse a Telegram supergroup
-2. Enable topics in that chat
-3. Add the bot to the chat
-4. Promote the bot to admin
+1. Create or reuse a Telegram supergroup.
+2. Enable topics in that chat.
+3. Add the bot to the chat.
+4. Promote the bot to admin.
 
 Recommended admin rights:
 
@@ -38,7 +38,7 @@ Recommended admin rights:
 
 `/new` depends on topic-creation rights. The rest of the gateway still works without it if you only use existing topics.
 
-## 3. Get the numeric ids
+## 3. Get The Numeric Ids
 
 You need:
 
@@ -61,7 +61,7 @@ Read these fields from the response:
 - `message.from.id` -> `TELEGRAM_ALLOWED_USER_ID`
 - `message.chat.id` -> `TELEGRAM_FORUM_CHAT_ID`
 
-## 4. Fill the env file
+## 4. Fill The Env File
 
 ```bash
 cp .env.example .env
@@ -70,23 +70,33 @@ cp .env.example .env
 Minimum required values:
 
 - `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_ALLOWED_USER_ID`
+- `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
 - `TELEGRAM_FORUM_CHAT_ID`
 - `WORKSPACE_ROOT`
 
-Useful default:
+Useful defaults:
 
 - `DEFAULT_SESSION_BINDING_PATH`
-  - this is the path used by `/new` when you do not pass `cwd=...`
+  this is the path used by `/new` when you do not pass `cwd=...`
+- `TELEGRAM_ALLOWED_BOT_IDS`
+  optional allowlist for other trusted bots in the same forum
 
 Optional but useful:
 
 - `TELEGRAM_EXPECTED_TOPICS`
-  - comma-separated topic names for `make doctor`
 - `STATE_ROOT`
-  - if you want runtime state outside the default XDG path
+- `CODEX_BIN_PATH`
 
-## 5. Validate before running
+Optional Omni setup:
+
+- `OMNI_ENABLED`
+- `OMNI_BOT_TOKEN`
+- `OMNI_BOT_ID`
+- `SPIKE_BOT_ID`
+
+If you do not need `/auto`, leave the Omni values unset and start with Spike-only mode.
+
+## 5. Validate Before Running
 
 ```bash
 make doctor
@@ -100,7 +110,7 @@ You want to see:
 - sane bot membership
 - `webhook_url: (none)` unless you intentionally use a Telegram-compatible API proxy
 
-## 6. Run the gateway
+## 6. Run The Gateway
 
 Foreground:
 
@@ -115,15 +125,21 @@ make service-install
 make service-status
 ```
 
-## 7. First-use sanity check
+If Omni is configured:
+
+```bash
+make run-omni
+```
+
+## 7. First-Use Sanity Check
 
 Inside the Telegram chat:
 
-1. create or open a topic
+1. open `General`
 2. send `/help`
-3. send a normal text prompt
-4. verify the bot answers in the same topic
-5. if the bot should create new topics, try `/new Test Topic`
+3. create a topic with `/new Backend Cleanup` or reuse an existing work topic
+4. send a normal text prompt there
+5. verify the bot answers in the same topic
 
 Emergency lane sanity check:
 
@@ -132,7 +148,7 @@ Emergency lane sanity check:
 3. verify the bot answers there without depending on any forum topic
 4. remember that this private chat is the rescue lane if the normal topic path breaks
 
-## Common setup mistakes
+## Common Setup Mistakes
 
 - Bot privacy mode is still enabled
 - the configured chat is not a supergroup
