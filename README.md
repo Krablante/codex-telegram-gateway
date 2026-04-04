@@ -112,6 +112,14 @@ cd codex-telegram-gateway
 npm install
 cp .env.example .env
 
+# fill the required values in .env first:
+# TELEGRAM_BOT_TOKEN
+# TELEGRAM_ALLOWED_USER_ID
+# TELEGRAM_FORUM_CHAT_ID
+# WORKSPACE_ROOT
+# optional: DEFAULT_SESSION_BINDING_PATH
+# then validate and run
+
 make doctor
 make test
 make run
@@ -180,6 +188,18 @@ Required:
 - `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
 - `TELEGRAM_FORUM_CHAT_ID`
 - `WORKSPACE_ROOT`
+
+Minimal practical example:
+
+```env
+TELEGRAM_BOT_TOKEN=123456:replace-me
+TELEGRAM_ALLOWED_USER_ID=123456789
+TELEGRAM_FORUM_CHAT_ID=-1001234567890
+WORKSPACE_ROOT=/home/you/work
+DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo
+```
+
+The first four values are the real minimum. `DEFAULT_SESSION_BINDING_PATH` is optional and only controls where plain `/new Topic Name` starts when you do not pass `cwd=...`.
 
 Common optional settings:
 

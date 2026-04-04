@@ -8,7 +8,12 @@ If you want the shortest version:
 npm install
 cp .env.example .env
 
-# fill the Telegram ids and local paths
+# fill the required values in .env:
+# TELEGRAM_BOT_TOKEN
+# TELEGRAM_ALLOWED_USER_ID
+# TELEGRAM_FORUM_CHAT_ID
+# WORKSPACE_ROOT
+# optional: DEFAULT_SESSION_BINDING_PATH
 make doctor
 make test
 make run
@@ -87,6 +92,18 @@ Minimum required values:
 - `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
 - `TELEGRAM_FORUM_CHAT_ID`
 - `WORKSPACE_ROOT`
+
+Minimal practical example:
+
+```env
+TELEGRAM_BOT_TOKEN=123456:replace-me
+TELEGRAM_ALLOWED_USER_ID=123456789
+TELEGRAM_FORUM_CHAT_ID=-1001234567890
+WORKSPACE_ROOT=/home/you/work
+DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo
+```
+
+The first four values are the actual minimum. `DEFAULT_SESSION_BINDING_PATH` is optional and only changes where plain `/new Topic Name` starts when you do not pass `cwd=...`.
 
 Set `WORKSPACE_ROOT` deliberately. It becomes the base path for relative topic bindings such as `/new cwd=backend/api Fix auth`.
 
