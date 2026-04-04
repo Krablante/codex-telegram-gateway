@@ -1180,6 +1180,121 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
   assert.equal(reloaded.last_agent_reply, "Отправил файл: report.txt.");
 });
 
+test("CodexWorkerPool sends telegram-file directives from a symlinked worktree path", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const workspaceParent = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-worktree-"),
+  );
+  const realWorkspaceRoot = path.join(workspaceParent, "real-worktree");
+  const linkedWorkspaceRoot = path.join(workspaceParent, "linked-worktree");
+  await fs.mkdir(realWorkspaceRoot, { recursive: true });
+  await fs.symlink(realWorkspaceRoot, linkedWorkspaceRoot, "dir");
+  const filePath = path.join(linkedWorkspaceRoot, "report.txt");
+  await fs.writeFile(filePath, "report\n", "utf8");
+
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 1881,
+    topicName: "Directive delivery",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: linkedWorkspaceRoot,
+      cwd: linkedWorkspaceRoot,
+      branch: "main",
+      worktree_path: linkedWorkspaceRoot,
+    },
+  });
+
+  const sentMessages = [];
+  const sentDocuments = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async sendDocument(payload) {
+        sentDocuments.push(payload);
+        return { message_id: 900 + sentDocuments.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent(
+          {
+            kind: "agent_message",
+            text: [
+              "```telegram-file",
+              "action: send",
+              `path: ${filePath}`,
+              "filename: report.txt",
+              "caption: Server report",
+              "```",
+            ].join("\n"),
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              text: [
+                "```telegram-file",
+                "action: send",
+                `path: ${filePath}`,
+                "filename: report.txt",
+                "caption: Server report",
+                "```",
+              ].join("\n"),
+            },
+          },
+        );
+
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "directive-symlink-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Скинь файл в этот топик",
+    message: {
+      message_id: 71,
+      message_thread_id: 1881,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+  assert.equal(sentDocuments.length, 1);
+  assert.equal(sentDocuments[0].document.fileName, "report.txt");
+  assert.equal(sentMessages.at(-1).text, "Отправил файл: report.txt.");
+});
+
 test("CodexWorkerPool keeps telegram-file syntax visible when it is only an example", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
