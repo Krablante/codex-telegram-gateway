@@ -88,14 +88,14 @@ Telegram forum
 Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
 ```
 
-## What's New In v0.2.1
+## What's New In v0.2.2
 
 | Area | What changed |
 | --- | --- |
-| `Zoo` | experimental menu-only tamagotchi topic for project pets, with lookup, stable identities, localized cards, history, and duplicate `[priv]` / `[pub]` disambiguation |
-| `General` | new `/clear` command keeps the active menu and removes tracked clutter |
-| Windows | native wrapper scripts for install, doctor, test, run, and Omni run; cleaner env fallback and Windows-safe path handling |
-| Public surface | repo, docs, and fixtures were cleaned up so the OSS repo no longer reads like a private Atlas dump |
+| CI | GitHub Actions now runs `npm test` on Ubuntu and native Windows, plus a safe guidebook-build smoke check |
+| Windows | `telegram-file` delivery now canonicalizes real paths before allowed-root checks, so Windows path aliases no longer break file sends |
+| Tests | worker-pool assertions are now cross-platform instead of assuming Linux-only paths or raw temp-path formatting |
+| Docs | README and testing docs were refreshed to match the current public surface and CI posture |
 
 ## Highlights
 

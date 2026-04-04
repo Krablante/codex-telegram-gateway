@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.2.2] - 2026-04-04
+
+Added:
+
+- GitHub Actions CI for Ubuntu and native Windows test coverage, plus a safe guidebook-build smoke check
+
+Changed:
+
+- README now reflects the current public surface more cleanly, including Zoo, `General /clear`, Windows-native usage, and CI
+- testing docs now separate CI-safe smoke from the live/manual `make smoke` path
+
+Fixed:
+
+- `telegram-file` delivery now canonicalizes real paths before allowed-root checks, so Windows path aliases and canonical temp/worktree paths no longer break delivery
+- worker-pool cross-platform tests no longer depend on Linux-only `/etc/hosts` or raw non-canonical temp-path formatting
+
 ## [0.2.1] - 2026-04-04
 
 Added:
