@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  One topic = one session. <code>Spike</code> does the work. <code>Omni</code> optionally supervises <code>/auto</code>.
+  One topic = one session. <code>Spike</code> does the work. <code>Omni</code> optionally supervises <code>/auto</code>. <code>Zoo</code> adds an experimental tamagotchi lane for your projects.
 </p>
 
 <p align="center">
@@ -59,7 +59,8 @@ It is designed for people who already like working in Telegram and want somethin
 
 | Piece | Role |
 | --- | --- |
-| `General` topic | global controls, `/guide`, `/help`, `/global`, creating new work topics |
+| `General` topic | global controls, `/guide`, `/help`, `/global`, `/clear`, creating new work topics |
+| `Zoo` topic | dedicated menu-only project tamagotchi lane |
 | work topic | the actual task lane |
 | `Spike` | the live worker that reads code, edits files, runs commands, and sends progress/final replies |
 | `Omni` | optional lightweight supervisor for `/auto` |
@@ -72,7 +73,10 @@ Telegram forum
 ├─ General
 │  ├─ /help
 │  ├─ /guide
-│  └─ /global
+│  ├─ /global
+│  └─ /clear
+├─ Zoo
+│  └─ menu-only pet cards for projects
 └─ Work topics
    ├─ plain prompts -> Spike
    ├─ /q, /wait, /suffix, /compact, /purge
@@ -81,6 +85,15 @@ Telegram forum
 Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
 ```
 
+## What's New In v0.2.1
+
+| Area | What changed |
+| --- | --- |
+| `Zoo` | experimental menu-only tamagotchi topic for project pets, with lookup, stable identities, localized cards, history, and duplicate `[priv]` / `[pub]` disambiguation |
+| `General` | new `/clear` command keeps the active menu and removes tracked clutter |
+| Windows | native wrapper scripts for install, doctor, test, run, and Omni run; cleaner env fallback and Windows-safe path handling |
+| Public surface | repo, docs, and fixtures were cleaned up so the OSS repo no longer reads like a private Atlas dump |
+
 ## Highlights
 
 - one Telegram topic maps to one durable local session
@@ -88,12 +101,13 @@ Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/fil
 - commentary-style progress delivery instead of raw tool noise
 - attachment-aware prompts, including file-first flows
 - `/new Topic Name` topic creation when the bot has Telegram rights
-- `/help` visual card and `/guide` beginner PDF
+- `/help` help cards and `/guide` beginner PDF
 - topic-local and global menus through `/menu` and `/global`
 - `/clear` in `General` to keep only the active menu
 - queued prompts with `/q`
 - compacted recovery memory rebuilt from the clean exchange log
 - dedicated menu-only `Zoo` topic for project tamagotchi cards
+- duplicate repo disambiguation with `[priv]` and `[pub]` in Zoo when private/public twins exist
 - native Windows wrapper scripts for install, doctor, test, and run
 - operator-only emergency private chat lane
 - optional `Omni` bot with goal-locked `/auto`
@@ -134,7 +148,8 @@ Then in Telegram:
 1. Open `General`.
 2. Send `/help`.
 3. Create a work topic with `/new Backend Cleanup`.
-4. Enter that topic and send a plain text prompt.
+4. Optionally send `/zoo` to open the experimental Zoo topic.
+5. Enter your work topic and send a plain text prompt.
 
 If you want the exact setup flow, use [docs/setup.md](./docs/setup.md).
 
@@ -142,7 +157,7 @@ If you want the exact setup flow, use [docs/setup.md](./docs/setup.md).
 
 In `General`:
 
-- `/help` — quick visual help
+- `/help` — quick help cards
 - `/guide` — beginner PDF guide
 - `/clear` — clear tracked clutter and keep only the active menu
 - `/global` — global settings menu
