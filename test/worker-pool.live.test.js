@@ -65,10 +65,10 @@ async function createSession(sessionStore, topicId, topicName) {
     topicName,
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 }

@@ -93,6 +93,10 @@ Useful optional settings:
 - `STATE_ROOT`
 - `CODEX_CONFIG_PATH`
 - `CODEX_SESSIONS_ROOT`
+- `CODEX_LIMITS_SESSIONS_ROOT`
+- `CODEX_LIMITS_COMMAND`
+- `CODEX_LIMITS_CACHE_TTL_SECS`
+- `CODEX_LIMITS_COMMAND_TIMEOUT_SECS`
 - `CODEX_BIN_PATH`
 - `MAX_PARALLEL_SESSIONS`
 
@@ -108,6 +112,16 @@ Practical workspace examples:
 - with `WORKSPACE_ROOT=/home/you/work` and `DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo`, plain `/new Backend API` starts in `/home/you/work/main-repo`
 - `/new cwd=experiments/lab Prototype` still resolves relative to `WORKSPACE_ROOT`, so it starts in `/home/you/work/experiments/lab`
 - if `DEFAULT_SESSION_BINDING_PATH` is unset, ordinary `/new` falls back to `WORKSPACE_ROOT`
+
+Codex limits settings:
+
+- `CODEX_LIMITS_SESSIONS_ROOT` — optional override for where `/limits` scans Codex session snapshots
+- `CODEX_LIMITS_COMMAND` — optional external command that prints one JSON limits snapshot, useful when limits live on another Codex host
+- `CODEX_LIMITS_CACHE_TTL_SECS` — cache TTL for `/limits`, `/status`, and menu refreshes; default `30`
+- `CODEX_LIMITS_COMMAND_TIMEOUT_SECS` — timeout for the external limits command; default `15`
+
+If you use `CODEX_LIMITS_COMMAND`, return one JSON object with the current limits snapshot. Set the optional JSON `source` field to a short label you want surfaced in Telegram; otherwise the bot intentionally falls back to the generic `command` label instead of echoing the raw shell command.
+Unlimited accounts are valid too. If the snapshot carries `credits.unlimited=true` or `unlimited=true`, the bot renders `limits: unlimited` directly instead of pretending the data is unavailable.
 
 ## Services
 

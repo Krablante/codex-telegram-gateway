@@ -12,18 +12,21 @@ import {
   normalizeReasoningEffort,
   resolveCodexRuntimeProfile,
 } from "../session-manager/codex-runtime-settings.js";
+import { buildCodexLimitsMenuLines } from "../codex-runtime/limits.js";
 import {
   normalizePromptSuffixText,
   PROMPT_SUFFIX_MAX_CHARS,
 } from "../session-manager/prompt-suffix.js";
 import { getTopicIdFromMessage } from "../session-manager/session-key.js";
 import { isAuthorizedMessage, parseWaitCommandArgs } from "./command-parsing.js";
+import { resolveStatusView } from "./status-view.js";
 
 export const TOPIC_CONTROL_PANEL_COMMAND = "menu";
 
 const CALLBACK_PREFIX = "tcfg";
 const SCREEN_CODES = {
   root: "r",
+  status: "st",
   wait: "w",
   suffix: "s",
   language: "l",
@@ -138,18 +141,25 @@ function buildSuffixPreview(session, language = DEFAULT_UI_LANGUAGE) {
 function buildTopicControlPanelText({
   availableModels,
   globalPromptSuffix,
+  limitsSummary = null,
   language = DEFAULT_UI_LANGUAGE,
+  message = null,
   omniEnabled = true,
   pendingInput = null,
   profiles,
   screen = "root",
   session,
+  statusText = null,
   waitState,
 }) {
   const english = isEnglish(language);
   const waitSeconds = waitState?.local?.active
     ? Math.round((waitState.local.flushDelayMs ?? 0) / 1000)
     : null;
+
+  if (screen === "status") {
+    return statusText || (english ? "Status is unavailable." : "Статус недоступен.");
+  }
 
   if (screen === "wait") {
     return [
@@ -288,6 +298,7 @@ function buildTopicControlPanelText({
           ),
         ]
       : []),
+    ...buildCodexLimitsMenuLines(limitsSummary, language),
     ...(pendingInput
       ? [
           "",
@@ -320,13 +331,25 @@ function buildRootKeyboard(omniEnabled, pendingInput) {
       ]]
       : []),
     [
+      buildInlineKeyboardButton("Status", `${CALLBACK_PREFIX}:n:${SCREEN_CODES.status}`),
       buildInlineKeyboardButton("Language", `${CALLBACK_PREFIX}:n:${SCREEN_CODES.language}`),
+    ],
+    [
       buildInlineKeyboardButton("Help", `${CALLBACK_PREFIX}:h:show`),
+      buildInlineKeyboardButton("Refresh", `${CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`),
     ],
     ...(pendingInput
       ? [[buildInlineKeyboardButton("Cancel input", `${CALLBACK_PREFIX}:p:clear`)]]
       : []),
-    [buildInlineKeyboardButton("Refresh", `${CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`)],
+  ];
+}
+
+function buildStatusKeyboard() {
+  return [
+    [
+      buildInlineKeyboardButton("Refresh", `${CALLBACK_PREFIX}:n:${SCREEN_CODES.status}`),
+      buildInlineKeyboardButton("Back", `${CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`),
+    ],
   ];
 }
 
@@ -428,6 +451,10 @@ function buildTopicControlPanelMarkup({
     return { inline_keyboard: buildLanguageKeyboard() };
   }
 
+  if (screen === "status") {
+    return { inline_keyboard: buildStatusKeyboard() };
+  }
+
   if (screen === "spike_model") {
     return { inline_keyboard: buildModelKeyboard("spike", availableModels) };
   }
@@ -466,6 +493,7 @@ async function loadTopicControlPanelView({
   session,
   sessionService,
   screen = "root",
+  workerPool = null,
 }) {
   const needsWaitState = screen === "root" || screen === "wait";
   const needsPromptSuffix = screen === "root" || screen === "suffix";
@@ -479,6 +507,8 @@ async function loadTopicControlPanelView({
   let availableModels = [];
   let globalPromptSuffix = null;
   let globalSettings = null;
+  let limitsSummary = null;
+  let resolvedSession = session;
   let spikeProfile = {
     model: null,
     reasoningEffort: null,
@@ -487,6 +517,19 @@ async function loadTopicControlPanelView({
     model: null,
     reasoningEffort: null,
   };
+  let statusText = null;
+
+  if (screen === "status") {
+    const statusView = await resolveStatusView({
+      state: config,
+      message,
+      session,
+      sessionService,
+      workerPool,
+    });
+    resolvedSession = statusView.session;
+    statusText = statusView.text;
+  }
 
   if (needsRuntimeProfiles) {
     availableModels = await loadAvailableCodexModels({
@@ -513,13 +556,20 @@ async function loadTopicControlPanelView({
     globalPromptSuffix = await sessionService.getGlobalPromptSuffix();
   }
 
+  if (screen === "root" && typeof sessionService.getCodexLimitsSummary === "function") {
+    limitsSummary = await sessionService.getCodexLimitsSummary();
+  }
+
   return {
     availableModels,
     globalPromptSuffix,
+    limitsSummary,
+    session: resolvedSession,
     profiles: {
       spike: spikeProfile,
       omni: omniProfile,
     },
+    statusText,
     waitState:
       needsWaitState && typeof promptFragmentAssembler?.getStateForMessage === "function"
         ? promptFragmentAssembler.getStateForMessage(message)
@@ -545,12 +595,15 @@ function buildTopicControlPanelPayload({
     text: buildTopicControlPanelText({
       availableModels: view.availableModels,
       globalPromptSuffix: view.globalPromptSuffix,
+      limitsSummary: view.limitsSummary,
       language,
+      message: view.message ?? null,
       omniEnabled,
       pendingInput,
       profiles: view.profiles,
       screen,
       session,
+      statusText: view.statusText,
       waitState: view.waitState,
     }),
     reply_markup: buildTopicControlPanelMarkup({
@@ -795,6 +848,56 @@ async function answerCallbackQuerySafe(api, callbackQueryId, text = undefined) {
   } catch {}
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableDeleteMessageError(error) {
+  const message = String(error?.message ?? "").toLowerCase();
+  return message.includes("message to delete not found");
+}
+
+async function deleteTopicControlMessagesBestEffort(
+  api,
+  chatId,
+  messageIds = [],
+  {
+    attempts = 1,
+    retryDelayMs = 0,
+  } = {},
+) {
+  if (typeof api?.deleteMessage !== "function") {
+    return;
+  }
+
+  for (const messageId of messageIds) {
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      continue;
+    }
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (attempt > 0 && retryDelayMs > 0) {
+        await sleep(retryDelayMs);
+      }
+
+      try {
+        await api.deleteMessage({
+          chat_id: chatId,
+          message_id: messageId,
+        });
+        break;
+      } catch (error) {
+        if (
+          attempt === attempts - 1 ||
+          !isRetryableDeleteMessageError(error)
+        ) {
+          break;
+        }
+      }
+    }
+  }
+}
+
 async function pinTopicControlPanelMessageSafe(api, session, messageId) {
   if (!Number.isInteger(messageId) || messageId <= 0) {
     return false;
@@ -806,6 +909,16 @@ async function pinTopicControlPanelMessageSafe(api, session, messageId) {
       message_id: messageId,
       disable_notification: true,
     });
+    // In forum topics Telegram emits a separate pin service message right after the pinned menu.
+    await deleteTopicControlMessagesBestEffort(
+      api,
+      session.chat_id,
+      [messageId + 1],
+      {
+        attempts: 4,
+        retryDelayMs: 250,
+      },
+    );
     return true;
   } catch {
     return false;
@@ -847,11 +960,13 @@ export async function ensureTopicControlPanelMessage({
   config,
   controlState = null,
   forceStatusMessage = false,
+  recreateOnUnchanged = false,
   preferredMessageId = null,
   promptFragmentAssembler,
   session,
   sessionService,
   topicControlPanelStore,
+  workerPool = null,
   pin = false,
 }) {
   const resolvedControlState =
@@ -865,13 +980,15 @@ export async function ensureTopicControlPanelMessage({
     session,
     sessionService,
     screen,
+    workerPool,
   });
+  const resolvedSession = view.session ?? session;
   const payload = buildTopicControlPanelPayload({
     language,
     omniEnabled: config.omniEnabled !== false,
     pendingInput: resolvedControlState.pending_input,
     screen,
-    session,
+    session: resolvedSession,
     view,
   });
   const messageId = preferredMessageId ?? resolvedControlState.menu_message_id;
@@ -879,12 +996,12 @@ export async function ensureTopicControlPanelMessage({
   if (messageId) {
     try {
       await api.editMessageText({
-        chat_id: session.chat_id,
+        chat_id: resolvedSession.chat_id,
         message_id: messageId,
         text: payload.text,
         reply_markup: payload.reply_markup,
       });
-      await topicControlPanelStore.patch(session, {
+      await topicControlPanelStore.patch(resolvedSession, {
         menu_message_id: messageId,
         active_screen: screen,
         pending_input: syncPendingInputMessageId(
@@ -893,7 +1010,7 @@ export async function ensureTopicControlPanelMessage({
         ),
       });
       if (pin) {
-        await pinTopicControlPanelMessageSafe(api, session, messageId);
+        await pinTopicControlPanelMessageSafe(api, resolvedSession, messageId);
       }
       return {
         created: false,
@@ -901,36 +1018,40 @@ export async function ensureTopicControlPanelMessage({
       };
     } catch (error) {
       if (isNotModifiedError(error)) {
-        await topicControlPanelStore.patch(session, {
-          menu_message_id: messageId,
-          active_screen: screen,
-          pending_input: syncPendingInputMessageId(
-            resolvedControlState.pending_input,
+        if (recreateOnUnchanged) {
+          // Explicit /menu should always surface a visible panel near the latest messages.
+          // Recreate the panel instead of silently treating an unchanged edit as success.
+          // Continue below into the sendMessage path.
+        } else {
+          await topicControlPanelStore.patch(resolvedSession, {
+            menu_message_id: messageId,
+            active_screen: screen,
+            pending_input: syncPendingInputMessageId(
+              resolvedControlState.pending_input,
+              messageId,
+            ),
+          });
+          if (pin) {
+            await pinTopicControlPanelMessageSafe(api, resolvedSession, messageId);
+          }
+          if (forceStatusMessage) {
+            await sendStatusMessage(api, resolvedSession, buildMenuRefreshMessage(language));
+          }
+          return {
+            created: false,
             messageId,
-          ),
-        });
-        if (pin) {
-          await pinTopicControlPanelMessageSafe(api, session, messageId);
+            unchanged: true,
+          };
         }
-        if (forceStatusMessage) {
-          await sendStatusMessage(api, session, buildMenuRefreshMessage(language));
-        }
-        return {
-          created: false,
-          messageId,
-          unchanged: true,
-        };
-      }
-
-      if (!isRecoverableEditError(error)) {
+      } else if (!isRecoverableEditError(error)) {
         throw error;
       }
     }
   }
 
   const sent = await api.sendMessage({
-    chat_id: session.chat_id,
-    message_thread_id: Number(session.topic_id),
+    chat_id: resolvedSession.chat_id,
+    message_thread_id: Number(resolvedSession.topic_id),
     text: payload.text,
     reply_markup: payload.reply_markup,
   });
@@ -939,7 +1060,7 @@ export async function ensureTopicControlPanelMessage({
       ? sent.message_id
       : null;
   const resolvedMessageId = nextMessageId ?? messageId;
-  await topicControlPanelStore.patch(session, {
+  await topicControlPanelStore.patch(resolvedSession, {
     menu_message_id: resolvedMessageId,
     active_screen: screen,
     pending_input: syncPendingInputMessageId(
@@ -947,8 +1068,14 @@ export async function ensureTopicControlPanelMessage({
       resolvedMessageId,
     ),
   });
+  if (resolvedMessageId !== messageId) {
+    await deleteTopicControlMessagesBestEffort(api, resolvedSession.chat_id, [
+      messageId,
+      Number.isInteger(messageId) ? messageId + 1 : null,
+    ]);
+  }
   if (pin || resolvedMessageId !== messageId) {
-    await pinTopicControlPanelMessageSafe(api, session, resolvedMessageId);
+    await pinTopicControlPanelMessageSafe(api, resolvedSession, resolvedMessageId);
   }
   return {
     created: true,
@@ -1154,6 +1281,7 @@ export async function handleTopicControlCommand({
   promptFragmentAssembler,
   sessionService,
   topicControlPanelStore,
+  workerPool = null,
 }) {
   if (!topicControlPanelStore) {
     return { handled: false, reason: "missing-topic-control-store" };
@@ -1178,9 +1306,11 @@ export async function handleTopicControlCommand({
     api,
     config,
     promptFragmentAssembler,
+    recreateOnUnchanged: true,
     session,
     sessionService,
     topicControlPanelStore,
+    workerPool,
     pin: true,
   });
   return {
@@ -1197,6 +1327,7 @@ export async function maybeHandleTopicControlReply({
   sessionService,
   topicControlPanelStore,
   applyTopicWaitChange = null,
+  workerPool = null,
 }) {
   if (!topicControlPanelStore || !getTopicIdFromMessage(message)) {
     return { handled: false };
@@ -1313,6 +1444,7 @@ export async function maybeHandleTopicControlReply({
     session: nextSession,
     sessionService,
     topicControlPanelStore,
+    workerPool,
   });
   return {
     handled: true,
@@ -1329,6 +1461,7 @@ export async function handleTopicControlCallbackQuery({
   promptFragmentAssembler,
   sessionService,
   topicControlPanelStore,
+  workerPool = null,
 }) {
   if (!isTopicControlCallbackQuery(callbackQuery)) {
     return { handled: false };
@@ -1401,6 +1534,7 @@ export async function handleTopicControlCallbackQuery({
         session,
         sessionService,
         topicControlPanelStore,
+        workerPool,
       });
       return {
         handled: true,
@@ -1452,6 +1586,7 @@ export async function handleTopicControlCallbackQuery({
         session,
         sessionService,
         topicControlPanelStore,
+        workerPool,
       });
       await sendStatusMessage(
         api,
@@ -1485,6 +1620,7 @@ export async function handleTopicControlCallbackQuery({
         session,
         sessionService,
         topicControlPanelStore,
+        workerPool,
       });
       await sendStatusMessage(
         api,
@@ -1529,6 +1665,7 @@ export async function handleTopicControlCallbackQuery({
         session: nextSession,
         sessionService,
         topicControlPanelStore,
+        workerPool,
       });
       if (directAction.statusMessage) {
         await sendStatusMessage(api, nextSession, directAction.statusMessage);

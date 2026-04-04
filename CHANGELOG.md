@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.2.2.2] - 2026-04-04
+
+Added:
+
+- `/limits` as a first-class public command, with the same live snapshot folded into `/status`, `/global`, and `/menu`
+- an in-menu `Status` screen for topic-local `/menu`, so operators can inspect state without emitting a separate topic reply
+- public env/docs coverage for remote limits sourcing via `CODEX_LIMITS_COMMAND` or `CODEX_LIMITS_SESSIONS_ROOT`
+
+Changed:
+
+- `/menu` now accepts Telegram-style `/<command>@YourBot` suggestions, recreates the pinned panel cleanly on reopen, and removes replaced menu clutter plus transient pin notices
+- guidebook, Telegram surface, deployment, testing, and README docs now match the current limits/menu/live-steer behavior
+
+Fixed:
+
+- repeated live follow-up prompts now keep steering the same active Codex run instead of stalling after the first continuation
+- `/q` queue previews render cleanly again instead of leaking raw formatting tags into Telegram
+- limits sourced through `CODEX_LIMITS_COMMAND` no longer echo the raw shell command back into Telegram when no safe JSON `source` label is provided
+
 ## [0.2.2.1] - 2026-04-04
 
 Added:

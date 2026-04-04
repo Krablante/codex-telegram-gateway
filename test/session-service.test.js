@@ -18,6 +18,33 @@ function buildBinding() {
   };
 }
 
+test("SessionService getCodexLimitsSummary degrades to unavailable without a limits service", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/workspace",
+      defaultSessionBindingPath: "/workspace",
+    },
+  });
+
+  const summary = await service.getCodexLimitsSummary();
+  assert.deepEqual(summary, {
+    available: false,
+    capturedAt: null,
+    source: null,
+    planType: null,
+    limitName: null,
+    unlimited: false,
+    windows: [],
+    primary: null,
+    secondary: null,
+  });
+});
+
 test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),

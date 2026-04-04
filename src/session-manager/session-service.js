@@ -128,6 +128,7 @@ export class SessionService {
     globalPromptSuffixStore = null,
     globalCodexSettingsStore = null,
     promptQueueStore = null,
+    codexLimitsService = null,
   }) {
     this.sessionStore = sessionStore;
     this.config = config;
@@ -136,6 +137,7 @@ export class SessionService {
     this.globalPromptSuffixStore = globalPromptSuffixStore;
     this.globalCodexSettingsStore = globalCodexSettingsStore;
     this.promptQueueStore = promptQueueStore;
+    this.codexLimitsService = codexLimitsService;
     this.defaultBindingPromise = null;
   }
 
@@ -516,6 +518,24 @@ export class SessionService {
       target,
       availableModels,
     });
+  }
+
+  async getCodexLimitsSummary({ force = false } = {}) {
+    if (!this.codexLimitsService) {
+      return {
+        available: false,
+        capturedAt: null,
+        source: null,
+        planType: null,
+        limitName: null,
+        unlimited: false,
+        windows: [],
+        primary: null,
+        secondary: null,
+      };
+    }
+
+    return this.codexLimitsService.getSummary({ force });
   }
 
   async resolveContextSnapshot(

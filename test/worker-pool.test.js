@@ -52,10 +52,10 @@ test("CodexWorkerPool falls back to compact rebuild only after one resume retry"
     topicName: "Resume fallback test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   const resumedSession = await sessionStore.patch(session, {
@@ -239,10 +239,10 @@ test("CodexWorkerPool passes resolved Spike model and reasoning into runTask", a
     topicName: "Runtime profile test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -392,10 +392,10 @@ test("CodexWorkerPool launches Codex with a reasoning level supported by the res
     topicName: "Runtime profile compatibility",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -511,10 +511,10 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
     topicName: "Fresh brief bootstrap test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   const compactedSession = await sessionStore.patch(session, {
@@ -534,10 +534,10 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
       "updated_from_reason: command/compact",
       "session_key: -1001234567890:244",
       "topic_name: Fresh brief bootstrap test",
-      "cwd: /workspace",
+      "cwd: /home/example/workspace",
       "",
       "## Workspace context",
-      "- repo_root: /workspace",
+      "- repo_root: /home/example/workspace",
       "- focus: codex-telegram-gateway compact flow",
       "",
       "## Current state",
@@ -673,10 +673,10 @@ test("CodexWorkerPool does not reply to internal Omni handoff message ids", asyn
     topicName: "Internal Omni handoff reply test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -768,10 +768,10 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
     topicName: "Resume retry success test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   const resumedSession = await sessionStore.patch(session, {
@@ -938,10 +938,10 @@ test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram de
     topicName: "Telegram format test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -996,13 +996,13 @@ test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram de
         await onEvent(
           {
             kind: "agent_message",
-            text: "Файл [`test.js`](/workspace/test.js) удален. Проверил `SIGTERM`.",
+            text: "Файл [`test.js`](/home/example/workspace/test.js) удален. Проверил `SIGTERM`.",
           },
           {
             type: "item.completed",
             item: {
               type: "agent_message",
-              text: "Файл [`test.js`](/workspace/test.js) удален. Проверил `SIGTERM`.",
+              text: "Файл [`test.js`](/home/example/workspace/test.js) удален. Проверил `SIGTERM`.",
             },
           },
         );
@@ -1064,10 +1064,10 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
     topicName: "Directive delivery",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -1306,10 +1306,10 @@ test("CodexWorkerPool keeps telegram-file syntax visible when it is only an exam
     topicName: "Directive example",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -1405,10 +1405,10 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
     topicName: "Directive failure",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -1506,10 +1506,10 @@ test("CodexWorkerPool keeps commentary progress visible even after later command
     topicName: "Progress rewrite test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -1662,10 +1662,10 @@ test("CodexWorkerPool does not surface completed command output in progress with
     topicName: "Command-only progress test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -1779,10 +1779,10 @@ test("CodexWorkerPool keeps commentary agent messages in progress and only final
     topicName: "Agent message phase test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -1903,10 +1903,10 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
     topicName: "Progress shell cleanup test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -2023,10 +2023,10 @@ test("CodexWorkerPool retries the final reply once after a Telegram rate limit",
     topicName: "Final reply retry test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -2120,10 +2120,10 @@ test("CodexWorkerPool falls back to a plain topic send when the reply target dis
     topicName: "Reply target fallback",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -2221,10 +2221,10 @@ test("CodexWorkerPool keeps running when the initial progress bubble cannot be s
     topicName: "Initial progress failure test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -2314,10 +2314,10 @@ test("CodexWorkerPool does not start when initial progress delivery parks the to
     topicName: "Initial progress parked topic test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -2377,10 +2377,10 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
     topicName: "Final reply failure state test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -2495,10 +2495,10 @@ test("CodexWorkerPool persists failure text into session state, exchange log, an
     topicName: "Failure persistence test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -2577,10 +2577,10 @@ test("CodexWorkerPool skips late Spike final events after auto mode is turned of
     topicName: "Late final event off test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -2668,10 +2668,10 @@ test("CodexWorkerPool passes image attachments to codex and file attachments via
     topicName: "Attachment prompt test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -2760,10 +2760,10 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
     topicName: "Parallel A",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   const sessionB = await sessionStore.ensure({
@@ -2772,10 +2772,10 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
     topicName: "Parallel B",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   const sessionC = await sessionStore.ensure({
@@ -2784,10 +2784,10 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
     topicName: "Parallel C",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -2960,10 +2960,10 @@ test("CodexWorkerPool steers an active run through the live controller without s
     topicName: "Steer queue",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -3134,10 +3134,10 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
     topicName: "Steer buffer",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -3379,10 +3379,10 @@ test("CodexWorkerPool keeps root thread state when foreign subagent events arriv
     topicName: "Foreign thread isolation",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -3578,10 +3578,10 @@ test("CodexWorkerPool does not let late live events clobber a completed run back
     topicName: "Late event race",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -3699,10 +3699,10 @@ test("CodexWorkerPool surfaces non-interrupt run failures instead of interrupted
     topicName: "Failure reply",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -3773,10 +3773,10 @@ test("CodexWorkerPool localizes failure replies to English when the session UI l
     topicName: "English failure",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -3850,10 +3850,10 @@ test("CodexWorkerPool treats a starting run as busy before progress delivery com
     topicName: "Starting busy guard",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -3969,10 +3969,10 @@ test("CodexWorkerPool shutdown waits for a reserved start to become interruptibl
     topicName: "Shutdown reserved start",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -4101,10 +4101,10 @@ test("CodexWorkerPool keeps a completed final answer even if interrupt lands lat
     topicName: "Late interrupt",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -4188,10 +4188,10 @@ test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", a
     topicName: "Shutdown test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 
@@ -4281,10 +4281,10 @@ test("CodexWorkerPool starts a fresh continuation after an interrupted run", asy
     topicName: "Interrupted continuation",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -4375,10 +4375,10 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
     topicName: "Termination hook test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/example/workspace",
+      cwd: "/home/example/workspace",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/example/workspace",
     },
   });
 

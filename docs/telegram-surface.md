@@ -17,6 +17,7 @@ Spike-only mode:
 - `/new`
 - `/zoo`
 - `/status`
+- `/limits`
 - `/global`
 - `/menu`
 - `/language`
@@ -42,9 +43,11 @@ Zoo pets are stored against resolved project-root directories, not arbitrary fil
 
 Zoo is menu-only in the normal case: the pinned menu message carries the add-project flow, confirmation flow, pet card, refresh state, and root-list pagination. Separate topic messages are reserved for actual errors.
 
-Zoo cards are localized to the Zoo topic language, use explicit creature personality and stable temperament roles, render the gameplay stats in a monospaced block above the summary text with visible trend markers, keep findings out of the Telegram card itself, intentionally keep the inline buttons in English, assign new pets from a random unused-first identity pool so the stable does not fill in a predictable list order, normalize duplicate repo names to path-based labels with `[priv]` or `[pub]` when private/public twins exist, and place the lower narrative/detail section inside a collapsed-by-default expandable quote.
+Zoo cards are localized to the Zoo topic language, use explicit creature personality and stable temperament roles, render the gameplay stats in a monospaced block above the summary text with previous-vs-current trend arrows, keep findings out of the Telegram card itself, intentionally keep the inline buttons in English, assign new pets from a random unused-first identity pool so the stable does not fill in a predictable list order, normalize duplicate repo names to path-based labels with `[priv]` or `[pub]` when private/public twins exist, and place the lower narrative/detail section inside a collapsed-by-default expandable quote.
 
 Telegram bots do not have true arbitrary text animation for editable menu panels, so Zoo uses sparse ASCII frame swaps instead of high-frequency animation. While a pet detail screen stays open, the ASCII pose should keep moving slowly even when the pet is idle. During refresh, the first frame may use a simple generic status, but later refresh frames should fall into the pet's species-plus-temperament voice. The creature pool and temperament pool are intentionally broad so different repos can land on different pet styles, roles, and animation frames.
+
+`/limits` shows the current Codex limits snapshot. On capped accounts it reports the live `5h` and `7d` windows; on unlimited accounts it says so directly instead of showing an unavailable placeholder.
 
 `/global` works only in `General`. It opens one persistent inline-button control panel there.
 
@@ -62,26 +65,19 @@ Current panel coverage:
 - `/reasoning global ...`
 - `/omni_model global ...`
 - `/omni_reasoning global ...`
+- live limits summary on the root screen
 - interface language switch for the `General` control panel
 - `/help` card delivery from the same menu
 
 Stable values are handled directly by buttons. Free-form values such as the global suffix text or a custom global wait value are entered by replying to the pinned menu message.
 
-`/menu` works only inside a topic. It opens or recreates one persistent topic-local control panel there and pins it again.
+`/menu` works only inside a topic. It opens or recreates one persistent topic-local control panel there, repins it, removes the replaced menu, and cleans up the transient Telegram pin notices. Telegram-style command suggestions such as `/menu@YourBot` are accepted too.
 
 New topics created via `/new` now get that local menu automatically right after the bootstrap message.
 
-Binding rules for `/new`:
-
-- `/new Topic Name` starts from `DEFAULT_SESSION_BINDING_PATH`
-- if `DEFAULT_SESSION_BINDING_PATH` is unset, it falls back to `WORKSPACE_ROOT`
-- `/new cwd=backend/api Topic Name` resolves `backend/api` relative to `WORKSPACE_ROOT`
-- `/new cwd=/absolute/path Topic Name` uses that absolute path directly
-- on Windows, use a Windows absolute path such as `cwd=C:/Users/you/work/api`
-- avoid spaces inside `cwd=...` when using `/new`, because the command parser splits command arguments on spaces
-
 Current local panel coverage:
 
+- inline `Status` screen with the same status text as `/status`, rendered inside the menu itself
 - `/wait ...` for the current topic
 - `/suffix ...` for the current topic
 - `/suffix topic on|off`
@@ -89,6 +85,7 @@ Current local panel coverage:
 - `/reasoning ...`
 - `/omni_model ...`
 - `/omni_reasoning ...`
+- live limits summary on the root screen
 - interface language switch for the topic
 - `/help` card delivery from the same menu
 
@@ -128,6 +125,7 @@ Rules:
 - `/q <text>` — put a Spike prompt into the topic queue
 - `/q status` — show queued items with short previews
 - `/q delete <position>` — remove one queued item by 1-based position
+- plain follow-up text during an active Spike run is live-steered into that same run; use `/q` only when you explicitly mean "do this next after the current run"
 - queued prompts may include the same Telegram attachments as normal prompts
 - attachment-only `/q` files stay reserved for the next `/q ...` text and are not consumed by a plain direct Spike prompt
 - long `/q ...` messages and media groups use the same fragment buffering path before they are queued
@@ -161,7 +159,7 @@ Omni:
 - `/omni_reasoning [show|list|clear|<level>]`
 - `/omni_reasoning global [show|list|clear|<level>]`
 
-`/status` shows the effective profile after topic/global/default merge.
+`/status` shows the effective profile after topic/global/default merge and includes the same live limits summary that the root menus use.
 
 ## Rendering And Delivery
 
