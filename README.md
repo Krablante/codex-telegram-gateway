@@ -88,14 +88,14 @@ Telegram forum
 Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
 ```
 
-## What's New In v0.2.2
+## What's New In v0.2.2.1
 
 | Area | What changed |
 | --- | --- |
-| CI | GitHub Actions now runs `npm test` on Ubuntu and native Windows, plus a safe guidebook-build smoke check |
-| Windows | `telegram-file` delivery now canonicalizes real paths before allowed-root checks, so Windows path aliases no longer break file sends |
-| Tests | worker-pool assertions are now cross-platform instead of assuming Linux-only paths or raw temp-path formatting |
-| Docs | README and testing docs were refreshed to match the current public surface and CI posture |
+| Zoo | pet cards now show clearer trend movement, and the public docs stay aligned with the paginated menu and expandable detail block |
+| Setup | README, setup, and deployment docs now spell out the real minimum config, bot forum rights, and what `DEFAULT_SESSION_BINDING_PATH` actually changes |
+| Tests | Zoo rendering coverage now checks visible trend markers directly, so the card surface is less likely to drift silently |
+| Release | this is a small catch-up release on top of `v0.2.2`, not a new architecture turn |
 
 ## Highlights
 
@@ -109,8 +109,9 @@ Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/fil
 - `/clear` in `General` to keep only the active menu
 - queued prompts with `/q`
 - compacted recovery memory rebuilt from the clean exchange log
-- dedicated menu-only `Zoo` topic for project tamagotchi cards
+- dedicated menu-only `Zoo` topic for project tamagotchi cards with paginated root menus
 - duplicate repo disambiguation with `[priv]` and `[pub]` in Zoo when private/public twins exist
+- expandable lower detail blocks and visible stat trend arrows inside Zoo pet cards
 - native Windows wrapper scripts for install, doctor, test, and run
 - GitHub Actions CI for Ubuntu + native Windows test coverage, plus a safe guidebook-build smoke check
 - operator-only emergency private chat lane
@@ -136,7 +137,7 @@ cp .env.example .env
 
 # fill the required values in .env first:
 # TELEGRAM_BOT_TOKEN
-# TELEGRAM_ALLOWED_USER_ID
+# TELEGRAM_ALLOWED_USER_ID or TELEGRAM_ALLOWED_USER_IDS
 # TELEGRAM_FORUM_CHAT_ID
 # WORKSPACE_ROOT
 # optional: DEFAULT_SESSION_BINDING_PATH
@@ -146,6 +147,10 @@ make doctor
 make test
 make run
 ```
+
+The actual minimum is `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`, `TELEGRAM_FORUM_CHAT_ID`, and `WORKSPACE_ROOT`. `DEFAULT_SESSION_BINDING_PATH` is optional and only changes where plain `/new Topic Name` starts when you do not pass `cwd=...`.
+
+Make the bot an admin in the forum chat. The cleanest experience is with rights to post, edit, delete, pin, and manage topics.
 
 Then in Telegram:
 

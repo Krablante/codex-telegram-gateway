@@ -68,7 +68,8 @@ Once `make user-status` is healthy:
 2. Confirm the pinned Zoo menu is still menu-only.
 3. Confirm duplicate repo buttons keep the `[priv]` and `[pub]` suffixes visible.
 4. Open one pet and verify the card appears without extra chatter in the topic.
-5. Tap `Back`, then `Respawn menu`, and confirm the menu comes back cleanly.
+5. Confirm the stat block shows visible trend markers and the lower detail text stays collapsed behind the expandable quote.
+6. Tap `Back`, then `Respawn menu`, and confirm the menu comes back cleanly.
 
 ## General `/clear` Manual Sanity
 

@@ -259,6 +259,53 @@ test("buildZooPetText keeps placeholder stats in the unified card before the fir
   assert.match(text, /Щиткод\s+\[\.\.\.\.\.\.\.\.\.\.\]\s+--\s+·/u);
 });
 
+test("buildZooPetText renders arrows for changed stats and keeps equals for unchanged ones", () => {
+  const text = buildZooPetText({
+    language: "rus",
+    pet: {
+      pet_id: "pet-trends",
+      display_name: "gateway",
+      creature_kind: "cat",
+      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+    },
+    snapshot: {
+      mood: "боевой",
+      flavor_line: "Сегодня я копаюсь в свежем diff.",
+      project_summary: "Кодовая база живая и меняется.",
+      next_focus: "Дожать несколько мелких шероховатостей.",
+      findings: [],
+      refreshed_at: "2026-04-04T12:40:00.000Z",
+      stats: {
+        security: 81,
+        shitcode: 12,
+        junk: 9,
+        tests: 96,
+        structure: 95,
+        docs: 97,
+        operability: 87,
+      },
+      trends: {
+        security: "up",
+        shitcode: "down",
+        junk: "same",
+        tests: "up",
+        structure: "same",
+        docs: "down",
+        operability: "up",
+      },
+    },
+    state: {
+      selected_pet_id: "pet-trends",
+      refreshing_pet_id: null,
+      last_refresh_error_text: null,
+    },
+  });
+
+  assert.match(text, /Безопасность\s+\[########\.\.\]\s+81\s+↑/u);
+  assert.match(text, /Щиткод\s+\[#\.\.\.\.\.\.\.\.\.\]\s+12\s+↓/u);
+  assert.match(text, /Мусор\s+\[#\.\.\.\.\.\.\.\.\.\]\s+\s*9\s+=/u);
+});
+
 test("buildZooPetText uses temperament-stable refresh voice for different pets", () => {
   const firstText = buildZooPetText({
     language: "eng",

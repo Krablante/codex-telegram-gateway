@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildAnalysisPrompt,
+  computeTrend,
   validateAnalysisPayload,
 } from "../src/zoo/analysis.js";
 
@@ -60,4 +61,15 @@ test("buildAnalysisPrompt enforces the selected language and creature persona", 
   assert.match(prompt, /flavor_line should be one short first-person line/u);
   assert.match(prompt, /project_summary should be a separate concise summary/u);
   assert.match(prompt, /Avoid generic assistant tone/u);
+});
+
+test("computeTrend marks any increase or decrease as a trend", () => {
+  assert.equal(computeTrend(81, 80), "up");
+  assert.equal(computeTrend(79, 80), "down");
+  assert.equal(computeTrend(80, 80), "same");
+});
+
+test("computeTrend falls back to same when the previous snapshot is missing", () => {
+  assert.equal(computeTrend(80, null), "same");
+  assert.equal(computeTrend(80, undefined), "same");
 });

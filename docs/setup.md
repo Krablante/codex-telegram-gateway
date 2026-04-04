@@ -10,7 +10,7 @@ cp .env.example .env
 
 # fill the required values in .env:
 # TELEGRAM_BOT_TOKEN
-# TELEGRAM_ALLOWED_USER_ID
+# TELEGRAM_ALLOWED_USER_ID or TELEGRAM_ALLOWED_USER_IDS
 # TELEGRAM_FORUM_CHAT_ID
 # WORKSPACE_ROOT
 # optional: DEFAULT_SESSION_BINDING_PATH
@@ -70,6 +70,7 @@ Recommended rights:
 - post messages
 - edit messages
 - delete messages
+- pin messages
 - manage topics
 
 `/new Topic Name` needs topic-management rights. The rest of the gateway still works without it if you only use existing topics.

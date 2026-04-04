@@ -100,15 +100,22 @@ export function buildAnalysisPrompt({
   ].join("\n");
 }
 
-function computeTrend(nextValue, previousValue) {
-  if (!Number.isFinite(previousValue)) {
+export function computeTrend(nextValue, previousValue) {
+  if (previousValue === null || previousValue === undefined) {
     return "same";
   }
 
-  if (nextValue >= previousValue + 5) {
+  const normalizedNextValue = Number(nextValue);
+  const normalizedPreviousValue = Number(previousValue);
+
+  if (!Number.isFinite(normalizedNextValue) || !Number.isFinite(normalizedPreviousValue)) {
+    return "same";
+  }
+
+  if (normalizedNextValue > normalizedPreviousValue) {
     return "up";
   }
-  if (nextValue <= previousValue - 5) {
+  if (normalizedNextValue < normalizedPreviousValue) {
     return "down";
   }
   return "same";

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.2.2.1] - 2026-04-04
+
+Added:
+
+- explicit Zoo trend-marker coverage in the public test suite so pet-card stat changes stay visible and stable
+
+Changed:
+
+- README now treats `v0.2.2.1` as a small catch-up release and calls out the current Zoo/rendering surface more directly
+- setup and deployment docs now explain the true minimum config more plainly, including bot admin rights and the practical meaning of `DEFAULT_SESSION_BINDING_PATH`
+- Telegram surface and testing docs now match the current Zoo card shape more closely, including expandable detail text and visible trend markers
+
+Fixed:
+
+- Zoo stat trends now react to any real increase or decrease instead of waiting for a five-point jump
+- rendered Zoo cards now use proper `↑` and `↓` arrows instead of weaker ASCII placeholders
+
 ## [0.2.2] - 2026-04-04
 
 Added:
