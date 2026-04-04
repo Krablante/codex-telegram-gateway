@@ -1,6 +1,7 @@
 # Secrets and local runtime wiring
 .env
 *.env
+.local/
 
 # Node
 node_modules/
