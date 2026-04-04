@@ -1,5 +1,30 @@
 # Deployment
 
+## First Install Minimum
+
+Required runtime settings:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
+- `TELEGRAM_FORUM_CHAT_ID`
+- `WORKSPACE_ROOT`
+
+Optional but commonly useful:
+
+- `DEFAULT_SESSION_BINDING_PATH`
+- `TELEGRAM_EXPECTED_TOPICS`
+- `TELEGRAM_ALLOWED_BOT_IDS`
+- `STATE_ROOT`
+- `CODEX_BIN_PATH`
+- `MAX_PARALLEL_SESSIONS`
+
+Telegram-side baseline:
+
+- use a forum-enabled supergroup
+- disable privacy mode for the Spike bot
+- make the bot an admin in that forum chat
+- topic creation and cleanup flows work best when the bot can post, edit, delete, pin, and manage topics
+
 ## Supported Shapes
 
 ### Spike-only
@@ -77,6 +102,12 @@ Omni-specific settings:
 - `OMNI_BOT_TOKEN`
 - `OMNI_BOT_ID`
 - `SPIKE_BOT_ID`
+
+Practical workspace examples:
+
+- with `WORKSPACE_ROOT=/home/you/work` and `DEFAULT_SESSION_BINDING_PATH=/home/you/work/main-repo`, plain `/new Backend API` starts in `/home/you/work/main-repo`
+- `/new cwd=experiments/lab Prototype` still resolves relative to `WORKSPACE_ROOT`, so it starts in `/home/you/work/experiments/lab`
+- if `DEFAULT_SESSION_BINDING_PATH` is unset, ordinary `/new` falls back to `WORKSPACE_ROOT`
 
 ## Services
 

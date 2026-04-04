@@ -110,10 +110,10 @@ function renderBar(value) {
 
 function renderTrend(trend) {
   if (trend === "up") {
-    return "^";
+    return "↑";
   }
   if (trend === "down") {
-    return "v";
+    return "↓";
   }
   return "=";
 }
