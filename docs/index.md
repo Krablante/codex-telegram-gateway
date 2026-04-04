@@ -14,6 +14,7 @@ If you are new here, do not start by reading every file in order. Use the path t
 
 - [telegram-surface.md](./telegram-surface.md) — commands, menus, buffering, queueing, rendering, file delivery
 - [omni-auto.md](./omni-auto.md) — how `/auto` works, what `Omni` does, and what it does not do
+- [zoo-concept.md](./zoo-concept.md) — the experimental menu-only Zoo / tamagotchi topic
 - [guidebook-rus.md](./guidebook-rus.md) / [guidebook-eng.md](./guidebook-eng.md) — source markdown for the beginner `/guide` PDF
 
 ## Operating The System
@@ -30,6 +31,7 @@ If you are new here, do not start by reading every file in order. Use the path t
 | get the bot online quickly | [setup.md](./setup.md) |
 | understand the Telegram UX | [telegram-surface.md](./telegram-surface.md) |
 | decide whether you even need `Omni` | [deployment.md](./deployment.md), [omni-auto.md](./omni-auto.md) |
+| understand the experimental Zoo topic | [zoo-concept.md](./zoo-concept.md) |
 | debug a broken live instance | [runbook.md](./runbook.md) |
 | understand what is persisted and what is rebuilt | [state-contract.md](./state-contract.md) |
 | understand the actual runtime flow | [architecture.md](./architecture.md) |

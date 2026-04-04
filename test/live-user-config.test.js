@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 import {
   TELEGRAM_USER_ACCOUNT_FILE_NAME,
@@ -11,30 +12,38 @@ import {
 } from "../src/live-user/config.js";
 
 test("resolveTelegramUserPaths builds default files under state root", () => {
-  const paths = resolveTelegramUserPaths({
-    stateRoot: "/tmp/codex-telegram-gateway-state",
-  });
+  const stateRoot = path.join(path.sep, "tmp", "codex-telegram-gateway-state");
+  const paths = resolveTelegramUserPaths({ stateRoot });
 
   assert.equal(
     paths.envFilePath,
-    "/tmp/codex-telegram-gateway-state/live-user-testing/"
-      + TELEGRAM_USER_ENV_FILE_NAME,
+    path.join(
+      stateRoot,
+      "live-user-testing",
+      TELEGRAM_USER_ENV_FILE_NAME,
+    ),
   );
   assert.equal(
     paths.sessionFilePath,
-    "/tmp/codex-telegram-gateway-state/live-user-testing/"
-      + TELEGRAM_USER_SESSION_FILE_NAME,
+    path.join(
+      stateRoot,
+      "live-user-testing",
+      TELEGRAM_USER_SESSION_FILE_NAME,
+    ),
   );
   assert.equal(
     paths.accountFilePath,
-    "/tmp/codex-telegram-gateway-state/live-user-testing/"
-      + TELEGRAM_USER_ACCOUNT_FILE_NAME,
+    path.join(
+      stateRoot,
+      "live-user-testing",
+      TELEGRAM_USER_ACCOUNT_FILE_NAME,
+    ),
   );
 });
 
 test("buildTelegramUserEnvTemplate points operators at the state-only bootstrap files", () => {
   const paths = resolveTelegramUserPaths({
-    stateRoot: "/tmp/codex-telegram-gateway-state",
+    stateRoot: path.join(path.sep, "tmp", "codex-telegram-gateway-state"),
   });
   const text = buildTelegramUserEnvTemplate(paths);
 
@@ -46,7 +55,7 @@ test("buildTelegramUserEnvTemplate points operators at the state-only bootstrap 
 
 test("parseTelegramUserConfig validates api credentials and keeps optional phone", () => {
   const paths = resolveTelegramUserPaths({
-    stateRoot: "/tmp/codex-telegram-gateway-state",
+    stateRoot: path.join(path.sep, "tmp", "codex-telegram-gateway-state"),
   });
   const config = parseTelegramUserConfig(
     {
@@ -64,7 +73,7 @@ test("parseTelegramUserConfig validates api credentials and keeps optional phone
 
 test("parseTelegramUserConfig rejects missing api hash", () => {
   const paths = resolveTelegramUserPaths({
-    stateRoot: "/tmp/codex-telegram-gateway-state",
+    stateRoot: path.join(path.sep, "tmp", "codex-telegram-gateway-state"),
   });
 
   assert.throws(

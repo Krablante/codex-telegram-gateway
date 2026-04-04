@@ -46,6 +46,7 @@ It is designed for people who already like working in Telegram and want somethin
 - real local files and commands, not a fake hosted wrapper
 - recovery that survives long-running work
 - optional autonomy through `Omni`, without turning the project into a general agent platform
+- one dedicated `Zoo` topic for experimental project tamagotchi cards
 
 ## Why People Use It
 
@@ -89,8 +90,11 @@ Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/fil
 - `/new Topic Name` topic creation when the bot has Telegram rights
 - `/help` visual card and `/guide` beginner PDF
 - topic-local and global menus through `/menu` and `/global`
+- `/clear` in `General` to keep only the active menu
 - queued prompts with `/q`
 - compacted recovery memory rebuilt from the clean exchange log
+- dedicated menu-only `Zoo` topic for project tamagotchi cards
+- native Windows wrapper scripts for install, doctor, test, and run
 - operator-only emergency private chat lane
 - optional `Omni` bot with goal-locked `/auto`
 
@@ -140,8 +144,10 @@ In `General`:
 
 - `/help` — quick visual help
 - `/guide` — beginner PDF guide
+- `/clear` — clear tracked clutter and keep only the active menu
 - `/global` — global settings menu
 - `/new Topic Name` — create a new work topic
+- `/zoo` — open the dedicated Zoo topic
 
 Inside a work topic:
 
@@ -155,6 +161,21 @@ Inside a work topic:
 - `/purge` — reset local session memory for that topic
 
 If you ever forget the command surface, use `/help` again instead of memorizing everything.
+
+## Native Windows
+
+Native Windows is now a first-class path. Prefer it over WSL unless you already know your WSL networking and file-path setup are healthy.
+
+```powershell
+copy .env.example .env
+scripts\windows\install.cmd
+scripts\windows\install-codex.cmd
+scripts\windows\doctor.cmd
+scripts\windows\test.cmd
+scripts\windows\run.cmd
+```
+
+If you enable `Omni`, run `scripts\windows\run-omni.cmd` in a second shell. The Windows wrappers call `npm.cmd` directly and avoid the usual PowerShell `npm` friction.
 
 ## Deployment Modes
 
@@ -214,7 +235,8 @@ Common optional settings:
 
 Default path model:
 
-- direct CLI usage looks for `${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env`
+- direct CLI usage prefers `${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env` on Linux/macOS and `%LOCALAPPDATA%\\codex-telegram-gateway\\runtime.env` on native Windows
+- if that external env file does not exist yet, the runtime falls back to repo-local `.env`
 - `make` targets use `.env` in the repo root unless you override `ENV_FILE`
 - mutable runtime state goes under `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway`
 
@@ -274,6 +296,7 @@ make test-live
 | understand the runtime shape | [docs/architecture.md](./docs/architecture.md) |
 | learn the Telegram commands and menus | [docs/telegram-surface.md](./docs/telegram-surface.md) |
 | use `/auto` well | [docs/omni-auto.md](./docs/omni-auto.md) |
+| understand the experimental Zoo / tamagotchi topic | [docs/zoo-concept.md](./docs/zoo-concept.md) |
 | deploy as user services | [docs/deployment.md](./docs/deployment.md) |
 | validate changes locally | [docs/testing.md](./docs/testing.md) |
 | operate or recover a live instance | [docs/runbook.md](./docs/runbook.md) |

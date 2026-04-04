@@ -484,9 +484,9 @@ test("SessionService scheduleAutoSleep ignores stale disabled snapshots and keep
   });
 
   let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "123456789",
-    omniBotId: "222333444",
-    spikeBotId: "333444555",
+    activatedByUserId: "1234567890",
+    omniBotId: "2234567890",
+    spikeBotId: "3234567890",
   });
   liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
   liveSession = await service.captureAutoInitialPrompt(
@@ -535,9 +535,9 @@ test("SessionService markAutoDecision ignores stale disabled snapshots when reco
   });
 
   let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "123456789",
-    omniBotId: "222333444",
-    spikeBotId: "333444555",
+    activatedByUserId: "1234567890",
+    omniBotId: "2234567890",
+    spikeBotId: "3234567890",
   });
   liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
   liveSession = await service.captureAutoInitialPrompt(

@@ -31,7 +31,7 @@ function buildTopicContextLines(session, topicContextPath = null) {
     '- If the user says "this topic", "here", "сюда", or "в этот топик", they mean this topic.',
     "- Do not ask to reconfirm the topic unless the user explicitly requests a different destination.",
     "- Do not call the raw Telegram Bot API directly for normal delivery from Codex.",
-    "- File delivery is allowed only from the current worktree, this session state directory, or /tmp.",
+    "- File delivery is allowed only from the current worktree, this session state directory, or the system temp dir.",
     "- If you need some other host file, copy it into one of those locations first, then send it.",
     "",
     "File delivery:",

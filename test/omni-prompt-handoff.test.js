@@ -32,8 +32,8 @@ async function ensureSession(sessionStore) {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
-      spike_bot_id: "333444555",
+      omni_bot_id: "2234567890",
+      spike_bot_id: "3234567890",
     },
   });
   return session;
@@ -70,11 +70,11 @@ test("buildSyntheticOmniPromptMessage emits a bot-authored forum topic message",
       prompt: "queued prompt",
       synthetic_message_id: 123,
     },
-    "222333444",
+    "2234567890",
   );
 
   assert.equal(message.message_thread_id, 991);
-  assert.equal(message.from.id, 222333444);
+  assert.equal(message.from.id, 2234567890);
   assert.equal(message.from.is_bot, true);
   assert.equal(message.is_internal_omni_handoff, true);
   assert.equal(message.text, "queued prompt");
@@ -121,7 +121,7 @@ test("drainPendingOmniPrompts injects queued Omni prompts into Spike handling", 
   assert.equal(results.length, 1);
   assert.equal(captured.length, 1);
   assert.equal(captured[0].text, "queued prompt");
-  assert.equal(captured[0].from.id, 222333444);
+  assert.equal(captured[0].from.id, 2234567890);
   assert.equal(await handoffStore.load(session), null);
 });
 

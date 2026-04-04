@@ -53,17 +53,26 @@ function buildDiffSnapshot(session, generatedAt, status, unstagedDiff, stagedDif
 export async function createWorkspaceDiffArtifact({ session, sessionStore }) {
   const generatedAt = new Date().toISOString();
   const cwd = session.workspace_binding.cwd;
-  const [status, unstagedDiff, stagedDiff] = await Promise.all([
-    runGit(cwd, ["status", "--short", "--branch", "--untracked-files=all"]),
-    runGit(cwd, ["diff", "--no-ext-diff", "--stat", "--patch", "--submodule=diff"]),
-    runGit(cwd, [
-      "diff",
-      "--cached",
-      "--no-ext-diff",
-      "--stat",
-      "--patch",
-      "--submodule=diff",
-    ]),
+  const status = await runGit(cwd, [
+    "status",
+    "--short",
+    "--branch",
+    "--untracked-files=all",
+  ]);
+  const unstagedDiff = await runGit(cwd, [
+    "diff",
+    "--no-ext-diff",
+    "--stat",
+    "--patch",
+    "--submodule=diff",
+  ]);
+  const stagedDiff = await runGit(cwd, [
+    "diff",
+    "--cached",
+    "--no-ext-diff",
+    "--stat",
+    "--patch",
+    "--submodule=diff",
   ]);
 
   const clean =

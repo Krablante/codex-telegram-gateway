@@ -1,35 +1,23 @@
 import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import process from "node:process";
 
 import { DEFAULT_ENV_FILE, loadEnvFile } from "./env-file.js";
+import {
+  getDefaultCodexConfigPath,
+  getDefaultCodexSessionsRoot,
+  getDefaultRepoRoot,
+  getDefaultStateRoot,
+  getDefaultWorkspaceRoot,
+  resolveRuntimeEnvFilePath,
+} from "./default-paths.js";
 
-const DEFAULT_REPO_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-);
-const DEFAULT_STATE_ROOT = process.env.XDG_STATE_HOME?.trim()
-  ? path.join(
-      process.env.XDG_STATE_HOME.trim(),
-      "codex-telegram-gateway",
-    )
-  : path.join(
-      os.homedir(),
-      ".local",
-      "state",
-      "codex-telegram-gateway",
-    );
-const DEFAULT_WORKSPACE_ROOT = os.homedir();
-const DEFAULT_CODEX_SESSIONS_ROOT = `${os.homedir()}/.codex/sessions`;
 const DEFAULT_TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 const DEFAULT_TELEGRAM_POLL_TIMEOUT_SECS = 30;
 const DEFAULT_CODEX_BIN_PATH = "codex";
 const DEFAULT_MAX_PARALLEL_SESSIONS = 10;
 const DEFAULT_PARKED_SESSION_RETENTION_HOURS = 168;
 const DEFAULT_RETENTION_SWEEP_INTERVAL_SECS = 60;
-const DEFAULT_CODEX_CONFIG_PATH = `${os.homedir()}/.codex/config.toml`;
+const DEFAULT_CODEX_CONFIG_PATH = getDefaultCodexConfigPath();
 
 function readRequired(rawEnv, key) {
   const value = rawEnv[key];
@@ -167,13 +155,16 @@ async function loadCodexConfigProfile(configPath) {
 }
 
 export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
-  const envFilePath = rawEnv.ENV_FILE?.trim() || DEFAULT_ENV_FILE;
-  const repoRoot = rawEnv.REPO_ROOT?.trim() || DEFAULT_REPO_ROOT;
-  const stateRoot = rawEnv.STATE_ROOT?.trim() || DEFAULT_STATE_ROOT;
+  const repoRoot = rawEnv.REPO_ROOT?.trim() || getDefaultRepoRoot();
+  const stateRoot = rawEnv.STATE_ROOT?.trim() || getDefaultStateRoot();
+  const envFilePath =
+    rawEnv.ENV_FILE?.trim()
+    || rawEnv.CODEX_TELEGRAM_GATEWAY_ENV_FILE?.trim()
+    || DEFAULT_ENV_FILE;
   const workspaceRoot =
-    rawEnv.WORKSPACE_ROOT?.trim() ||
-    rawEnv.ATLAS_WORKSPACE_ROOT?.trim() ||
-    DEFAULT_WORKSPACE_ROOT;
+    rawEnv.WORKSPACE_ROOT?.trim()
+    || rawEnv.ATLAS_WORKSPACE_ROOT?.trim()
+    || getDefaultWorkspaceRoot({ repoRoot });
   const telegramApiBaseUrl =
     rawEnv.TELEGRAM_API_BASE_URL?.trim() || DEFAULT_TELEGRAM_API_BASE_URL;
   const defaultSessionBindingPath =
@@ -185,7 +176,7 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     codexProfile.configPath ||
     DEFAULT_CODEX_CONFIG_PATH;
   const codexSessionsRoot =
-    rawEnv.CODEX_SESSIONS_ROOT?.trim() || DEFAULT_CODEX_SESSIONS_ROOT;
+    rawEnv.CODEX_SESSIONS_ROOT?.trim() || getDefaultCodexSessionsRoot();
 
   const telegramBotToken = readRequired(rawEnv, "TELEGRAM_BOT_TOKEN");
   const legacyAllowedUserId = rawEnv.TELEGRAM_ALLOWED_USER_ID?.trim()
@@ -307,12 +298,23 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
 }
 
 export async function loadRuntimeConfig(options = {}) {
-  const envFilePath = options.envFilePath || process.env.ENV_FILE || DEFAULT_ENV_FILE;
+  const repoRoot = options.repoRoot || getDefaultRepoRoot();
+  const stateRoot = options.stateRoot || getDefaultStateRoot();
+  const envFilePath = await resolveRuntimeEnvFilePath({
+    explicitEnvFilePath:
+      options.envFilePath
+      || process.env.ENV_FILE
+      || process.env.CODEX_TELEGRAM_GATEWAY_ENV_FILE
+      || null,
+    repoRoot,
+  });
   const fileEnv = await loadEnvFile(envFilePath);
   const mergedEnv = {
     ...fileEnv,
     ...process.env,
     ENV_FILE: envFilePath,
+    REPO_ROOT: fileEnv.REPO_ROOT || process.env.REPO_ROOT || repoRoot,
+    STATE_ROOT: fileEnv.STATE_ROOT || process.env.STATE_ROOT || stateRoot,
   };
   const codexConfigPath =
     mergedEnv.CODEX_CONFIG_PATH?.trim() || DEFAULT_CODEX_CONFIG_PATH;

@@ -6,7 +6,9 @@ const SPIKE_GROUP_COMMANDS = {
   eng: [
     buildCommand("help", "Show the quick help card"),
     buildCommand("guide", "Send the beginner PDF guidebook"),
+    buildCommand("clear", "Clear General and keep only the active menu"),
     buildCommand("new", "Create a new work topic"),
+    buildCommand("zoo", "Open the dedicated Zoo topic"),
     buildCommand("status", "Show session and runtime status"),
     buildCommand("global", "Open the General-topic global settings menu"),
     buildCommand("menu", "Open the topic-local settings menu"),
@@ -24,7 +26,9 @@ const SPIKE_GROUP_COMMANDS = {
   rus: [
     buildCommand("help", "Показать краткую шпаргалку"),
     buildCommand("guide", "Отправить PDF-гайдбук для новичка"),
+    buildCommand("clear", "Очистить General и оставить только active menu"),
     buildCommand("new", "Создать новую рабочую тему"),
+    buildCommand("zoo", "Открыть отдельный Zoo topic"),
     buildCommand("status", "Показать статус сессии и рантайма"),
     buildCommand("global", "Открыть Global settings menu в General"),
     buildCommand("menu", "Открыть menu локальных настроек топика"),

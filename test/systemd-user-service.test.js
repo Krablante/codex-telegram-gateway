@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 import {
   SYSTEMD_USER_SERVICE_NAME,
   buildUserServiceUnit,
   getUserServiceUnitPath,
+  isSystemdUserSupported,
 } from "../src/runtime/systemd-user-service.js";
 
 test("buildUserServiceUnit renders a direct node user systemd wrapper", () => {
@@ -30,8 +32,20 @@ test("buildUserServiceUnit renders a direct node user systemd wrapper", () => {
 
 test("getUserServiceUnitPath targets the standard user-unit directory", () => {
   assert.equal(
-    getUserServiceUnitPath("/home/bloob"),
-    "/home/bloob/.config/systemd/user/codex-telegram-gateway.service",
+    getUserServiceUnitPath("/home/operator"),
+    path.posix.join(
+      "/home/operator",
+      ".config",
+      "systemd",
+      "user",
+      "codex-telegram-gateway.service",
+    ),
   );
   assert.equal(SYSTEMD_USER_SERVICE_NAME, "codex-telegram-gateway.service");
+});
+
+test("isSystemdUserSupported is false outside Linux", () => {
+  assert.equal(isSystemdUserSupported("linux"), true);
+  assert.equal(isSystemdUserSupported("win32"), false);
+  assert.equal(isSystemdUserSupported("darwin"), false);
 });

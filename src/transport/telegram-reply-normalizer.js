@@ -231,10 +231,65 @@ function parseFenceBlock(block) {
   };
 }
 
+function getBlockquoteMarker(line) {
+  const trimmed = String(line || "").trimStart();
+  if (trimmed.startsWith(">>")) {
+    return ">>";
+  }
+  if (trimmed.startsWith(">")) {
+    return ">";
+  }
+  return null;
+}
+
+function parseBlockquoteBlock(block) {
+  const lines = String(block || "").split("\n");
+  let marker = null;
+
+  for (const line of lines) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    const lineMarker = getBlockquoteMarker(line);
+    if (!lineMarker) {
+      return null;
+    }
+    if (!marker) {
+      marker = lineMarker;
+      continue;
+    }
+    if (marker !== lineMarker) {
+      return null;
+    }
+  }
+
+  if (!marker) {
+    return null;
+  }
+
+  const content = lines
+    .map((line) => {
+      if (!line.trim()) {
+        return "";
+      }
+
+      return marker === ">>"
+        ? line.replace(/^\s*>>\s?/u, "")
+        : line.replace(/^\s*>\s?/u, "");
+    })
+    .join("\n")
+    .trim();
+
+  return {
+    expandable: marker === ">>",
+    marker,
+    content,
+  };
+}
+
 function isBlockquoteBlock(block) {
-  return String(block || "")
-    .split("\n")
-    .every((line) => !line.trim() || line.trimStart().startsWith(">"));
+  return Boolean(parseBlockquoteBlock(block));
 }
 
 function renderFenceBlock(block) {
@@ -252,13 +307,15 @@ function renderFenceBlock(block) {
 }
 
 function renderBlockquoteBlock(block) {
-  const lines = String(block || "")
-    .split("\n")
-    .map((line) => line.replace(/^\s*>\s?/u, ""))
-    .join("\n")
-    .trim();
+  const parsed = parseBlockquoteBlock(block);
+  if (!parsed) {
+    return renderParagraphBlock(block);
+  }
 
-  return `<blockquote>${renderParagraphBlock(lines)}</blockquote>`;
+  const rendered = renderParagraphBlock(parsed.content);
+  return parsed.expandable
+    ? `<blockquote expandable>${rendered}</blockquote>`
+    : `<blockquote>${rendered}</blockquote>`;
 }
 
 function renderMarkdownBlock(block) {
@@ -361,6 +418,8 @@ function splitFenceCodeLines(language, code, limit) {
 }
 
 function splitBlockquoteLines(block, limit) {
+  const parsed = parseBlockquoteBlock(block);
+  const marker = parsed?.marker || ">";
   const lines = String(block || "")
     .split("\n")
     .filter((line) => line.trim());
@@ -389,7 +448,7 @@ function splitBlockquoteLines(block, limit) {
       let sliceLength = remainder.length;
       while (sliceLength > 1) {
         const slice = remainder.slice(0, sliceLength);
-        const candidateLine = slice.startsWith(">") ? slice : `> ${slice}`;
+        const candidateLine = slice.startsWith(marker) ? slice : `${marker} ${slice}`;
         if (renderMarkdownBlock(candidateLine).length <= limit) {
           chunks.push(candidateLine);
           remainder = remainder.slice(sliceLength).trimStart();
@@ -399,7 +458,7 @@ function splitBlockquoteLines(block, limit) {
       }
 
       if (sliceLength === 1) {
-        chunks.push(`> ${remainder.slice(0, 1)}`);
+        chunks.push(`${marker} ${remainder.slice(0, 1)}`);
         remainder = remainder.slice(1).trimStart();
       }
     }

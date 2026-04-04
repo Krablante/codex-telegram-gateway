@@ -683,8 +683,8 @@ test("CodexWorkerPool does not reply to internal Omni handoff message ids", asyn
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
-      spike_bot_id: "333444555",
+      omni_bot_id: "2234567890",
+      spike_bot_id: "3234567890",
     },
   });
 
@@ -2271,7 +2271,7 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
+      omni_bot_id: "2234567890",
     },
   });
 
@@ -2389,7 +2389,7 @@ test("CodexWorkerPool persists failure text into session state, exchange log, an
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
+      omni_bot_id: "2234567890",
     },
   });
 
@@ -2471,7 +2471,7 @@ test("CodexWorkerPool skips late Spike final events after auto mode is turned of
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
+      omni_bot_id: "2234567890",
     },
   });
 
@@ -4117,7 +4117,7 @@ test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", a
                 warnings: [],
                 resumeReplacement: null,
               });
-            }, 20).unref();
+            }, 20);
           }
         },
       },

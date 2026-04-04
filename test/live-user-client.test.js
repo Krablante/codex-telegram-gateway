@@ -10,9 +10,22 @@ import {
   TELEGRAM_USER_PRIVATE_FILE_MODE,
 } from "../src/live-user/config.js";
 import { writeTelegramUserSession } from "../src/live-user/client.js";
+import { supportsPosixFileModes } from "../src/state/file-utils.js";
 
 async function getFileMode(filePath) {
   return (await fs.stat(filePath)).mode & 0o777;
+}
+
+async function assertPrivateFileState(filePath) {
+  await fs.access(filePath);
+  if (!supportsPosixFileModes()) {
+    return;
+  }
+
+  assert.equal(
+    await getFileMode(filePath),
+    TELEGRAM_USER_PRIVATE_FILE_MODE,
+  );
 }
 
 test("live-user bootstrap hardens env, session, and account files to 0600", async () => {
@@ -22,26 +35,17 @@ test("live-user bootstrap hardens env, session, and account files to 0600", asyn
   const paths = resolveTelegramUserPaths({ stateRoot });
 
   await ensureTelegramUserBootstrapFiles(paths);
-  assert.equal(
-    await getFileMode(paths.envFilePath),
-    TELEGRAM_USER_PRIVATE_FILE_MODE,
-  );
+  await assertPrivateFileState(paths.envFilePath);
 
   await writeTelegramUserSession(paths, {
     sessionString: "session-value",
     account: {
-      id: "123456789",
+      id: "1234567890",
       username: "stupidumbidiot",
     },
   });
-  assert.equal(
-    await getFileMode(paths.sessionFilePath),
-    TELEGRAM_USER_PRIVATE_FILE_MODE,
-  );
-  assert.equal(
-    await getFileMode(paths.accountFilePath),
-    TELEGRAM_USER_PRIVATE_FILE_MODE,
-  );
+  await assertPrivateFileState(paths.sessionFilePath);
+  await assertPrivateFileState(paths.accountFilePath);
 });
 
 test("live-user bootstrap tightens permissions on pre-existing files", async () => {
@@ -60,16 +64,7 @@ test("live-user bootstrap tightens permissions on pre-existing files", async () 
   const result = await ensureTelegramUserBootstrapFiles(paths);
 
   assert.equal(result.envTemplateCreated, false);
-  assert.equal(
-    await getFileMode(paths.envFilePath),
-    TELEGRAM_USER_PRIVATE_FILE_MODE,
-  );
-  assert.equal(
-    await getFileMode(paths.sessionFilePath),
-    TELEGRAM_USER_PRIVATE_FILE_MODE,
-  );
-  assert.equal(
-    await getFileMode(paths.accountFilePath),
-    TELEGRAM_USER_PRIVATE_FILE_MODE,
-  );
+  await assertPrivateFileState(paths.envFilePath);
+  await assertPrivateFileState(paths.sessionFilePath);
+  await assertPrivateFileState(paths.accountFilePath);
 });

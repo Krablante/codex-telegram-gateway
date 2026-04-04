@@ -11,6 +11,7 @@ import {
   SYSTEMD_USER_SERVICE_NAME,
   buildUserServiceUnit,
   getUserServiceUnitPath,
+  isSystemdUserSupported,
 } from "../runtime/systemd-user-service.js";
 
 const execFileAsync = promisify(execFile);
@@ -68,6 +69,12 @@ async function runSystemctl(args) {
 }
 
 async function main() {
+  if (!isSystemdUserSupported()) {
+    throw new Error(
+      "systemd user services are Linux-only here; on Windows run the gateway directly with `npm run doctor` and `npm run run`.",
+    );
+  }
+
   const config = await loadRuntimeConfig();
   const omniVariant = process.env.SERVICE_VARIANT === "omni";
   const serviceName = omniVariant

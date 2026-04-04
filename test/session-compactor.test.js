@@ -23,6 +23,10 @@ function buildBinding() {
   };
 }
 
+function escapeForRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
 test("SessionCompactor builds active brief from exchange log via Codex summarizer", async () => {
   const sessionStore = await makeStore();
   const runCalls = [];
@@ -91,7 +95,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   const withRun = await sessionStore.patch(session, {
     codex_thread_id: "thread-before-compact",
     codex_rollout_path:
-      "/home/bloob/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
+      "/home/operator/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
     last_user_prompt: "Inspect compact state",
     last_agent_reply: "Workspace is clean and ready.",
     last_run_status: "completed",
@@ -115,7 +119,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
         total_tokens: 120450,
       },
       rollout_path:
-        "/home/bloob/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
+        "/home/operator/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
     },
     parked_reason: "telegram/forum-topic-closed",
     lifecycle_state: "parked",
@@ -162,7 +166,12 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   );
   assert.match(
     runCalls[0].prompt,
-    new RegExp(sessionStore.getExchangeLogPath(withRun.chat_id, withRun.topic_id)),
+    new RegExp(
+      escapeForRegExp(
+        sessionStore.getExchangeLogPath(withRun.chat_id, withRun.topic_id),
+      ),
+      "u",
+    ),
   );
   assert.doesNotMatch(runCalls[0].prompt, /Inspect compact state/u);
   assert.doesNotMatch(runCalls[0].prompt, /Workspace is clean and ready/u);
@@ -274,8 +283,8 @@ test("SessionCompactor resets Omni auto-compact counters but preserves active au
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
-      spike_bot_id: "333444555",
+      omni_bot_id: "2234567890",
+      spike_bot_id: "3234567890",
       continuation_count_since_compact: 33,
       first_omni_prompt_at: "2026-04-03T10:00:00.000Z",
     },

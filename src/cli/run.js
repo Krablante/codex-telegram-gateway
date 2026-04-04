@@ -8,6 +8,7 @@ import { SessionCompactor } from "../session-manager/session-compactor.js";
 import { SpikeFinalEventStore } from "../session-manager/spike-final-event-store.js";
 import { GlobalCodexSettingsStore } from "../session-manager/global-codex-settings-store.js";
 import { GlobalControlPanelStore } from "../session-manager/global-control-panel-store.js";
+import { GeneralMessageLedgerStore } from "../session-manager/general-message-ledger-store.js";
 import { GlobalPromptSuffixStore } from "../session-manager/global-prompt-suffix-store.js";
 import { SessionLifecycleManager } from "../session-manager/session-lifecycle-manager.js";
 import { SpikePromptQueueStore } from "../session-manager/prompt-queue.js";
@@ -22,11 +23,13 @@ import {
   handleIncomingCallbackQuery,
   handleIncomingMessage,
 } from "../telegram/command-router.js";
+import { createTrackedGeneralApi } from "../telegram/general-message-cleanup.js";
 import { PromptFragmentAssembler } from "../telegram/prompt-fragment-assembler.js";
 import { runTelegramProbe } from "../telegram/probe.js";
 import { EmergencyPrivateChatRouter } from "../emergency/private-chat-router.js";
 import { OmniPromptHandoffStore, drainPendingOmniPrompts } from "../omni/prompt-handoff.js";
 import { disableOmniStateAcrossSessions } from "../omni/disabled-state.js";
+import { ZooService } from "../zoo/service.js";
 
 const TELEGRAM_ALLOWED_UPDATES = ["message", "callback_query"];
 const RUN_ONCE = process.env.RUN_ONCE === "1";
@@ -85,7 +88,9 @@ async function processUpdates({
   offsetStore,
   sessionService,
   globalControlPanelStore,
+  generalMessageLedgerStore,
   topicControlPanelStore,
+  zooService,
   workerPool,
   serviceState,
   updates,
@@ -111,7 +116,9 @@ async function processUpdates({
           serviceState,
           sessionService,
           globalControlPanelStore,
+          generalMessageLedgerStore,
           topicControlPanelStore,
+          zooService,
           workerPool,
         });
       } else if (update.message) {
@@ -151,7 +158,9 @@ async function processUpdates({
           serviceState,
           sessionService,
           globalControlPanelStore,
+          generalMessageLedgerStore,
           topicControlPanelStore,
+          zooService,
           workerPool,
         });
       } else {
@@ -190,6 +199,12 @@ async function main() {
   const globalPromptSuffixStore = new GlobalPromptSuffixStore(layout.settings);
   const globalCodexSettingsStore = new GlobalCodexSettingsStore(layout.settings);
   const globalControlPanelStore = new GlobalControlPanelStore(layout.settings);
+  const generalMessageLedgerStore = new GeneralMessageLedgerStore(layout.settings);
+  const trackedApi = createTrackedGeneralApi(
+    api,
+    config,
+    generalMessageLedgerStore,
+  );
   const sessionStore = new SessionStore(layout.sessions);
   const promptQueueStore = new SpikePromptQueueStore(sessionStore);
   const topicControlPanelStore = new TopicControlPanelStore(sessionStore);
@@ -211,6 +226,11 @@ async function main() {
     globalCodexSettingsStore,
     promptQueueStore,
   });
+  const zooService = new ZooService({
+    config,
+    sessionService,
+    globalControlPanelStore,
+  });
   let workerPool = null;
   const handleRunTerminated = async ({ session }) => {
     if (!session) {
@@ -220,7 +240,7 @@ async function main() {
     await sessionService.drainPromptQueue(workerPool, { session });
   };
   workerPool = new CodexWorkerPool({
-    api,
+    api: trackedApi,
     config,
     sessionStore,
     serviceState,
@@ -233,7 +253,7 @@ async function main() {
   const promptFragmentAssembler = new PromptFragmentAssembler();
   const queuePromptAssembler = new PromptFragmentAssembler();
   const emergencyRouter = new EmergencyPrivateChatRouter({
-    api,
+    api: trackedApi,
     botUsername: serviceState.botUsername,
     config,
     normalRunState: {
@@ -394,7 +414,7 @@ async function main() {
         }
 
         currentOffset = await processUpdates({
-          api,
+          api: trackedApi,
           botUsername: serviceState.botUsername,
           config,
           emergencyRouter,
@@ -405,7 +425,9 @@ async function main() {
           offsetStore,
           sessionService,
           globalControlPanelStore,
+          generalMessageLedgerStore,
           topicControlPanelStore,
+          zooService,
           workerPool,
           serviceState,
           updates,

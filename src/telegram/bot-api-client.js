@@ -186,6 +186,10 @@ export class TelegramBotApiClient {
     return this.call("deleteMessage", params, options);
   }
 
+  async deleteMessages(params, options = {}) {
+    return this.call("deleteMessages", params, options);
+  }
+
   async pinChatMessage(params, options = {}) {
     return this.call("pinChatMessage", params, options);
   }

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { getSessionUiLanguage, normalizeUiLanguage } from "../i18n/ui-language.js";
@@ -1409,27 +1410,29 @@ export class CodexWorkerPool {
         continue;
       }
 
-      const resolvedFilePath = await resolveExistingRealPath(filePath);
+      const candidateFilePath = path.resolve(filePath);
+
+      if (
+        !allowedRoots.some((rootPath) =>
+          isPathInsideRoot(candidateFilePath, rootPath),
+        )
+      ) {
+        failures.push({
+          label,
+          error: isEnglish(language)
+            ? "path is outside allowed delivery roots; copy the file into the worktree, session state, or the system temp dir first"
+            : "путь вне разрешённых зон доставки; сначала скопируй файл в worktree, session state или системную temp-директорию",
+        });
+        continue;
+      }
+
+      const resolvedFilePath = await resolveExistingRealPath(candidateFilePath);
       if (!resolvedFilePath) {
         failures.push({
           label,
           error: isEnglish(language)
             ? `file not found: ${filePath}`
             : `файл не найден: ${filePath}`,
-        });
-        continue;
-      }
-
-      if (
-        !allowedRoots.some((rootPath) =>
-          isPathInsideRoot(resolvedFilePath, rootPath),
-        )
-      ) {
-        failures.push({
-          label,
-          error: isEnglish(language)
-            ? "path is outside allowed delivery roots; copy the file into the worktree, session state, or /tmp first"
-            : "путь вне разрешённых зон доставки; сначала скопируй файл в worktree, session state или /tmp",
         });
         continue;
       }
@@ -1510,7 +1513,7 @@ export class CodexWorkerPool {
       typeof this.sessionStore?.getSessionDir === "function"
         ? this.sessionStore.getSessionDir(session.chat_id, session.topic_id)
         : null,
-      "/tmp",
+      os.tmpdir(),
     ].filter(Boolean);
     const roots = [];
 

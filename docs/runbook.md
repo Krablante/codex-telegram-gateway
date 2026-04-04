@@ -22,10 +22,22 @@ make test
 make run
 ```
 
+Native Windows:
+
+```powershell
+scripts\windows\run.cmd
+```
+
 With Omni enabled:
 
 ```bash
 make run-omni
+```
+
+Native Windows equivalent:
+
+```powershell
+scripts\windows\run-omni.cmd
 ```
 
 ## Runtime Visibility
@@ -74,6 +86,8 @@ make service-status-omni
 make service-logs-omni
 make service-restart-omni
 ```
+
+Those `service-*` flows are Linux-only because they target `systemd --user`.
 
 ## Failure Handling
 

@@ -55,6 +55,27 @@ test("renderTelegramHtml converts supported Codex markdown to Telegram HTML", ()
   );
 });
 
+test("renderTelegramHtml supports expandable blockquotes", () => {
+  const source = [
+    "Верхний блок",
+    "",
+    ">> моё настроение: спокойный",
+    ">> голос:",
+    ">> Тихо шуршу по длинному файлу.",
+    ">>",
+    ">> проект: gateway",
+  ].join("\n");
+
+  assert.equal(
+    renderTelegramHtml(source),
+    [
+      "Верхний блок",
+      "",
+      "<blockquote expandable>моё настроение: спокойный\nголос:\nТихо шуршу по длинному файлу.\n\nпроект: gateway</blockquote>",
+    ].join("\n"),
+  );
+});
+
 test("renderTelegramHtml keeps nested list structure readable in Telegram", () => {
   const source = [
     "- top bullet",

@@ -15,7 +15,7 @@ import {
 } from "../src/telegram/command-router.js";
 
 const config = {
-  telegramAllowedUserId: "123456789",
+  telegramAllowedUserId: "1234567890",
   telegramForumChatId: "-1001234567890",
   maxParallelSessions: 4,
 };
@@ -24,7 +24,7 @@ function buildTopicCommandMessage(text) {
   return {
     text,
     entities: [{ type: "bot_command", offset: 0, length: text.length }],
-    from: { id: 123456789, is_bot: false },
+    from: { id: 1234567890, is_bot: false },
     chat: { id: -1001234567890 },
     message_thread_id: 55,
   };
@@ -54,7 +54,7 @@ function buildServiceState() {
     lastCommandName: null,
     lastCommandAt: null,
     botUsername: "gatewaybot",
-    allowedUserId: "123456789",
+    allowedUserId: "1234567890",
     startedAt: "2026-03-22T12:00:00.000Z",
     handledUpdates: 3,
     acceptedPrompts: 1,
