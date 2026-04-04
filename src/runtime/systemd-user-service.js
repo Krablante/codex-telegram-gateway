@@ -1,8 +1,13 @@
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 
 export const SYSTEMD_USER_SERVICE_NAME = "codex-telegram-gateway.service";
 export const SYSTEMD_USER_OMNI_SERVICE_NAME = "codex-telegram-gateway-omni.service";
+
+export function isSystemdUserSupported(platform = process.platform) {
+  return platform === "linux";
+}
 
 function quoteEnvironment(name, value) {
   const escaped = String(value)
@@ -15,7 +20,13 @@ export function getUserServiceUnitPath(
   homeDirectory = os.homedir(),
   serviceName = SYSTEMD_USER_SERVICE_NAME,
 ) {
-  return path.join(homeDirectory, ".config", "systemd", "user", serviceName);
+  return path.posix.join(
+    homeDirectory,
+    ".config",
+    "systemd",
+    "user",
+    serviceName,
+  );
 }
 
 export function buildUserServiceUnit({

@@ -25,10 +25,10 @@ import {
 import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembler.js";
 
 const config = {
-  telegramAllowedUserId: "123456789",
-  telegramAllowedUserIds: ["123456789"],
-  telegramAllowedBotIds: ["222333444"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -63,6 +63,51 @@ function createGlobalControlPanelStore(initialState = {}) {
         updated_at: new Date().toISOString(),
       };
       return JSON.parse(JSON.stringify(state));
+    },
+    getState() {
+      return JSON.parse(JSON.stringify(state));
+    },
+  };
+}
+
+function createGeneralMessageLedgerStore(initialState = {}) {
+  let state = {
+    schema_version: 1,
+    updated_at: null,
+    tracked_message_ids: [],
+    ...initialState,
+  };
+
+  return {
+    async load() {
+      return JSON.parse(JSON.stringify(state));
+    },
+    async trackMessageId(messageId) {
+      if (!Number.isInteger(messageId) || messageId <= 0) {
+        return this.load();
+      }
+      state = {
+        ...state,
+        updated_at: new Date().toISOString(),
+        tracked_message_ids: Array.from(
+          new Set([...state.tracked_message_ids, messageId]),
+        ),
+      };
+      return this.load();
+    },
+    async forgetMessageIds(messageIds) {
+      const removeIds = new Set(
+        (Array.isArray(messageIds) ? messageIds : [])
+          .filter((messageId) => Number.isInteger(messageId) && messageId > 0),
+      );
+      state = {
+        ...state,
+        updated_at: new Date().toISOString(),
+        tracked_message_ids: state.tracked_message_ids.filter(
+          (messageId) => !removeIds.has(messageId),
+        ),
+      };
+      return this.load();
     },
     getState() {
       return JSON.parse(JSON.stringify(state));
@@ -424,16 +469,16 @@ test("applyPromptSuffix prefers topic suffix over global and falls back when top
 
 test("isAuthorizedMessage allows trusted human and trusted bot principals in configured chat", () => {
   const message = {
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
   };
 
   assert.equal(isAuthorizedMessage(message, config), true);
   assert.equal(
     isAuthorizedMessage(
       {
-        from: { id: 222333444, is_bot: true },
-        chat: { id: -1001234567890 },
+        from: { id: 8603043042, is_bot: true },
+        chat: { id: -1003577434463 },
       },
       config,
     ),
@@ -450,7 +495,7 @@ test("isAuthorizedMessage allows trusted human and trusted bot principals in con
     isAuthorizedMessage(
       {
         from: { id: 999999999, is_bot: true },
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
       config,
     ),
@@ -460,12 +505,12 @@ test("isAuthorizedMessage allows trusted human and trusted bot principals in con
 
 test("buildReplyMessageParams keeps topic routing when message_thread_id exists", () => {
   const message = {
-    chat: { id: -1001234567890 },
+    chat: { id: -1003577434463 },
     message_thread_id: 42,
   };
 
   assert.deepEqual(buildReplyMessageParams(message, "ok"), {
-    chat_id: -1001234567890,
+    chat_id: -1003577434463,
     text: "ok",
     message_thread_id: 42,
   });
@@ -481,11 +526,11 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
       codexAutoCompactTokenLimit: 300000,
     },
     {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_thread_id: 7,
     },
     {
-      session_key: "-1001234567890:7",
+      session_key: "-1003577434463:7",
       topic_name: "Test topic 1",
       lifecycle_state: "active",
       codex_thread_id: "thread-1",
@@ -538,11 +583,11 @@ test("buildStatusMessage hides Omni lines when Omni is globally disabled", () =>
       codexAutoCompactTokenLimit: 300000,
     },
     {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_thread_id: 7,
     },
     {
-      session_key: "-1001234567890:7",
+      session_key: "-1003577434463:7",
       topic_name: "Test topic 1",
       lifecycle_state: "active",
       last_run_status: "idle",
@@ -569,11 +614,11 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
       codexAutoCompactTokenLimit: 300000,
     },
     {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_thread_id: 7,
     },
     {
-      session_key: "-1001234567890:7",
+      session_key: "-1003577434463:7",
       topic_name: "Test topic 2",
       lifecycle_state: "active",
       codex_thread_id: "thread-2",
@@ -598,7 +643,7 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
         total_tokens: 18262,
       },
       rollout_path:
-        "/home/bloob/.codex/sessions/2026/03/23/rollout-2026-03-23T23-14-18-thread-2.jsonl",
+        "/home/operator/.codex/sessions/2026/03/23/rollout-2026-03-23T23-14-18-thread-2.jsonl",
     },
   );
 
@@ -632,8 +677,8 @@ test("handleIncomingMessage replies with guidance in General topic for /status",
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -678,8 +723,8 @@ test("handleIncomingMessage uses the global panel ENG language for General-topic
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -699,6 +744,99 @@ test("handleIncomingMessage uses the global panel ENG language for General-topic
 
   assert.equal(result.reason, "general-topic");
   assert.equal(sent[0].text, buildNoSessionTopicMessage("eng"));
+});
+
+test("handleIncomingMessage lets zooService short-circuit /zoo before normal session flow", async () => {
+  const sent = [];
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+  let zooCalls = 0;
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 501 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/zoo",
+      entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+    },
+    serviceState,
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("normal session flow should not run");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+    zooService: {
+      async maybeHandleIncomingMessage() {
+        zooCalls += 1;
+        return {
+          handled: true,
+          command: "zoo",
+          reason: "zoo-topic-opened",
+          ackText: "Zoo topic is ready.",
+        };
+      },
+    },
+  });
+
+  assert.equal(zooCalls, 1);
+  assert.equal(result.reason, "zoo-topic-opened");
+  assert.equal(serviceState.lastCommandName, "zoo");
+  assert.equal(sent[0].text, "Zoo topic is ready.");
+});
+
+test("handleIncomingCallbackQuery lets zooService short-circuit before panel callbacks", async () => {
+  const result = await handleIncomingCallbackQuery({
+    api: {},
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cb1",
+      data: "zoo:v:pet1",
+      from: { id: 5825672398, is_bot: false },
+      message: {
+        chat: { id: -1003577434463 },
+        message_thread_id: 777,
+      },
+    },
+    config,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {},
+    workerPool: {},
+    zooService: {
+      async handleCallbackQuery() {
+        return {
+          handled: true,
+          reason: "zoo-pet-opened",
+        };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "zoo-pet-opened");
 });
 
 test("handleIncomingMessage opens the persistent global control panel in General", async () => {
@@ -724,8 +862,8 @@ test("handleIncomingMessage opens the persistent global control panel in General
     message: {
       text: "/global",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     promptFragmentAssembler: new PromptFragmentAssembler(),
     serviceState,
@@ -770,6 +908,280 @@ test("handleIncomingMessage opens the persistent global control panel in General
   assert.equal(store.getState().menu_message_id, 901);
 });
 
+test("handleIncomingMessage clears tracked General clutter and keeps only the active menu", async () => {
+  const deleted = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "suffix",
+  });
+  const ledgerStore = createGeneralMessageLedgerStore({
+    tracked_message_ids: [777, 778, 901],
+  });
+
+  const result = await handleIncomingMessage({
+    api: {
+      async editMessageText() {
+        return true;
+      },
+      async deleteMessage(payload) {
+        deleted.push(payload);
+        return true;
+      },
+      async sendMessage() {
+        return { message_id: 901 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    generalMessageLedgerStore: ledgerStore,
+    message: {
+      message_id: 779,
+      text: "/clear",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "clear");
+  assert.deepEqual(
+    deleted.map((entry) => entry.message_id),
+    [777, 778, 779],
+  );
+  assert.deepEqual(ledgerStore.getState().tracked_message_ids, [901]);
+  assert.equal(store.getState().active_screen, "suffix");
+});
+
+test("handleIncomingMessage keeps /clear General-only outside General", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 902 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      ui_language: "eng",
+    }),
+    generalMessageLedgerStore: createGeneralMessageLedgerStore(),
+    message: {
+      message_id: 55,
+      text: "/clear",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_thread_id: 2203,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "clear");
+  assert.match(sent[0].text, /\/clear works in General only\./u);
+});
+
+test("handleIncomingMessage reports /clear failures only as an error message", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async editMessageText() {
+        return true;
+      },
+      async deleteMessage(payload) {
+        if (payload.message_id === 778) {
+          throw new Error("message can't be deleted");
+        }
+        return true;
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 901 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      ui_language: "eng",
+    }),
+    generalMessageLedgerStore: createGeneralMessageLedgerStore({
+      tracked_message_ids: [778, 901],
+    }),
+    message: {
+      message_id: 779,
+      text: "/clear",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "clear");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /General cleanup finished with 1 undeleted message/u);
+});
+
+test("handleIncomingMessage treats stale missing General messages as already gone during /clear", async () => {
+  const sent = [];
+  const ledgerStore = createGeneralMessageLedgerStore({
+    tracked_message_ids: [778, 901],
+  });
+
+  const result = await handleIncomingMessage({
+    api: {
+      async editMessageText() {
+        return true;
+      },
+      async deleteMessage(payload) {
+        if (payload.message_id === 778) {
+          throw new Error(
+            "Telegram API deleteMessage failed: Bad Request: message to delete not found",
+          );
+        }
+        return true;
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 901 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      ui_language: "eng",
+    }),
+    generalMessageLedgerStore: ledgerStore,
+    message: {
+      message_id: 779,
+      text: "/clear",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "clear");
+  assert.equal(sent.length, 0);
+  assert.deepEqual(ledgerStore.getState().tracked_message_ids, [901]);
+});
+
 test("handleIncomingMessage keeps /menu General guidance in the selected General language", async () => {
   const sent = [];
   const result = await handleIncomingMessage({
@@ -788,8 +1200,8 @@ test("handleIncomingMessage keeps /menu General guidance in the selected General
     message: {
       text: "/menu",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -852,10 +1264,10 @@ test("handleIncomingCallbackQuery applies a global wait preset from the control 
     callbackQuery: {
       id: "cbq-1",
       data: "gcfg:w:60",
-      from: { id: 123456789, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -889,8 +1301,8 @@ test("handleIncomingCallbackQuery applies a global wait preset from the control 
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1001234567890 },
-    from: { id: 123456789 },
+    chat: { id: -1003577434463 },
+    from: { id: 5825672398 },
   });
 
   assert.equal(result.reason, "global-control-action-applied");
@@ -913,8 +1325,8 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
     active_screen: "wait",
   });
   const session = {
-    session_key: "-1001234567890:55",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:55",
+    chat_id: "-1003577434463",
     topic_id: "55",
     topic_name: "Slice 4 test",
     ui_language: "rus",
@@ -946,10 +1358,10 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
     callbackQuery: {
       id: "cbq-topic-1",
       data: "tcfg:w:300",
-      from: { id: 123456789, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },
@@ -992,8 +1404,8 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1001234567890 },
-    from: { id: 123456789 },
+    chat: { id: -1003577434463 },
+    from: { id: 5825672398 },
     message_thread_id: 55,
   });
 
@@ -1030,10 +1442,10 @@ test("handleIncomingCallbackQuery updates the global panel language and refreshe
     callbackQuery: {
       id: "cbq-language",
       data: "gcfg:l:eng",
-      from: { id: 123456789, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -1104,10 +1516,10 @@ test("handleIncomingCallbackQuery shows the full global suffix text on the suffi
     callbackQuery: {
       id: "cbq-suffix-full",
       data: "gcfg:n:s",
-      from: { id: 123456789, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -1179,10 +1591,10 @@ test("handleIncomingCallbackQuery sends help cards in the selected global panel 
     callbackQuery: {
       id: "cbq-help",
       data: "gcfg:h:show",
-      from: { id: 123456789, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -1231,8 +1643,8 @@ test("handleIncomingMessage accepts /wait global from General", async () => {
     message: {
       text: "/wait global 60",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     promptFragmentAssembler,
     serviceState: {
@@ -1253,8 +1665,8 @@ test("handleIncomingMessage accepts /wait global from General", async () => {
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1001234567890 },
-    from: { id: 123456789 },
+    chat: { id: -1003577434463 },
+    from: { id: 5825672398 },
   });
 
   assert.equal(result.command, "wait");
@@ -1281,8 +1693,8 @@ test("handleIncomingMessage keeps /wait global replies in ENG when General panel
     message: {
       text: "/wait global 60",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     promptFragmentAssembler,
     serviceState: {
@@ -1368,10 +1780,10 @@ test("global control panel suffix text flow applies reply-based manual input", a
     callbackQuery: {
       id: "cbq-2",
       data: "gcfg:s:input",
-      from: { id: 123456789, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -1407,8 +1819,8 @@ test("global control panel suffix text flow applies reply-based manual input", a
     globalControlPanelStore: store,
     message: {
       text: "P.S.\nKeep it short everywhere.",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       reply_to_message: { message_id: 901 },
     },
     promptFragmentAssembler,
@@ -1455,10 +1867,10 @@ test("global control panel keeps pending reply target aligned when the menu mess
     callbackQuery: {
       id: "cbq-3",
       data: "gcfg:s:input",
-      from: { id: 123456789, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -1524,8 +1936,8 @@ test("handleIncomingMessage stores a global Spike model via /model global", asyn
     message: {
       text: "/model global gpt-5.4-mini",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -1590,8 +2002,8 @@ test("handleIncomingMessage keeps global model replies in ENG when General panel
     message: {
       text: "/model global gpt-5.4-mini",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -1676,8 +2088,8 @@ test("handleIncomingMessage validates /reasoning global against the global targe
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Runtime topic",
     lifecycle_state: "active",
@@ -1705,8 +2117,8 @@ test("handleIncomingMessage validates /reasoning global against the global targe
     message: {
       text: "/reasoning global xhigh",
       entities: [{ type: "bot_command", offset: 0, length: 10 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -1778,8 +2190,8 @@ test("handleIncomingMessage stores topic Omni reasoning via /omni_reasoning", as
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Runtime topic",
     lifecycle_state: "active",
@@ -1804,8 +2216,8 @@ test("handleIncomingMessage stores topic Omni reasoning via /omni_reasoning", as
     message: {
       text: "/omni_reasoning xhigh",
       entities: [{ type: "bot_command", offset: 0, length: 15 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -1882,8 +2294,8 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
     codexAutoCompactTokenLimit: 300000,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Status topic",
     lifecycle_state: "active",
@@ -1907,8 +2319,8 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -1976,8 +2388,8 @@ test("handleIncomingMessage sends the help card from General topic", async () =>
     message: {
       text: "/help",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -2023,8 +2435,8 @@ test("handleIncomingMessage sends the guidebook PDF from General topic", async (
     message: {
       text: "/guide",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -2047,7 +2459,9 @@ test("handleIncomingMessage sends the guidebook PDF from General topic", async (
   assert.equal(documents[0].document.fileName, "codex-telegram-guidebook-rus.pdf");
   assert.match(documents[0].document.filePath, /codex-telegram-guidebook-rus\.pdf$/u);
   const stats = await fs.stat(documents[0].document.filePath);
-  assert.ok(stats.size > 10_000);
+  assert.ok(stats.size > 1_000);
+  const header = await fs.readFile(documents[0].document.filePath);
+  assert.equal(header.subarray(0, 5).toString("utf8"), "%PDF-");
 });
 
 test("handleIncomingMessage keeps /guide General-only", async () => {
@@ -2059,8 +2473,8 @@ test("handleIncomingMessage keeps /guide General-only", async () => {
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Guide topic",
     lifecycle_state: "active",
@@ -2084,8 +2498,8 @@ test("handleIncomingMessage keeps /guide General-only", async () => {
     message: {
       text: "/guide",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -2122,8 +2536,8 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Language topic",
     lifecycle_state: "active",
@@ -2147,8 +2561,8 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     message: {
       text: "/language eng",
       entities: [{ type: "bot_command", offset: 0, length: 9 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -2200,16 +2614,16 @@ test("handleIncomingMessage sends the English help card inside an ENG topic", as
     message: {
       text: "/help",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 88,
     },
     serviceState,
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:88",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:88",
+          chat_id: "-1003577434463",
           topic_id: "88",
           topic_name: "ENG topic",
           lifecycle_state: "active",
@@ -2262,8 +2676,8 @@ test("handleIncomingMessage shows suffix help from General topic", async () => {
     message: {
       text: "/suffix help",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -2310,8 +2724,8 @@ test("handleIncomingMessage keeps suffix help in ENG when General panel language
     message: {
       text: "/suffix help",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -2355,8 +2769,8 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
     message: {
       text: "/new Slice 4 test",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -2378,8 +2792,8 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
             message_thread_id: 55,
           },
           session: {
-            session_key: "-1001234567890:55",
-            chat_id: "-1001234567890",
+            session_key: "-1003577434463:55",
+            chat_id: "-1003577434463",
             topic_id: "55",
             workspace_binding: {
               repo_root: "/workspace",
@@ -2416,8 +2830,8 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
   const topicControlPanelStore = createTopicControlPanelStore();
 
   const session = {
-    session_key: "-1001234567890:58",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:58",
+    chat_id: "-1003577434463",
     topic_id: "58",
     ui_language: "rus",
     prompt_suffix_topic_enabled: true,
@@ -2451,8 +2865,8 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
     message: {
       text: "/new Local menu topic",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -2534,8 +2948,8 @@ test("handleIncomingMessage creates new topic session with explicit binding path
     message: {
       text: "/new cwd=projects/codex-telegram-gateway Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -2564,8 +2978,8 @@ test("handleIncomingMessage creates new topic session with explicit binding path
             message_thread_id: 56,
           },
           session: {
-            session_key: "-1001234567890:56",
-            chat_id: "-1001234567890",
+            session_key: "-1003577434463:56",
+            chat_id: "-1003577434463",
             topic_id: "56",
             workspace_binding: workspaceBinding,
           },
@@ -2609,8 +3023,8 @@ test("handleIncomingMessage creates a new topic in English when General panel la
     message: {
       text: "/new English topic",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -2639,8 +3053,8 @@ test("handleIncomingMessage creates a new topic in English when General panel la
             message_thread_id: 57,
           },
           session: {
-            session_key: "-1001234567890:57",
-            chat_id: "-1001234567890",
+            session_key: "-1003577434463:57",
+            chat_id: "-1003577434463",
             topic_id: "57",
             ui_language: "eng",
             workspace_binding: {
@@ -2675,8 +3089,8 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
   const pinned = [];
   const topicControlPanelStore = createTopicControlPanelStore();
   const session = {
-    session_key: "-1001234567890:55",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:55",
+    chat_id: "-1003577434463",
     topic_id: "55",
     topic_name: "Slice 4 test",
     ui_language: "rus",
@@ -2711,8 +3125,8 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
     message: {
       text: "/menu",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 55,
     },
     serviceState: {
@@ -2781,8 +3195,8 @@ test("handleIncomingMessage reports binding resolution failures for /new", async
     message: {
       text: "/new cwd=/missing/path Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -2828,8 +3242,8 @@ test("handleIncomingMessage reports binding resolution failures for /new in Engl
     message: {
       text: "/new cwd=/missing/path Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -2881,15 +3295,15 @@ test("handleIncomingMessage starts codex run for plain text in a topic", async (
     config,
     message: {
       text: "run a quick task",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
         };
@@ -2898,7 +3312,7 @@ test("handleIncomingMessage starts codex run for plain text in a topic", async (
     workerPool: {
       async startPromptRun({ prompt, session }) {
         assert.equal(prompt, "run a quick task");
-        assert.equal(session.session_key, "-1001234567890:77");
+        assert.equal(session.session_key, "-1003577434463:77");
         return { ok: true };
       },
     },
@@ -2918,8 +3332,8 @@ test("handleIncomingMessage silently blocks direct human prompts to Spike in aut
     config,
     message: {
       text: "continue from here",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -2931,11 +3345,11 @@ test("handleIncomingMessage silently blocks direct human prompts to Spike in aut
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -2963,8 +3377,8 @@ test("handleIncomingMessage accepts direct human prompts again when auto mode is
     config,
     message: {
       text: "continue without omni",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -2976,11 +3390,11 @@ test("handleIncomingMessage accepts direct human prompts again when auto mode is
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: false,
             phase: "off",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -2990,7 +3404,7 @@ test("handleIncomingMessage accepts direct human prompts again when auto mode is
     workerPool: {
       async startPromptRun({ prompt, session }) {
         assert.equal(prompt, "continue without omni");
-        assert.equal(session.session_key, "-1001234567890:77");
+        assert.equal(session.session_key, "-1003577434463:77");
         return { ok: true };
       },
     },
@@ -3011,8 +3425,8 @@ test("handleIncomingMessage ignores Omni-owned /auto commands in Spike bot", asy
     message: {
       text: "/auto",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3044,8 +3458,8 @@ test("handleIncomingMessage returns a clear unavailable message for /auto when O
     message: {
       text: "/auto",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     lifecycleManager: null,
@@ -3058,9 +3472,9 @@ test("handleIncomingMessage returns a clear unavailable message for /auto when O
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           topic_id: "77",
-          chat_id: "-1001234567890",
+          chat_id: "-1003577434463",
           ui_language: "rus",
         };
       },
@@ -3088,8 +3502,8 @@ test("handleIncomingMessage ignores foreign bot commands instead of starting a S
     message: {
       text: "/auto@omnibot",
       entities: [{ type: "bot_command", offset: 0, length: 13 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     promptFragmentAssembler: {
@@ -3133,8 +3547,8 @@ test("handleIncomingMessage ignores /omni because it belongs to Omni", async () 
     message: {
       text: "/omni what changed?",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3162,8 +3576,8 @@ test("handleIncomingMessage blocks destructive human Spike commands in auto topi
     message: {
       text: "/purge",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3175,11 +3589,11 @@ test("handleIncomingMessage blocks destructive human Spike commands in auto topi
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
         };
       },
@@ -3208,8 +3622,8 @@ test("handleIncomingMessage rejects /q while /auto owns the topic", async () => 
     message: {
       text: "/q подготовь следующий шаг",
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 778,
       message_thread_id: 77,
     },
@@ -3222,13 +3636,13 @@ test("handleIncomingMessage rejects /q while /auto owns the topic", async () => 
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:77",
+          chat_id: "-1003577434463",
           topic_id: "77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
         };
       },
@@ -3255,8 +3669,8 @@ test("handleIncomingMessage ignores stale auto human-input locks when Omni is gl
     },
     message: {
       text: "continue without omni at all",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3268,11 +3682,11 @@ test("handleIncomingMessage ignores stale auto human-input locks when Omni is gl
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -3304,8 +3718,8 @@ test("handleIncomingMessage ignores Omni bot chatter before the goal is captured
     config,
     message: {
       text: "Auto setup started. Send the goal next.",
-      from: { id: 222333444, is_bot: true },
-      chat: { id: -1001234567890 },
+      from: { id: 8603043042, is_bot: true },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3317,11 +3731,11 @@ test("handleIncomingMessage ignores Omni bot chatter before the goal is captured
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "await_goal",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
         };
       },
@@ -3347,8 +3761,8 @@ test("handleIncomingMessage accepts Omni bot continuation prompts in active auto
     config,
     message: {
       text: "Continuation task: finish the remaining validation work.",
-      from: { id: 222333444, is_bot: true },
-      chat: { id: -1001234567890 },
+      from: { id: 8603043042, is_bot: true },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3360,11 +3774,11 @@ test("handleIncomingMessage accepts Omni bot continuation prompts in active auto
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -3400,8 +3814,8 @@ test("handleIncomingMessage does not buffer internal Omni handoff prompts", asyn
     message: {
       text: longPrompt,
       is_internal_omni_handoff: true,
-      from: { id: 222333444, is_bot: true },
-      chat: { id: -1001234567890 },
+      from: { id: 8603043042, is_bot: true },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     promptFragmentAssembler,
@@ -3414,11 +3828,11 @@ test("handleIncomingMessage does not buffer internal Omni handoff prompts", asyn
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "222333444",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -3449,8 +3863,8 @@ test("handleIncomingMessage appends configured prompt suffix before starting a r
     config,
     message: {
       text: "run a quick task",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3462,7 +3876,7 @@ test("handleIncomingMessage appends configured prompt suffix before starting a r
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           prompt_suffix_enabled: true,
           prompt_suffix_text:
             "P.S.\nKeep it short and never overcomplicate anything.",
@@ -3494,8 +3908,8 @@ test("handleIncomingMessage lets topic prompt suffix override global prompt suff
     config,
     message: {
       text: "run a quick task",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3507,7 +3921,7 @@ test("handleIncomingMessage lets topic prompt suffix override global prompt suff
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           prompt_suffix_enabled: true,
           prompt_suffix_text: "TOPIC\nKeep it short in this thread.",
         };
@@ -3544,8 +3958,8 @@ test("handleIncomingMessage suppresses both topic and global suffixes when topic
     config,
     message: {
       text: "run a quick task",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -3557,7 +3971,7 @@ test("handleIncomingMessage suppresses both topic and global suffixes when topic
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           prompt_suffix_topic_enabled: false,
           prompt_suffix_enabled: true,
           prompt_suffix_text: "TOPIC\nKeep it short in this thread.",
@@ -3603,8 +4017,8 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 501,
       message_thread_id: 77,
     },
@@ -3612,8 +4026,8 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:77",
+          chat_id: "-1003577434463",
           topic_id: "77",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -3632,7 +4046,7 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
     workerPool: {
       async startPromptRun({ prompt, session, attachments }) {
         assert.equal(prompt, "Что на фото?");
-        assert.equal(session.session_key, "-1001234567890:77");
+        assert.equal(session.session_key, "-1003577434463:77");
         assert.equal(attachments.length, 1);
         assert.equal(attachments[0].file_path, "/tmp/incoming-photo.jpg");
         return { ok: true };
@@ -3658,8 +4072,8 @@ test("handleIncomingMessage appends prompt suffix to captioned media prompts", a
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 501,
       message_thread_id: 77,
     },
@@ -3672,8 +4086,8 @@ test("handleIncomingMessage appends prompt suffix to captioned media prompts", a
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:77",
+          chat_id: "-1003577434463",
           topic_id: "77",
           prompt_suffix_enabled: true,
           prompt_suffix_text: "P.S.\nAnswer briefly.",
@@ -3712,8 +4126,8 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
     longPromptThresholdChars: 3000,
   });
   const session = {
-    session_key: "-1001234567890:86",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:86",
+    chat_id: "-1003577434463",
     topic_id: "86",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
@@ -3728,8 +4142,8 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
   const firstMessage = {
     caption: "Разбери оба файла вместе.",
     media_group_id: "docs-1",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 970,
     message_thread_id: 86,
     document: {
@@ -3742,8 +4156,8 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
   };
   const secondMessage = {
     media_group_id: "docs-1",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 971,
     message_thread_id: 86,
     document: {
@@ -3847,8 +4261,8 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
 test("handleIncomingMessage shows /q status with queued prompt previews", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
@@ -3873,8 +4287,8 @@ test("handleIncomingMessage shows /q status with queued prompt previews", async 
     message: {
       text: "/q status",
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 610,
       message_thread_id: 77,
     },
@@ -3910,8 +4324,8 @@ test("handleIncomingMessage shows /q status with queued prompt previews", async 
 test("handleIncomingMessage deletes a queued prompt by position via /q delete", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
@@ -3936,8 +4350,8 @@ test("handleIncomingMessage deletes a queued prompt by position via /q delete", 
     message: {
       text: "/q delete 2",
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 611,
       message_thread_id: 77,
     },
@@ -3974,8 +4388,8 @@ test("handleIncomingMessage queues /q captioned media with attachments when the 
   const sent = [];
   const queued = [];
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
@@ -4004,8 +4418,8 @@ test("handleIncomingMessage queues /q captioned media with attachments when the 
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 612,
       message_thread_id: 77,
     },
@@ -4086,8 +4500,8 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
     longPromptThresholdChars: 3000,
   });
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
@@ -4170,8 +4584,8 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
     message: {
       text: `/q ${longHead}`,
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 613,
       message_thread_id: 77,
     },
@@ -4180,8 +4594,8 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
     ...commonArgs,
     message: {
       text: "tail fragment",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 614,
       message_thread_id: 77,
     },
@@ -4202,7 +4616,7 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
 test("handleIncomingMessage stores prompt suffix text via /suffix", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
+    session_key: "-1003577434463:77",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     lifecycle_state: "active",
@@ -4225,8 +4639,8 @@ test("handleIncomingMessage stores prompt suffix text via /suffix", async () => 
     message: {
       text: "/suffix P.S.\nKeep it short.",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -4284,8 +4698,8 @@ test("handleIncomingMessage stores global prompt suffix text via /suffix global"
     message: {
       text: "/suffix global P.S.\nKeep it short everywhere.",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -4331,7 +4745,7 @@ test("handleIncomingMessage stores global prompt suffix text via /suffix global"
 test("handleIncomingMessage disables topic prompt suffix routing via /suffix topic off", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
+    session_key: "-1003577434463:77",
     prompt_suffix_topic_enabled: true,
     prompt_suffix_enabled: true,
     prompt_suffix_text: "TOPIC\nKeep it short.",
@@ -4355,8 +4769,8 @@ test("handleIncomingMessage disables topic prompt suffix routing via /suffix top
     message: {
       text: "/suffix topic off",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -4411,8 +4825,8 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
     config,
     message: {
       photo: [{ file_id: "photo-1", file_unique_id: "photo-1", file_size: 10 }],
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 78,
     },
     serviceState: {
@@ -4424,8 +4838,8 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           lifecycle_state: "active",
           ui_language: "rus",
@@ -4433,8 +4847,8 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
       },
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           lifecycle_state: "active",
           ui_language: "rus",
@@ -4477,8 +4891,8 @@ test("handleIncomingMessage carries attachment-only message into the next text p
   const startedRuns = [];
   const pendingByTopic = new Map();
   const session = {
-    session_key: "-1001234567890:88",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:88",
+    chat_id: "-1003577434463",
     topic_id: "88",
     lifecycle_state: "active",
     ui_language: "rus",
@@ -4499,15 +4913,15 @@ test("handleIncomingMessage carries attachment-only message into the next text p
       mime_type: "text/plain",
       file_size: 12345,
     },
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2001,
     message_thread_id: 88,
   };
   const textMessage = {
     text: "Переделай это в нормальный формат и влепи в ридмишку.",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2002,
     message_thread_id: 88,
   };
@@ -4614,8 +5028,8 @@ test("handleIncomingMessage keeps /q attachment buffering separate from direct S
   const directPendingByTopic = new Map();
   const queuedPendingByTopic = new Map();
   const session = {
-    session_key: "-1001234567890:89",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:89",
+    chat_id: "-1003577434463",
     topic_id: "89",
     lifecycle_state: "active",
     ui_language: "rus",
@@ -4642,15 +5056,15 @@ test("handleIncomingMessage keeps /q attachment buffering separate from direct S
       mime_type: "text/plain",
       file_size: 100,
     },
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2101,
     message_thread_id: 89,
   };
   const textMessage = {
     text: "Сделай обычный Spike prompt без очереди.",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2102,
     message_thread_id: 89,
   };
@@ -4770,15 +5184,15 @@ test("handleIncomingMessage assembles likely split long Telegram prompts into on
   };
   const firstMessage = {
     text: "A".repeat(3200),
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 880,
     message_thread_id: 78,
   };
   const secondMessage = {
     text: " second-fragment",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 881,
     message_thread_id: 78,
   };
@@ -4796,8 +5210,8 @@ test("handleIncomingMessage assembles likely split long Telegram prompts into on
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -4876,8 +5290,8 @@ test("handleIncomingMessage assembles four Telegram-split prompt fragments into 
     },
   ].map((message) => ({
     ...message,
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_thread_id: 79,
   }));
 
@@ -4894,8 +5308,8 @@ test("handleIncomingMessage assembles four Telegram-split prompt fragments into 
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:79",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:79",
+          chat_id: "-1003577434463",
           topic_id: "79",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -4952,8 +5366,8 @@ test("handleIncomingMessage keeps buffered prompt flush behind promptStartGuard"
   };
   const message = {
     text: "A".repeat(3200),
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 894,
     message_thread_id: 79,
   };
@@ -4981,8 +5395,8 @@ test("handleIncomingMessage keeps buffered prompt flush behind promptStartGuard"
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:79",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:79",
+          chat_id: "-1003577434463",
           topic_id: "79",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -5028,16 +5442,16 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
   };
   const bufferedMessage = {
     text: "A".repeat(3200),
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 900,
     message_thread_id: 80,
   };
   const interruptMessage = {
     text: "/interrupt",
     entities: [{ type: "bot_command", offset: 0, length: 10 }],
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 901,
     message_thread_id: 80,
   };
@@ -5056,8 +5470,8 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:80",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:80",
+          chat_id: "-1003577434463",
           topic_id: "80",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -5065,7 +5479,7 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
       },
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:80",
+          session_key: "-1003577434463:80",
           lifecycle_state: "active",
           workspace_binding: {
             repo_root: "/workspace",
@@ -5105,7 +5519,7 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:80",
+          session_key: "-1003577434463:80",
           lifecycle_state: "active",
           workspace_binding: {
             repo_root: "/workspace",
@@ -5147,8 +5561,8 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:81",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:81",
+    chat_id: "-1003577434463",
     topic_id: "82",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
@@ -5162,14 +5576,14 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
   };
   const waitCommand = {
     text: "wait 600",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 910,
     message_thread_id: 82,
   };
   const attachmentMessage = {
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 911,
     message_thread_id: 82,
     media_group_id: "docs-2",
@@ -5182,8 +5596,8 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
     },
   };
   const secondAttachmentMessage = {
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 912,
     message_thread_id: 82,
     media_group_id: "docs-2",
@@ -5197,29 +5611,29 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
   };
   const textMessage = {
     text: "Ура!!! Значит всё работает отлично",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 913,
     message_thread_id: 82,
   };
   const secondTextMessage = {
     text: "Теперь я тестирую wait окно.",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 914,
     message_thread_id: 82,
   };
   const flushMessage = {
     text: "Все",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 915,
     message_thread_id: 82,
   };
   const followUpTextMessage = {
     text: "Это уже следующий prompt без повторного /wait.",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 916,
     message_thread_id: 82,
   };
@@ -5238,14 +5652,14 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
       async ensureSessionForMessage() {
         return {
           ...session,
-          session_key: `-1001234567890:${attachmentMessage.message_thread_id}`,
+          session_key: `-1003577434463:${attachmentMessage.message_thread_id}`,
           topic_id: String(attachmentMessage.message_thread_id),
         };
       },
       async ensureRunnableSessionForMessage(message) {
         return {
           ...session,
-          session_key: `-1001234567890:${message.message_thread_id}`,
+          session_key: `-1003577434463:${message.message_thread_id}`,
           topic_id: String(message.message_thread_id),
         };
       },
@@ -5362,30 +5776,30 @@ test("handleIncomingMessage keeps /wait global persistent across topics", async 
   };
   const waitCommand = {
     text: "/wait global 600",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 920,
     message_thread_id: 81,
     entities: [{ type: "bot_command", offset: 0, length: 5 }],
   };
   const firstTopicMessage = {
     text: "first buffered part",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 921,
     message_thread_id: 82,
   };
   const secondTopicMessage = {
     text: "second buffered part",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 922,
     message_thread_id: 83,
   };
   const flushMessage = {
     text: "Все",
-    from: { id: 123456789, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 923,
     message_thread_id: 84,
   };
@@ -5403,8 +5817,8 @@ test("handleIncomingMessage keeps /wait global persistent across topics", async 
     sessionService: {
       async ensureSessionForMessage(message) {
         return {
-          session_key: `-1001234567890:${message.message_thread_id}`,
-          chat_id: "-1001234567890",
+          session_key: `-1003577434463:${message.message_thread_id}`,
+          chat_id: "-1003577434463",
           topic_id: String(message.message_thread_id),
           lifecycle_state: "active",
           prompt_suffix_enabled: false,
@@ -5419,8 +5833,8 @@ test("handleIncomingMessage keeps /wait global persistent across topics", async 
       },
       async ensureRunnableSessionForMessage(message) {
         return {
-          session_key: `-1001234567890:${message.message_thread_id}`,
-          chat_id: "-1001234567890",
+          session_key: `-1003577434463:${message.message_thread_id}`,
+          chat_id: "-1003577434463",
           topic_id: String(message.message_thread_id),
           lifecycle_state: "active",
           workspace_binding: {
@@ -5498,8 +5912,8 @@ test("handleIncomingMessage reports busy topic run", async () => {
     config,
     message: {
       text: "run a quick task",
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 78,
     },
     serviceState: {
@@ -5511,7 +5925,7 @@ test("handleIncomingMessage reports busy topic run", async () => {
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
+          session_key: "-1003577434463:78",
         };
       },
     },
@@ -5541,8 +5955,8 @@ test("handleIncomingMessage steers the active run instead of returning busy when
     message: {
       text: "Докинь ещё вот это.",
       message_id: 990,
-      from: { id: 123456789, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 78,
     },
     serviceState: {
@@ -5554,8 +5968,8 @@ test("handleIncomingMessage steers the active run instead of returning busy when
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           prompt_suffix_enabled: true,
           prompt_suffix_text: "SUFFIX",

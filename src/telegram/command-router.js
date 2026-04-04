@@ -26,6 +26,7 @@ import {
   GLOBAL_CONTROL_PANEL_COMMAND,
   handleGlobalControlCallbackQuery,
   handleGlobalControlCommand,
+  isGeneralForumMessage,
   maybeHandleGlobalControlReply,
 } from "./global-control-panel.js";
 import {
@@ -67,6 +68,7 @@ import {
   safeSendDocumentToTopic,
   safeSendMessage,
 } from "./topic-delivery.js";
+import { clearTrackedGeneralMessages } from "./general-message-cleanup.js";
 
 export {
   buildReplyMessageParams,
@@ -973,13 +975,13 @@ export function buildUnknownCommandMessage(
 ) {
   if (isEnglish(language)) {
     return omniEnabled
-      ? "Available commands: /help, /guide, /new, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact, and /purge."
-      : "Available commands: /help, /guide, /new, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact, and /purge.";
+      ? "Available commands: /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact, and /purge."
+      : "Available commands: /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact, and /purge.";
   }
 
   return omniEnabled
-    ? "Сейчас доступны /help, /guide, /new, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact и /purge."
-    : "Сейчас доступны /help, /guide, /new, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact и /purge.";
+    ? "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact и /purge."
+    : "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact и /purge.";
 }
 
 function buildHelpTextMessage(
@@ -992,7 +994,9 @@ function buildHelpTextMessage(
       "",
       "/help — this cheat sheet",
       "/guide — beginner PDF guidebook from General",
+      "/clear — clear General and keep only the active menu",
       "/new [cwd=...|path=...] [title] — create a new work topic",
+      "/zoo — open the dedicated Zoo topic",
       "/status — session, model, and context status",
       "/global — pin-friendly global settings menu in General",
       "/menu — pin-friendly local settings menu in this topic",
@@ -1038,7 +1042,9 @@ function buildHelpTextMessage(
     "",
     "/help — эта шпаргалка",
     "/guide — PDF-гайдбук для новичка из General",
+    "/clear — очистить General и оставить только active menu",
     "/new [cwd=...|path=...] [title] — новая рабочая тема",
+    "/zoo — открыть отдельный Zoo topic",
     "/status — статус сессии, модели и контекста",
     "/global — pin-friendly Global settings menu в General",
     "/menu — pin-friendly menu локальных настроек в этом топике",
@@ -1109,6 +1115,34 @@ function buildGuideGeneralOnlyMessage(language = DEFAULT_UI_LANGUAGE) {
     "",
     "Запусти его там, чтобы получить PDF-гайдбук для новичка.",
   ].join("\n");
+}
+
+function buildClearGeneralOnlyMessage(language = DEFAULT_UI_LANGUAGE) {
+  if (isEnglish(language)) {
+    return [
+      "/clear works in General only.",
+      "",
+      "Run it there to keep only the active General menu.",
+    ].join("\n");
+  }
+
+  return [
+    "/clear работает только в General.",
+    "",
+    "Запусти его там, чтобы оставить только активное General menu.",
+  ].join("\n");
+}
+
+function buildClearFailedMessage(language = DEFAULT_UI_LANGUAGE, failedCount = 0) {
+  if (isEnglish(language)) {
+    return failedCount > 0
+      ? `General cleanup finished with ${failedCount} undeleted message(s).`
+      : "General cleanup could not run right now.";
+  }
+
+  return failedCount > 0
+    ? `General cleanup завершился с ${failedCount} неудалёнными сообщениями.`
+    : "Сейчас не смог выполнить General cleanup.";
 }
 
 function buildGuideGenerationFailureMessage(
@@ -2547,7 +2581,9 @@ export async function handleIncomingMessage({
   config,
   lifecycleManager = null,
   globalControlPanelStore = null,
+  generalMessageLedgerStore = null,
   topicControlPanelStore = null,
+  zooService = null,
   message,
   promptStartGuard = null,
   promptFragmentAssembler = null,
@@ -2561,6 +2597,38 @@ export async function handleIncomingMessage({
     return { handled: false, reason: "unauthorized" };
   }
 
+  if (
+    generalMessageLedgerStore
+    && isGeneralForumMessage(message, config)
+    && !message.is_internal_global_control_dispatch
+    && Number.isInteger(message.message_id)
+    && message.message_id > 0
+  ) {
+    await generalMessageLedgerStore.trackMessageId(message.message_id);
+  }
+
+  if (zooService) {
+    const zooResult = await zooService.maybeHandleIncomingMessage({
+      api,
+      botUsername,
+      message,
+    });
+    if (zooResult?.handled) {
+      if (zooResult.command) {
+        markCommandHandled(serviceState, zooResult.command);
+      }
+      if (zooResult.ackText && !zooResult.suppressAck) {
+        await safeSendMessage(
+          api,
+          buildReplyMessageParams(message, zooResult.ackText),
+          null,
+          lifecycleManager,
+        );
+      }
+      return zooResult;
+    }
+  }
+
   const dispatchGlobalControlCommand = async ({
     actor,
     chat,
@@ -2572,7 +2640,9 @@ export async function handleIncomingMessage({
       config,
       lifecycleManager,
       globalControlPanelStore,
+      generalMessageLedgerStore,
       topicControlPanelStore,
+      zooService,
       message: buildSyntheticCommandMessage(actor, chat, commandText),
       promptStartGuard,
       promptFragmentAssembler,
@@ -3185,6 +3255,87 @@ export async function handleIncomingMessage({
     return { handled: true, command: command.name };
   }
 
+  if (command.name === "clear") {
+    const inGeneralTopic = isGeneralForumMessage(message, config);
+    const language = await resolveGeneralUiLanguage(globalControlPanelStore);
+
+    if (!inGeneralTopic) {
+      await safeSendMessage(
+        api,
+        buildReplyMessageParams(
+          message,
+          buildClearGeneralOnlyMessage(language),
+        ),
+        null,
+        lifecycleManager,
+      );
+      markCommandHandled(serviceState, command.name);
+      return { handled: true, command: command.name, reason: "clear-general-only" };
+    }
+
+    if (!globalControlPanelStore || !generalMessageLedgerStore) {
+      await safeSendMessage(
+        api,
+        buildReplyMessageParams(message, buildClearFailedMessage(language)),
+        null,
+        lifecycleManager,
+      );
+      markCommandHandled(serviceState, command.name);
+      return { handled: true, command: command.name, reason: "clear-unavailable" };
+    }
+
+    const existingControlState = await globalControlPanelStore.load({ force: true });
+
+    await handleGlobalControlCommand({
+      activeScreen: existingControlState.active_screen,
+      api,
+      config,
+      dispatchCommand: dispatchGlobalControlCommand,
+      globalControlPanelStore,
+      message,
+      promptFragmentAssembler,
+      sessionService,
+    });
+    const controlState = await globalControlPanelStore.load({ force: true });
+    const preservedMessageId = controlState.menu_message_id;
+
+    if (!Number.isInteger(preservedMessageId) || preservedMessageId <= 0) {
+      await safeSendMessage(
+        api,
+        buildReplyMessageParams(message, buildClearFailedMessage(language)),
+        null,
+        lifecycleManager,
+      );
+      markCommandHandled(serviceState, command.name);
+      return { handled: true, command: command.name, reason: "clear-menu-missing" };
+    }
+
+    const cleanupResult = await clearTrackedGeneralMessages({
+      api,
+      chatId: message.chat.id,
+      generalMessageLedgerStore,
+      preservedMessageIds: [preservedMessageId],
+    });
+
+    if (cleanupResult.failedMessageIds.length > 0) {
+      await safeSendMessage(
+        api,
+        {
+          chat_id: message.chat.id,
+          text: buildClearFailedMessage(
+            language,
+            cleanupResult.failedMessageIds.length,
+          ),
+        },
+        null,
+        lifecycleManager,
+      );
+    }
+
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name };
+  }
+
   if (command.name === "suffix" && suffixCommand?.scope === "global") {
     let handledSession = topicId
       ? await sessionService.ensureSessionForMessage(message)
@@ -3731,7 +3882,9 @@ export async function handleIncomingCallbackQuery({
   config,
   lifecycleManager = null,
   globalControlPanelStore = null,
+  generalMessageLedgerStore = null,
   topicControlPanelStore = null,
+  zooService = null,
   promptStartGuard = null,
   promptFragmentAssembler = null,
   queuePromptAssembler = null,
@@ -3750,7 +3903,9 @@ export async function handleIncomingCallbackQuery({
       config,
       lifecycleManager,
       globalControlPanelStore,
+      generalMessageLedgerStore,
       topicControlPanelStore,
+      zooService,
       message: buildSyntheticCommandMessage(actor, chat, commandText),
       promptStartGuard,
       promptFragmentAssembler,
@@ -3812,6 +3967,16 @@ export async function handleIncomingCallbackQuery({
     sessionService,
     workerPool,
   });
+
+  if (zooService) {
+    const zooResult = await zooService.handleCallbackQuery({
+      api,
+      callbackQuery,
+    });
+    if (zooResult?.handled) {
+      return zooResult;
+    }
+  }
 
   const topicResult = await handleTopicControlCallbackQuery({
     applyTopicWaitChange,

@@ -94,7 +94,7 @@ function normalizeScreenId(value) {
   return SCREEN_CODES[normalized] ? normalized : "root";
 }
 
-function isGeneralForumMessage(message, config) {
+export function isGeneralForumMessage(message, config) {
   return (
     message
     && String(message.chat?.id ?? "") === String(config.telegramForumChatId ?? "")
@@ -1135,6 +1135,7 @@ export function isGlobalControlCallbackQuery(callbackQuery) {
 }
 
 export async function handleGlobalControlCommand({
+  activeScreen = "root",
   api,
   config,
   dispatchCommand,
@@ -1157,7 +1158,7 @@ export async function handleGlobalControlCommand({
   }
 
   await ensureGlobalControlPanelMessage({
-    activeScreen: "root",
+    activeScreen,
     actor: message,
     api,
     config,

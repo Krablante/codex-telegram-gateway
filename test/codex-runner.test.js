@@ -147,9 +147,25 @@ test("summarizeCodexEvent still understands legacy exec events", () => {
 
 test("runCodexTask initializes completion handlers before child lifecycle starts", async () => {
   const run = runCodexTask({
-    codexBinPath: "/bin/true",
+    codexBinPath: "codex",
     cwd: process.cwd(),
     prompt: "Проверка раннего старта.",
+    spawnImpl: () => {
+      const child = new EventEmitter();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = () => {};
+      child.pid = null;
+
+      setImmediate(() => {
+        child.stdout.end();
+        child.stderr.end();
+        child.emit("exit", 0, null);
+        child.emit("close", 0, null);
+      });
+
+      return child;
+    },
   });
 
   assert.equal(typeof run.steer, "function");

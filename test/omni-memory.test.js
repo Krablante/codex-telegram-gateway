@@ -18,7 +18,7 @@ function buildBinding() {
 
 async function ensureSession(sessionStore) {
   return sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 551,
     topicName: "Omni memory test",
     createdVia: "test",

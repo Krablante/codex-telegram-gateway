@@ -30,10 +30,16 @@ Result:
 
 ## Env Files
 
-Default direct CLI env file:
+Default direct CLI env file on Linux/macOS:
 
 ```text
 ${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env
+```
+
+Default direct CLI env file on native Windows:
+
+```text
+%LOCALAPPDATA%\codex-telegram-gateway\runtime.env
 ```
 
 Default `make` env file:
@@ -46,6 +52,7 @@ That split is intentional:
 
 - direct `node src/cli/...` commands can use one stable runtime env outside the repo
 - repo-local development stays simple with `.env`
+- if that external runtime env file does not exist yet, the runtime falls back to repo-local `.env`
 
 ## Core Settings
 
@@ -81,6 +88,24 @@ Optional Omni:
 
 - `codex-telegram-gateway-omni.service`
 
+These service-install flows are Linux-only because they target `systemd --user`.
+
+Native Windows direct path:
+
+```powershell
+copy .env.example .env
+scripts\windows\install.cmd
+scripts\windows\install-codex.cmd
+scripts\windows\doctor.cmd
+scripts\windows\run.cmd
+```
+
+With Omni:
+
+```powershell
+scripts\windows\run-omni.cmd
+```
+
 ## Repo Entry Points
 
 ```bash
@@ -104,3 +129,5 @@ make service-restart-omni
 - if Omni is disabled, the Omni unit may stay stopped
 - if the Omni unit is installed but `OMNI_ENABLED=false`, it may idle safely after clearing stale Omni slash commands
 - if you use `make service-install`, keep `.env` accurate before installing the unit, because that path is what the unit will remember
+- on native Windows, prefer the wrapper scripts over ad-hoc PowerShell commands
+- on native Windows, prefer native install over WSL unless your WSL networking and path model are already known-good

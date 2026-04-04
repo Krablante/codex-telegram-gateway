@@ -38,7 +38,7 @@ test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 301,
     topicName: "Purge audit",
     createdVia: "test",
@@ -71,7 +71,7 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 302,
     topicName: "Context snapshot",
     createdVia: "test",
@@ -178,7 +178,7 @@ test("SessionService updatePromptSuffix and clearPromptSuffix persist topic-leve
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 303,
     topicName: "Prompt suffix",
     createdVia: "test",
@@ -211,7 +211,7 @@ test("SessionService updatePromptSuffixTopicState persists topic suffix routing 
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 304,
     topicName: "Prompt suffix routing",
     createdVia: "test",
@@ -284,7 +284,7 @@ test("SessionService persists global and topic Codex runtime settings with topic
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 306,
     topicName: "Codex runtime settings",
     createdVia: "test",
@@ -383,7 +383,7 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 307,
     topicName: "Codex runtime compatibility",
     createdVia: "test",
@@ -427,7 +427,7 @@ test("SessionService keeps Omni reasoning high by default while preserving expli
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 308,
     topicName: "Omni runtime defaults",
     createdVia: "test",
@@ -476,7 +476,7 @@ test("SessionService scheduleAutoSleep ignores stale disabled snapshots and keep
   });
 
   const staleSession = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 307,
     topicName: "Auto stale sleep",
     createdVia: "test",
@@ -484,9 +484,9 @@ test("SessionService scheduleAutoSleep ignores stale disabled snapshots and keep
   });
 
   let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "123456789",
-    omniBotId: "222333444",
-    spikeBotId: "333444555",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
   liveSession = await service.captureAutoInitialPrompt(
@@ -527,7 +527,7 @@ test("SessionService markAutoDecision ignores stale disabled snapshots when reco
   });
 
   const staleSession = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 308,
     topicName: "Auto stale done",
     createdVia: "test",
@@ -535,9 +535,9 @@ test("SessionService markAutoDecision ignores stale disabled snapshots when reco
   });
 
   let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "123456789",
-    omniBotId: "222333444",
-    spikeBotId: "333444555",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
   liveSession = await service.captureAutoInitialPrompt(
@@ -570,7 +570,7 @@ test("SessionService buffers and clears pending prompt attachments", async () =>
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 305,
     topicName: "Pending attachments",
     createdVia: "test",
@@ -615,7 +615,7 @@ test("SessionService keeps queued attachments separate from direct prompt attach
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 306,
     topicName: "Scoped pending attachments",
     createdVia: "test",

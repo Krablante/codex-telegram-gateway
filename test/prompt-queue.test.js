@@ -22,7 +22,7 @@ function buildBinding() {
 
 async function ensureSession(sessionStore, topicId = 991) {
   return sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId,
     topicName: "Prompt queue test",
     createdVia: "test",

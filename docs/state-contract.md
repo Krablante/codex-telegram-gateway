@@ -42,12 +42,18 @@ Current slices guarantee:
 - `omni/indexes/omni-telegram-update-offset.json` may be refreshed by `make run-omni` or `make smoke-omni`
 - `settings/global-prompt-suffix.json` may store the persistent service-wide prompt suffix used by `/suffix global ...`
 - `settings/global-control-panel.json` may store the persistent `General` control-panel message id, active screen, UI language, and pending reply-based input state for `/global`
+- `settings/general-message-ledger.json` may store tracked `General` message ids used by `/clear`
+- `zoo/topic.json` may store Zoo topic metadata, menu state, and pending add-project flow
+- `zoo/pets/<pet-id>/pet.json` may store resolved project-root binding and pet metadata
+- `zoo/pets/<pet-id>/latest-snapshot.json` may store the current Zoo card source of truth
+- `zoo/pets/<pet-id>/history/<timestamp>.json` may store Zoo snapshot history
+- `zoo/runs/` may store transient `codex exec` output files during Zoo lookup and refresh
 - each session dir may store `topic-control-panel.json` with the pinned local menu message id, active screen, and pending reply-based input state for `/menu`
 - session metadata may store UI language, thread ids, rollout paths, prompt suffix state, attachment buffers, last prompt/reply, lifecycle state, exchange-log counters, progress message ids, compaction timestamps, and Omni auto-compact counters
 - `omni/runs/` may store one-shot `codex exec` output files used by Omni evaluations
 - transport may switch from message edits to append-only status messages when edit delivery degrades
 - transport may strip fenced `telegram-file` control blocks with `action: send` from the final visible reply and use them to send local files into the current Telegram topic
-- outgoing file delivery is scoped to safe local roots such as the active worktree, the per-session state dir, and `/tmp`
+- outgoing file delivery is scoped to safe local roots such as the active worktree, the per-session state dir, and the system temp dir
 - when topic `auto_mode` is active, Spike may ignore direct human prompt messages in that topic and accept prompt-starts there only from trusted Omni bot principals
 - if Omni is disabled globally through missing Omni credentials or `OMNI_ENABLED=false`, any persisted topic `auto_mode` state remains on disk but becomes inert for Spike routing until Omni is re-enabled
 - run completion may append to `exchange-log.jsonl`, while explicit `/compact` may refresh `active-brief.md` and clear stored thread/context state so the next run bootstraps from the rebuilt brief

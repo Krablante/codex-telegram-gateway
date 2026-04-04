@@ -47,7 +47,7 @@ test("CodexWorkerPool falls back to compact rebuild only after one resume retry"
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 144,
     topicName: "Resume fallback test",
     createdVia: "command/new",
@@ -201,7 +201,7 @@ test("CodexWorkerPool falls back to compact rebuild only after one resume retry"
     runCalls[2].prompt,
     /The previous Codex thread for this Telegram topic could not be resumed\./u,
   );
-  assert.match(runCalls[2].prompt, /session_key: -1001234567890:144/u);
+  assert.match(runCalls[2].prompt, /session_key: -1003577434463:144/u);
   assert.match(runCalls[2].prompt, /previous_thread_id: stale-thread/u);
   assert.match(runCalls[2].prompt, /last_run_status: \w+/u);
   assert.match(runCalls[2].prompt, /## Active brief/u);
@@ -234,7 +234,7 @@ test("CodexWorkerPool passes resolved Spike model and reasoning into runTask", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 177,
     topicName: "Runtime profile test",
     createdVia: "command/new",
@@ -387,7 +387,7 @@ test("CodexWorkerPool launches Codex with a reasoning level supported by the res
 
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 178,
     topicName: "Runtime profile compatibility",
     createdVia: "command/new",
@@ -506,7 +506,7 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 244,
     topicName: "Fresh brief bootstrap test",
     createdVia: "command/new",
@@ -532,7 +532,7 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
       "# Active brief",
       "",
       "updated_from_reason: command/compact",
-      "session_key: -1001234567890:244",
+      "session_key: -1003577434463:244",
       "topic_name: Fresh brief bootstrap test",
       "cwd: /workspace",
       "",
@@ -668,7 +668,7 @@ test("CodexWorkerPool does not reply to internal Omni handoff message ids", asyn
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2441,
     topicName: "Internal Omni handoff reply test",
     createdVia: "command/new",
@@ -683,8 +683,8 @@ test("CodexWorkerPool does not reply to internal Omni handoff message ids", asyn
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
-      spike_bot_id: "333444555",
+      omni_bot_id: "8603043042",
+      spike_bot_id: "8537834861",
     },
   });
 
@@ -763,7 +763,7 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 145,
     topicName: "Resume retry success test",
     createdVia: "command/new",
@@ -933,7 +933,7 @@ test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram de
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 188,
     topicName: "Telegram format test",
     createdVia: "command/new",
@@ -1059,7 +1059,7 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
 
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1881,
     topicName: "Directive delivery",
     createdVia: "command/new",
@@ -1169,7 +1169,7 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
   assert.doesNotMatch(runCalls[0], /```telegram-file/u);
   assert.doesNotMatch(runCalls[0], /File delivery:/u);
   assert.equal(sentDocuments.length, 1);
-  assert.equal(sentDocuments[0].chat_id, -1001234567890);
+  assert.equal(sentDocuments[0].chat_id, -1003577434463);
   assert.equal(sentDocuments[0].message_thread_id, 1881);
   assert.equal(sentDocuments[0].caption, "Server report");
   assert.equal(sentDocuments[0].document.filePath, filePath);
@@ -1186,7 +1186,7 @@ test("CodexWorkerPool keeps telegram-file syntax visible when it is only an exam
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1882,
     topicName: "Directive example",
     createdVia: "command/new",
@@ -1285,7 +1285,7 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1883,
     topicName: "Directive failure",
     createdVia: "command/new",
@@ -1385,7 +1385,7 @@ test("CodexWorkerPool keeps commentary progress visible even after later command
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 189,
     topicName: "Progress rewrite test",
     createdVia: "command/new",
@@ -1541,7 +1541,7 @@ test("CodexWorkerPool does not surface completed command output in progress with
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 18901,
     topicName: "Command-only progress test",
     createdVia: "command/new",
@@ -1658,7 +1658,7 @@ test("CodexWorkerPool keeps commentary agent messages in progress and only final
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1891,
     topicName: "Agent message phase test",
     createdVia: "command/new",
@@ -1782,7 +1782,7 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 190,
     topicName: "Progress shell cleanup test",
     createdVia: "command/new",
@@ -1798,7 +1798,7 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
   const editedMessages = [];
   const deferred = createDeferred();
   const noisyTelegramCommand =
-    `/bin/bash -lc "sleep 29 && node --input-type=module -e 'const payload = { chat_id: -1001234567890, message_thread_id: 1560, text: \\"Тест\\" }; const res = await fetch(\\"https://api.telegram.org/botTOKEN/sendMessage\\", { method: \\"POST\\" });'"`;
+    `/bin/bash -lc "sleep 29 && node --input-type=module -e 'const payload = { chat_id: -1003577434463, message_thread_id: 1560, text: \\"Тест\\" }; const res = await fetch(\\"https://api.telegram.org/botTOKEN/sendMessage\\", { method: \\"POST\\" });'"`;
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
@@ -1902,7 +1902,7 @@ test("CodexWorkerPool retries the final reply once after a Telegram rate limit",
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 191,
     topicName: "Final reply retry test",
     createdVia: "command/new",
@@ -1999,7 +1999,7 @@ test("CodexWorkerPool falls back to a plain topic send when the reply target dis
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1931,
     topicName: "Reply target fallback",
     createdVia: "command/new",
@@ -2100,7 +2100,7 @@ test("CodexWorkerPool keeps running when the initial progress bubble cannot be s
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 194,
     topicName: "Initial progress failure test",
     createdVia: "command/new",
@@ -2193,7 +2193,7 @@ test("CodexWorkerPool does not start when initial progress delivery parks the to
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 195,
     topicName: "Initial progress parked topic test",
     createdVia: "command/new",
@@ -2256,7 +2256,7 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 192,
     topicName: "Final reply failure state test",
     createdVia: "command/new",
@@ -2271,7 +2271,7 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -2374,7 +2374,7 @@ test("CodexWorkerPool persists failure text into session state, exchange log, an
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 193,
     topicName: "Failure persistence test",
     createdVia: "command/new",
@@ -2389,7 +2389,7 @@ test("CodexWorkerPool persists failure text into session state, exchange log, an
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -2456,7 +2456,7 @@ test("CodexWorkerPool skips late Spike final events after auto mode is turned of
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 194,
     topicName: "Late final event off test",
     createdVia: "command/new",
@@ -2471,7 +2471,7 @@ test("CodexWorkerPool skips late Spike final events after auto mode is turned of
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "222333444",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -2547,7 +2547,7 @@ test("CodexWorkerPool passes image attachments to codex and file attachments via
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 189,
     topicName: "Attachment prompt test",
     createdVia: "command/new",
@@ -2639,7 +2639,7 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const sessionA = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 201,
     topicName: "Parallel A",
     createdVia: "command/new",
@@ -2651,7 +2651,7 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
     },
   });
   const sessionB = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 202,
     topicName: "Parallel B",
     createdVia: "command/new",
@@ -2663,7 +2663,7 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
     },
   });
   const sessionC = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 203,
     topicName: "Parallel C",
     createdVia: "command/new",
@@ -2839,7 +2839,7 @@ test("CodexWorkerPool steers an active run through the live controller without s
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 202,
     topicName: "Steer queue",
     createdVia: "command/new",
@@ -3013,7 +3013,7 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 203,
     topicName: "Steer buffer",
     createdVia: "command/new",
@@ -3258,7 +3258,7 @@ test("CodexWorkerPool keeps root thread state when foreign subagent events arriv
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2032,
     topicName: "Foreign thread isolation",
     createdVia: "command/new",
@@ -3457,7 +3457,7 @@ test("CodexWorkerPool does not let late live events clobber a completed run back
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2031,
     topicName: "Late event race",
     createdVia: "command/new",
@@ -3578,7 +3578,7 @@ test("CodexWorkerPool surfaces non-interrupt run failures instead of interrupted
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 203,
     topicName: "Failure reply",
     createdVia: "command/new",
@@ -3652,7 +3652,7 @@ test("CodexWorkerPool localizes failure replies to English when the session UI l
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2031,
     topicName: "English failure",
     createdVia: "command/new",
@@ -3729,7 +3729,7 @@ test("CodexWorkerPool treats a starting run as busy before progress delivery com
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 204,
     topicName: "Starting busy guard",
     createdVia: "command/new",
@@ -3848,7 +3848,7 @@ test("CodexWorkerPool shutdown waits for a reserved start to become interruptibl
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 205,
     topicName: "Shutdown reserved start",
     createdVia: "command/new",
@@ -3980,7 +3980,7 @@ test("CodexWorkerPool keeps a completed final answer even if interrupt lands lat
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2041,
     topicName: "Late interrupt",
     createdVia: "command/new",
@@ -4067,7 +4067,7 @@ test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 204,
     topicName: "Shutdown test",
     createdVia: "command/new",
@@ -4117,7 +4117,7 @@ test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", a
                 warnings: [],
                 resumeReplacement: null,
               });
-            }, 20).unref();
+            }, 20);
           }
         },
       },
@@ -4160,7 +4160,7 @@ test("CodexWorkerPool starts a fresh continuation after an interrupted run", asy
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2054,
     topicName: "Interrupted continuation",
     createdVia: "command/new",
@@ -4254,7 +4254,7 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 492,
     topicName: "Termination hook test",
     createdVia: "command/new",
@@ -4341,7 +4341,7 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
     session,
     prompt: "Run the termination hook test.",
     message: {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_id: 7001,
       message_thread_id: 492,
     },

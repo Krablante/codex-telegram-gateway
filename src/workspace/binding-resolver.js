@@ -5,6 +5,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+function isSameOrDescendantPath(rootPath, candidatePath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return (
+    relative === ""
+    || (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
 async function readGitOutput(args, cwd) {
   try {
     const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], { cwd });
@@ -26,10 +34,19 @@ export async function resolveWorkspaceBinding({
       : path.resolve(resolvedWorkspaceRoot, requestedPath)
     : resolvedWorkspaceRoot;
   const cwd = await fs.realpath(requestedAbsolutePath);
-  await fs.stat(cwd);
+  const cwdStat = await fs.stat(cwd);
+  if (!cwdStat.isDirectory()) {
+    throw new Error(`Requested path is not a directory: ${cwd}`);
+  }
+  if (!isSameOrDescendantPath(resolvedWorkspaceRoot, cwd)) {
+    throw new Error(`Requested path escapes workspace root: ${cwd}`);
+  }
 
   const repoRoot =
     (await readGitOutput(["rev-parse", "--show-toplevel"], cwd)) || cwd;
+  if (!isSameOrDescendantPath(resolvedWorkspaceRoot, repoRoot)) {
+    throw new Error(`Resolved repo root escapes workspace root: ${repoRoot}`);
+  }
   const branch =
     (await readGitOutput(["branch", "--show-current"], cwd)) ||
     (await readGitOutput(["rev-parse", "--short", "HEAD"], cwd));

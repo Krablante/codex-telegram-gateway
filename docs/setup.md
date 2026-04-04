@@ -21,6 +21,19 @@ make run
 
 Then open Telegram, go to `General`, and send `/help`.
 
+Native Windows quick path:
+
+```powershell
+copy .env.example .env
+scripts\windows\install.cmd
+scripts\windows\install-codex.cmd
+scripts\windows\doctor.cmd
+scripts\windows\test.cmd
+scripts\windows\run.cmd
+```
+
+If you plan to use `Omni`, run `scripts\windows\run-omni.cmd` in a second shell.
+
 ## Before You Start
 
 You need:
@@ -31,6 +44,8 @@ You need:
 - one Telegram supergroup with topics enabled
 
 You do not need `Omni` to get started. Spike-only mode is the simplest and usually the best first install.
+
+If you are on Windows, prefer the native Windows path first. Only use WSL when you already know your WSL networking and path setup are healthy.
 
 ## 1. Create The Spike Bot
 
@@ -160,6 +175,13 @@ make doctor
 make test
 ```
 
+Native Windows:
+
+```powershell
+scripts\windows\doctor.cmd
+scripts\windows\test.cmd
+```
+
 `make doctor` should confirm:
 
 - the bot token works
@@ -175,6 +197,12 @@ Foreground:
 make run
 ```
 
+Native Windows:
+
+```powershell
+scripts\windows\run.cmd
+```
+
 User service:
 
 ```bash
@@ -182,10 +210,18 @@ make service-install
 make service-status
 ```
 
+Those `service-*` flows are Linux-only because they target `systemd --user`.
+
 If Omni is configured:
 
 ```bash
 make run-omni
+```
+
+Native Windows equivalent:
+
+```powershell
+scripts\windows\run-omni.cmd
 ```
 
 ## 7. First Telegram Check
@@ -215,6 +251,7 @@ That private chat is the rescue lane if the normal topic path breaks.
 - the chat id came from the wrong conversation
 - the bot is in the chat but not an admin
 - `WORKSPACE_ROOT` points to a path that does not exist locally
+- WSL was used for a first install even though native Windows would have been simpler
 - Omni was configured immediately even though Spike-only would have been enough for the first run
 
 ## What To Read Next

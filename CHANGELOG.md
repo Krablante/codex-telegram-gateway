@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.2.1] - 2026-04-04
+
+Added:
+
+- experimental menu-only `Zoo` topic for project tamagotchi cards, including project lookup, stable pet identity, localized cards, duplicate private/public repo disambiguation, and per-pet snapshot history
+- `General` now has `/clear`, which preserves the active menu and removes tracked clutter without needing a user-session cleanup sweep
+- native Windows wrapper scripts for install, Codex CLI install, doctor, test, run, Omni run, and live-user helpers
+
+Changed:
+
+- public repo is now caught up with the current private functional surface, including Zoo, `General /clear`, and the latest runtime/test hardening
+- native Windows is now a first-class deployment path with repo-local `.env` fallback, Windows-safe temp roots, safer path handling, and clearer docs
+- direct file delivery now uses the system temp directory instead of assuming `/tmp`
+
+Fixed:
+
+- native Windows bootstrap no longer depends on bash, systemd, or Linux-only env defaults just to get the gateway online
+- workspace diff artifact generation no longer risks flaky parallel `git diff` behavior on Windows
+- Windows test coverage now avoids POSIX-only assumptions around file modes, timers, and path formatting
+
+Docs:
+
+- refreshed README, setup, deployment, testing, and architecture docs for `Zoo`, `General /clear`, and Windows-native usage
+- added the public Zoo concept note and updated the Telegram surface docs to reflect the current command surface
+
 ## [0.2.0] - 2026-04-03
 
 Added:

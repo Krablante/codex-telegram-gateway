@@ -33,7 +33,7 @@ test("RuntimeObserver writes heartbeat and lifecycle events", async () => {
       envFilePath: "/state/runtime.env",
       repoRoot: "/repo",
       stateRoot: "/state",
-      telegramForumChatId: "-1001234567890",
+      telegramForumChatId: "-1003577434463",
     },
     serviceState,
     probe: {

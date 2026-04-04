@@ -13,7 +13,9 @@ Spike-only mode:
 
 - `/help`
 - `/guide`
+- `/clear`
 - `/new`
+- `/zoo`
 - `/status`
 - `/global`
 - `/menu`
@@ -32,11 +34,25 @@ Spike-only mode:
 
 `/guide` works in `General` only and sends the beginner PDF guidebook in the selected `General` language.
 
+`/clear` works in `General` only. It preserves the active global menu message and its current screen, then removes the tracked General clutter that the bot knows about. Successful cleanup stays silent; separate General messages are reserved for real cleanup errors.
+
+`/zoo` ensures that one dedicated Zoo topic exists, opens or recreates the pinned Zoo menu there, syncs that topic to the caller UI language, and keeps that topic reserved for Zoo-only flows.
+
+Zoo pets are stored against resolved project-root directories, not arbitrary file paths, and `Remove` is disabled while a pet refresh is in flight.
+
+Zoo is menu-only in the normal case: the pinned menu message carries the add-project flow, confirmation flow, pet card, refresh state, and root-list pagination. Separate topic messages are reserved for actual errors.
+
+Zoo cards are localized to the Zoo topic language, use explicit creature personality and stable temperament roles, render the gameplay stats in a monospaced block above the summary text, keep findings out of the Telegram card itself, intentionally keep the inline buttons in English, assign new pets from a random unused-first identity pool so the stable does not fill in a predictable list order, normalize duplicate repo names to path-based labels with `[priv]` or `[pub]` when private/public twins exist, and place the lower narrative/detail section inside a collapsed-by-default expandable quote.
+
+Telegram bots do not have true arbitrary text animation for editable menu panels, so Zoo uses sparse ASCII frame swaps instead of high-frequency animation. While a pet detail screen stays open, the ASCII pose should keep moving slowly even when the pet is idle. During refresh, the first frame may use a simple generic status, but later refresh frames should fall into the pet's species-plus-temperament voice. The creature pool and temperament pool are intentionally broad so different repos can land on different pet styles, roles, and animation frames.
+
 `/global` works only in `General`. It opens one persistent inline-button control panel there.
 
 The panel keeps the menu message alive and sends separate status/error messages into `General` after each applied action.
 
 The selected panel language also drives `General`-only replies for commands that do not have a topic session, such as `/help`, `/status`, `/wait global ...`, and other global-setting commands.
+
+The service also tracks incoming and outgoing `General` messages in a small ledger so `/clear` can remove them later while preserving the current menu message.
 
 Current panel coverage:
 
@@ -166,7 +182,7 @@ Transport-specific rules:
 - local file refs collapse to short labels instead of leaking full host paths
 - topic replies prefer replying to the triggering message, but fall back to a plain topic send if that reply target disappeared
 - fenced `telegram-file` blocks with `action: send` trigger file delivery into the current topic
-- delivery roots are limited to the current worktree, the session state dir, and `/tmp`
+- delivery roots are limited to the current worktree, the session state dir, and the system temp dir
 
 ## UI Language
 

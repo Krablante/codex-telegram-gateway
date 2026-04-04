@@ -33,7 +33,7 @@ test("createWorkspaceDiffArtifact returns clean snapshot for unchanged workspace
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 91,
     createdVia: "test",
     workspaceBinding: {
@@ -60,7 +60,7 @@ test("createWorkspaceDiffArtifact stores a diff artifact for dirty workspace", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 92,
     createdVia: "test",
     workspaceBinding: {
