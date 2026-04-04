@@ -17,6 +17,16 @@ scripts\windows\doctor.cmd
 scripts\windows\test.cmd
 ```
 
+## GitHub Actions CI
+
+The public repo now runs a small CI workflow on push and pull request:
+
+- Ubuntu: `npm test`
+- Ubuntu: guidebook PDF build as a safe smoke check
+- Windows: `scripts\windows\install.cmd` + `scripts\windows\test.cmd`
+
+The live `make smoke` and `make smoke-omni` flows stay out of GitHub Actions on purpose. They expect a real `.env`, real Telegram credentials, and a host where short polling is acceptable.
+
 ## Repo-Level Validation
 
 - `make doctor` — env, Telegram auth, webhook state, basic runtime checks

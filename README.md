@@ -16,6 +16,9 @@
   <a href="https://github.com/Krablante/codex-telegram-gateway/releases">
     <img src="https://img.shields.io/github/v/release/Krablante/codex-telegram-gateway?style=for-the-badge" alt="GitHub release">
   </a>
+  <a href="https://github.com/Krablante/codex-telegram-gateway/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/Krablante/codex-telegram-gateway/ci.yml?branch=main&style=for-the-badge" alt="CI status">
+  </a>
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License">
   </a>
@@ -109,6 +112,7 @@ Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/fil
 - dedicated menu-only `Zoo` topic for project tamagotchi cards
 - duplicate repo disambiguation with `[priv]` and `[pub]` in Zoo when private/public twins exist
 - native Windows wrapper scripts for install, doctor, test, and run
+- GitHub Actions CI for Ubuntu + native Windows test coverage, plus a safe guidebook-build smoke check
 - operator-only emergency private chat lane
 - optional `Omni` bot with goal-locked `/auto`
 
