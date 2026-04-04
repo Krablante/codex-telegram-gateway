@@ -1,6 +1,7 @@
 import process from "node:process";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
+import { CodexLimitsService } from "../codex-runtime/limits.js";
 import { CodexWorkerPool } from "../pty-worker/worker-pool.js";
 import { createServiceState, markBootstrapDrop, markPollError, markUpdateSeen } from "../runtime/service-state.js";
 import { RuntimeObserver } from "../runtime/runtime-observer.js";
@@ -200,6 +201,12 @@ async function main() {
   const globalCodexSettingsStore = new GlobalCodexSettingsStore(layout.settings);
   const globalControlPanelStore = new GlobalControlPanelStore(layout.settings);
   const generalMessageLedgerStore = new GeneralMessageLedgerStore(layout.settings);
+  const codexLimitsService = new CodexLimitsService({
+    sessionsRoot: config.codexLimitsSessionsRoot,
+    command: config.codexLimitsCommand,
+    cacheTtlMs: config.codexLimitsCacheTtlSecs * 1000,
+    commandTimeoutMs: config.codexLimitsCommandTimeoutSecs * 1000,
+  });
   const trackedApi = createTrackedGeneralApi(
     api,
     config,
@@ -225,6 +232,7 @@ async function main() {
     globalPromptSuffixStore,
     globalCodexSettingsStore,
     promptQueueStore,
+    codexLimitsService,
   });
   const zooService = new ZooService({
     config,

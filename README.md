@@ -88,14 +88,14 @@ Telegram forum
 Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
 ```
 
-## What's New In v0.2.2.1
+## What's New In v0.2.2.2
 
 | Area | What changed |
 | --- | --- |
-| Zoo | pet cards now show clearer trend movement, and the public docs stay aligned with the paginated menu and expandable detail block |
-| Setup | README, setup, and deployment docs now spell out the real minimum config, bot forum rights, and what `DEFAULT_SESSION_BINDING_PATH` actually changes |
-| Tests | Zoo rendering coverage now checks visible trend markers directly, so the card surface is less likely to drift silently |
-| Release | this is a small catch-up release on top of `v0.2.2`, not a new architecture turn |
+| Limits | `/limits` is now a first-class command, also visible in `/status`, `/global`, and `/menu`, including explicit unlimited-mode rendering |
+| Menu UX | topic menus now have an in-menu `Status` screen, accept `/menu@YourBot`, reopen cleanly, and remove replaced menu clutter plus transient pin notices |
+| Live flow | repeated follow-up prompts can keep steering the same active run instead of stalling after the first continuation, while `/q` previews render cleanly again |
+| Release | this is a small patch release on top of `v0.2.2.1`, focused on operator ergonomics and correctness rather than a new architecture turn |
 
 ## Highlights
 
@@ -105,6 +105,7 @@ Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/fil
 - attachment-aware prompts, including file-first flows
 - `/new Topic Name` topic creation when the bot has Telegram rights
 - `/help` help cards and `/guide` beginner PDF
+- `/limits` plus limits summaries in status and menus
 - topic-local and global menus through `/menu` and `/global`
 - `/clear` in `General` to keep only the active menu
 - queued prompts with `/q`
@@ -176,7 +177,9 @@ In `General`:
 Inside a work topic:
 
 - normal text — start work with `Spike`
-- `/menu` — topic-local settings menu
+- `/menu` — topic-local settings menu, with `Status` inside the panel
+- `/limits` — current Codex limits snapshot
+- `/status` — effective topic state and runtime profile
 - `/q ...` — queue the next prompt
 - `/wait ...` — buffer a prompt while you type it in parts
 - `/suffix ...` — add a reusable prompt suffix
@@ -184,6 +187,8 @@ Inside a work topic:
 - `/compact` — rebuild the working brief from the exchange log
 - `/purge` — reset local session memory for that topic
 
+`/menu@YourBot` suggestions work too. Reopening the menu replaces the older pinned panel cleanly instead of stacking stale menu messages and pin notices.
+If a run is already active, plain follow-up text keeps steering that same run; use `/q` only when you explicitly mean "do this next after the current one".
 If you ever forget the command surface, use `/help` again instead of memorizing everything.
 
 ## Native Windows

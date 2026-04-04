@@ -9,7 +9,7 @@ import {
   generateGuidebookPdf,
 } from "../src/telegram/guidebook.js";
 
-test("generateGuidebookPdf creates a PDF from the beginner guide source without private branding references", async () => {
+test("generateGuidebookPdf creates a PDF from the beginner guide source without Atlas references", async () => {
   const outputDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-guidebook-test-"),
   );

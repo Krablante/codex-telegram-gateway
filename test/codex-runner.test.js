@@ -831,6 +831,96 @@ test("runCodexTask reports transport-recovering instead of pretending to steer a
   );
 });
 
+test("runCodexTask keeps refreshing the active turn id across many steer responses", async () => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-runner-steer-turn-id-"),
+  );
+  const steerCount = 100;
+  const steerExpectedTurnIds = [];
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/start"() {
+        return {
+          thread: {
+            id: "root-thread",
+          },
+        };
+      },
+      "turn/start"() {
+        return {
+          turn: {
+            id: "turn-1",
+          },
+        };
+      },
+      "turn/steer"(params) {
+        steerExpectedTurnIds.push(params.expectedTurnId);
+        const expectedIndex = steerExpectedTurnIds.length;
+        assert.equal(
+          params.expectedTurnId,
+          `turn-${expectedIndex}`,
+          `unexpected steer turn id at step ${expectedIndex}`,
+        );
+        return {
+          turn: {
+            id: `turn-${expectedIndex + 1}`,
+          },
+        };
+      },
+    },
+  });
+
+  try {
+    const run = runCodexTask({
+      codexBinPath: "codex",
+      cwd: process.cwd(),
+      prompt: "Allow repeated steer updates.",
+      spawnImpl() {
+        return child;
+      },
+      openWebSocketImpl: async () => ws,
+      codexSessionsRoot,
+    });
+
+    child.stderr.write("  listening on: ws://127.0.0.1:43128\n");
+    await waitForCondition(
+      () => ws.sentMessages.some((message) => message.method === "turn/start"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    for (let index = 1; index <= steerCount; index += 1) {
+      const steerResult = await run.steer({
+        input: [{ type: "text", text: `follow-up ${index}` }],
+      });
+      assert.equal(steerResult.ok, true);
+      assert.equal(steerResult.reason, "steered");
+      assert.equal(steerResult.turnId, `turn-${index + 1}`);
+    }
+
+    assert.deepEqual(
+      steerExpectedTurnIds,
+      Array.from({ length: steerCount }, (_, index) => `turn-${index + 1}`),
+    );
+
+    ws.emitNotification({
+      method: "turn/completed",
+      params: {
+        threadId: "root-thread",
+        turnId: `turn-${steerCount + 1}`,
+      },
+    });
+
+    const finished = await run.finished;
+    assert.equal(finished.exitCode, 0);
+  } finally {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  }
+});
+
 test("runCodexTask waits for async final message handling before resolving turn completion", async () => {
   const child = createMockChild();
   const ws = createMockWebSocket({

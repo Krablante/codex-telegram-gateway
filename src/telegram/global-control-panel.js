@@ -11,6 +11,7 @@ import {
   normalizeReasoningEffort,
   resolveCodexRuntimeProfile,
 } from "../session-manager/codex-runtime-settings.js";
+import { buildCodexLimitsMenuLines } from "../codex-runtime/limits.js";
 import {
   normalizePromptSuffixText,
   PROMPT_SUFFIX_MAX_CHARS,
@@ -162,6 +163,7 @@ function buildGlobalControlPanelText({
   availableModels,
   globalSettings,
   globalPromptSuffix,
+  limitsSummary = null,
   language = DEFAULT_UI_LANGUAGE,
   omniEnabled = true,
   pendingInput = null,
@@ -303,6 +305,7 @@ function buildGlobalControlPanelText({
           ),
         ]
       : []),
+    ...buildCodexLimitsMenuLines(limitsSummary, language),
     ...(pendingInput
       ? [
           "",
@@ -522,6 +525,7 @@ async function loadGlobalControlPanelView({
   let availableModels = [];
   let globalSettings = null;
   let globalPromptSuffix = null;
+  let limitsSummary = null;
   let spikeProfile = {
     model: null,
     reasoningEffort: null,
@@ -556,6 +560,10 @@ async function loadGlobalControlPanelView({
     globalPromptSuffix = await sessionService.getGlobalPromptSuffix();
   }
 
+  if (screen === "root" && typeof sessionService.getCodexLimitsSummary === "function") {
+    limitsSummary = await sessionService.getCodexLimitsSummary();
+  }
+
   const waitMessage = {
     chat: {
       id: actor?.chat?.id ?? config.telegramForumChatId,
@@ -569,6 +577,7 @@ async function loadGlobalControlPanelView({
     availableModels,
     globalSettings,
     globalPromptSuffix,
+    limitsSummary,
     profiles: {
       spike: spikeProfile,
       omni: omniProfile,
@@ -599,6 +608,7 @@ function buildGlobalControlPanelPayload({
       availableModels: view.availableModels,
       globalSettings: view.globalSettings,
       globalPromptSuffix: view.globalPromptSuffix,
+      limitsSummary: view.limitsSummary,
       language,
       omniEnabled,
       pendingInput,

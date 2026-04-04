@@ -56,6 +56,10 @@ test("buildRuntimeConfig validates ids and splits expected topics", () => {
     ATLAS_WORKSPACE_ROOT: "/workspace",
     DEFAULT_SESSION_BINDING_PATH: "/workspace",
     CODEX_SESSIONS_ROOT: "/tmp/codex-sessions",
+    CODEX_LIMITS_SESSIONS_ROOT: "/tmp/codex-limits",
+    CODEX_LIMITS_COMMAND: "python3 /tmp/read-limits.py",
+    CODEX_LIMITS_CACHE_TTL_SECS: "45",
+    CODEX_LIMITS_COMMAND_TIMEOUT_SECS: "9",
     CODEX_MODEL: "gpt-5.4",
     CODEX_REASONING_EFFORT: "xhigh",
     CODEX_CONTEXT_WINDOW: "320000",
@@ -70,6 +74,10 @@ test("buildRuntimeConfig validates ids and splits expected topics", () => {
   assert.equal(config.defaultSessionBindingPath, "/workspace");
   assert.equal(config.codexBinPath, "codex");
   assert.equal(config.codexSessionsRoot, "/tmp/codex-sessions");
+  assert.equal(config.codexLimitsSessionsRoot, "/tmp/codex-limits");
+  assert.equal(config.codexLimitsCommand, "python3 /tmp/read-limits.py");
+  assert.equal(config.codexLimitsCacheTtlSecs, 45);
+  assert.equal(config.codexLimitsCommandTimeoutSecs, 9);
   assert.equal(config.codexModel, "gpt-5.4");
   assert.equal(config.codexReasoningEffort, "xhigh");
   assert.equal(config.codexContextWindow, 320000);

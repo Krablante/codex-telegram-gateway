@@ -46,6 +46,15 @@ test("buildTelegramCommandSyncPlan includes full Spike forum/private catalogs", 
     )?.commands.some((command) => command.command === "zoo"),
     true,
   );
+  assert.equal(
+    plan.find(
+      (entry) =>
+        entry.scope.type === "chat"
+        && entry.scope.chat_id === "-1003577434463"
+        && entry.languageCode === null,
+    )?.commands.some((command) => command.command === "limits"),
+    true,
+  );
   assert.deepEqual(
     plan
       .filter((entry) => entry.scope.type === "all_private_chats")

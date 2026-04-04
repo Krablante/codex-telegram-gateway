@@ -57,6 +57,8 @@ function extractLeadingBotCommand(message) {
     return null;
   }
 
+  const commandMatch = text.match(/^\/([A-Za-z0-9_]+)(?:@([A-Za-z0-9_]+))?(?=\s|$)/u);
+
   const entities = Array.isArray(message.entities)
     ? message.entities
     : Array.isArray(message.caption_entities)
@@ -64,6 +66,16 @@ function extractLeadingBotCommand(message) {
       : null;
 
   if (!entities) {
+    if (commandMatch) {
+      const rawCommand = commandMatch[0];
+      return {
+        name: commandMatch[1].toLowerCase(),
+        raw: rawCommand,
+        args: text.slice(rawCommand.length).trim(),
+        target: commandMatch[2] ? commandMatch[2].toLowerCase() : null,
+      };
+    }
+
     const bareWaitMatch = text.trim().match(/^wait(?:\s+(.+))?$/iu);
     if (!bareWaitMatch) {
       return null;
@@ -84,21 +96,20 @@ function extractLeadingBotCommand(message) {
   const commandEntity = entities.find(
     (entity) => entity.type === "bot_command" && entity.offset === 0,
   );
-  if (!commandEntity) {
+  if (!commandEntity && !commandMatch) {
     return null;
   }
 
-  const rawCommand = text.slice(0, commandEntity.length);
-  if (!rawCommand.startsWith("/")) {
+  if (!commandMatch) {
     return null;
   }
 
-  const [commandName, commandTarget] = rawCommand.slice(1).split("@");
+  const rawCommand = commandMatch[0];
   return {
-    name: commandName.toLowerCase(),
+    name: commandMatch[1].toLowerCase(),
     raw: rawCommand,
-    args: text.slice(commandEntity.length).trim(),
-    target: commandTarget ? commandTarget.toLowerCase() : null,
+    args: text.slice(rawCommand.length).trim(),
+    target: commandMatch[2] ? commandMatch[2].toLowerCase() : null,
   };
 }
 

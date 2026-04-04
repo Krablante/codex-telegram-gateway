@@ -177,6 +177,20 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     DEFAULT_CODEX_CONFIG_PATH;
   const codexSessionsRoot =
     rawEnv.CODEX_SESSIONS_ROOT?.trim() || getDefaultCodexSessionsRoot();
+  const codexLimitsSessionsRoot =
+    rawEnv.CODEX_LIMITS_SESSIONS_ROOT?.trim() || codexSessionsRoot;
+  const codexLimitsCommand =
+    rawEnv.CODEX_LIMITS_COMMAND?.trim() || null;
+  const codexLimitsCacheTtlSecs = parsePositiveInteger(
+    rawEnv.CODEX_LIMITS_CACHE_TTL_SECS,
+    "CODEX_LIMITS_CACHE_TTL_SECS",
+    30,
+  );
+  const codexLimitsCommandTimeoutSecs = parsePositiveInteger(
+    rawEnv.CODEX_LIMITS_COMMAND_TIMEOUT_SECS,
+    "CODEX_LIMITS_COMMAND_TIMEOUT_SECS",
+    15,
+  );
 
   const telegramBotToken = readRequired(rawEnv, "TELEGRAM_BOT_TOKEN");
   const legacyAllowedUserId = rawEnv.TELEGRAM_ALLOWED_USER_ID?.trim()
@@ -244,6 +258,10 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     codexBinPath,
     codexConfigPath,
     codexSessionsRoot,
+    codexLimitsSessionsRoot,
+    codexLimitsCommand,
+    codexLimitsCacheTtlSecs,
+    codexLimitsCommandTimeoutSecs,
     codexModel:
       rawEnv.CODEX_MODEL?.trim() ||
       codexProfile.model ||

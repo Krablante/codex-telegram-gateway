@@ -71,6 +71,17 @@ Once `make user-status` is healthy:
 5. Confirm the stat block shows visible trend markers and the lower detail text stays collapsed behind the expandable quote.
 6. Tap `Back`, then `Respawn menu`, and confirm the menu comes back cleanly.
 
+## Topic `/menu` Manual Sanity
+
+Once the bot is running in a normal work topic:
+
+1. Run `/menu`.
+2. Run `/menu@YourBot`.
+3. Confirm a fresh menu appears near the latest messages.
+4. Confirm the replaced menu disappears instead of piling up.
+5. Confirm the Telegram pin service notices do not remain in the topic.
+6. Tap the in-menu `Status` button and confirm it renders the same state as `/status`.
+
 ## General `/clear` Manual Sanity
 
 Once the bot is running in the forum:

@@ -37,6 +37,67 @@ const config = {
   codexConfigPath: "/tmp/codex-telegram-gateway-tests-missing-config.toml",
 };
 
+function buildUnlimitedLimitsSummary(overrides = {}) {
+  return {
+    available: true,
+    capturedAt: "2026-04-04T13:00:00.000Z",
+    source: "windows_rtx",
+    planType: "business",
+    limitName: "codex",
+    unlimited: true,
+    windows: [],
+    primary: null,
+    secondary: null,
+    ...overrides,
+  };
+}
+
+function buildWindowedLimitsSummary(overrides = {}) {
+  return {
+    available: true,
+    capturedAt: "2026-04-04T13:10:00.000Z",
+    source: "windows_rtx",
+    planType: null,
+    limitName: "codex",
+    unlimited: false,
+    windows: [
+      {
+        label: "5h",
+        usedPercent: 11,
+        remainingPercent: 89,
+        windowMinutes: 300,
+        resetsAt: 1775277000,
+        resetsAtIso: "2026-04-03T03:10:00.000Z",
+      },
+      {
+        label: "7d",
+        usedPercent: 33,
+        remainingPercent: 67,
+        windowMinutes: 10080,
+        resetsAt: 1775881800,
+        resetsAtIso: "2026-04-10T03:10:00.000Z",
+      },
+    ],
+    primary: {
+      label: "5h",
+      usedPercent: 11,
+      remainingPercent: 89,
+      windowMinutes: 300,
+      resetsAt: 1775277000,
+      resetsAtIso: "2026-04-03T03:10:00.000Z",
+    },
+    secondary: {
+      label: "7d",
+      usedPercent: 33,
+      remainingPercent: 67,
+      windowMinutes: 10080,
+      resetsAt: 1775881800,
+      resetsAtIso: "2026-04-10T03:10:00.000Z",
+    },
+    ...overrides,
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -169,6 +230,29 @@ test("extractBotCommand parses direct commands and bot username suffix", () => {
   assert.equal(command.args, "now");
 });
 
+test("extractBotCommand still parses @bot commands when Telegram only marks the slash token as bot_command", () => {
+  const message = {
+    text: "/menu@gatewaybot",
+    entities: [{ type: "bot_command", offset: 0, length: 5 }],
+  };
+
+  const command = extractBotCommand(message, "gatewaybot");
+  assert.equal(command.name, "menu");
+  assert.equal(command.raw, "/menu@gatewaybot");
+  assert.equal(command.args, "");
+});
+
+test("extractBotCommand parses @bot commands even when Telegram omits command entities", () => {
+  const message = {
+    text: "/menu@gatewaybot",
+  };
+
+  const command = extractBotCommand(message, "gatewaybot");
+  assert.equal(command.name, "menu");
+  assert.equal(command.raw, "/menu@gatewaybot");
+  assert.equal(command.args, "");
+});
+
 test("extractBotCommand also parses commands from caption entities", () => {
   const message = {
     caption: "/interrupt now",
@@ -229,16 +313,16 @@ test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit bin
     title: "Slice 4 test",
   });
   assert.deepEqual(
-    parseNewTopicCommandArgs("cwd=/workspace Gateway topic"),
+    parseNewTopicCommandArgs("cwd=/home/bloob/atlas Gateway topic"),
     {
-      bindingPath: "/workspace",
+      bindingPath: "/home/bloob/atlas",
       title: "Gateway topic",
     },
   );
   assert.deepEqual(
-    parseNewTopicCommandArgs("--cwd=projects/codex-telegram-gateway"),
+    parseNewTopicCommandArgs("--cwd=homelab/infra/automation/codex-telegram-gateway"),
     {
-      bindingPath: "projects/codex-telegram-gateway",
+      bindingPath: "homelab/infra/automation/codex-telegram-gateway",
       title: "",
     },
   );
@@ -545,10 +629,10 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
         total_tokens: 228400,
       },
       workspace_binding: {
-        repo_root: "/workspace",
-        cwd: "/workspace",
+        repo_root: "/home/bloob/atlas",
+        cwd: "/home/bloob/atlas",
         branch: "main",
-        worktree_path: "/workspace",
+        worktree_path: "/home/bloob/atlas",
       },
     },
     {
@@ -557,11 +641,15 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
         threadId: "thread-1",
       },
     },
+    null,
+    null,
+    "rus",
+    buildWindowedLimitsSummary(),
   );
 
   assert.match(text, /тема: Test topic 1/u);
   assert.match(text, /run: running/u);
-  assert.match(text, /папка: \/workspace/u);
+  assert.match(text, /папка: \/home\/bloob\/atlas/u);
   assert.match(text, /модель: gpt-5\.4/u);
   assert.match(text, /reasoning: Extra High \(xhigh\)/u);
   assert.match(text, /context window: 320000/u);
@@ -571,6 +659,7 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
   assert.match(text, /доступно токенов: 91600/u);
   assert.match(text, /вход\/кэш\/выход: 227200 \/ 180000 \/ 1200/u);
   assert.match(text, /reasoning tokens: 800/u);
+  assert.match(text, /лимиты 5h: 89% осталось/u);
 });
 
 test("buildStatusMessage hides Omni lines when Omni is globally disabled", () => {
@@ -592,10 +681,10 @@ test("buildStatusMessage hides Omni lines when Omni is globally disabled", () =>
       lifecycle_state: "active",
       last_run_status: "idle",
       workspace_binding: {
-        repo_root: "/workspace",
-        cwd: "/workspace",
+        repo_root: "/home/bloob/atlas",
+        cwd: "/home/bloob/atlas",
         branch: "main",
-        worktree_path: "/workspace",
+        worktree_path: "/home/bloob/atlas",
       },
     },
     null,
@@ -625,10 +714,10 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
       last_run_status: "completed",
       last_token_usage: null,
       workspace_binding: {
-        repo_root: "/workspace",
-        cwd: "/workspace",
+        repo_root: "/home/bloob/atlas",
+        cwd: "/home/bloob/atlas",
         branch: "main",
-        worktree_path: "/workspace",
+        worktree_path: "/home/bloob/atlas",
       },
     },
     null,
@@ -643,7 +732,7 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
         total_tokens: 18262,
       },
       rollout_path:
-        "/home/operator/.codex/sessions/2026/03/23/rollout-2026-03-23T23-14-18-thread-2.jsonl",
+        "/home/bloob/.codex/sessions/2026/03/23/rollout-2026-03-23T23-14-18-thread-2.jsonl",
     },
   );
 
@@ -744,6 +833,52 @@ test("handleIncomingMessage uses the global panel ENG language for General-topic
 
   assert.equal(result.reason, "general-topic");
   assert.equal(sent[0].text, buildNoSessionTopicMessage("eng"));
+});
+
+test("handleIncomingMessage returns Codex limits in General without requiring a topic session", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/limits",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "limits");
+  assert.match(sent[0].text, /Лимиты Codex/u);
+  assert.match(sent[0].text, /режим: безлимит/u);
 });
 
 test("handleIncomingMessage lets zooService short-circuit /zoo before normal session flow", async () => {
@@ -882,6 +1017,9 @@ test("handleIncomingMessage opens the persistent global control panel in General
           prompt_suffix_text: null,
         };
       },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
     },
     workerPool: {
       getActiveRun() {
@@ -898,6 +1036,7 @@ test("handleIncomingMessage opens the persistent global control panel in General
   assert.match(sent[0].text, /Global control panel/u);
   assert.doesNotMatch(sent[0].text, /Закрепи это сообщение/u);
   assert.match(sent[0].text, /interface language: RUS/u);
+  assert.match(sent[0].text, /лимиты: безлимит/u);
   assert.equal(Array.isArray(sent[0].reply_markup.inline_keyboard), true);
   assert.equal(
     sent[0].reply_markup.inline_keyboard.some((row) =>
@@ -963,6 +1102,9 @@ test("handleIncomingMessage clears tracked General clutter and keeps only the ac
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
         };
+      },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
       },
     },
     workerPool: {
@@ -1090,6 +1232,9 @@ test("handleIncomingMessage reports /clear failures only as an error message", a
           prompt_suffix_text: null,
         };
       },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
     },
     workerPool: {
       getActiveRun() {
@@ -1165,6 +1310,9 @@ test("handleIncomingMessage treats stale missing General messages as already gon
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
         };
+      },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
       },
     },
     workerPool: {
@@ -1338,10 +1486,10 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
     omni_model_override: null,
     omni_reasoning_effort_override: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -1416,6 +1564,114 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
   assert.equal(waitState.local.flushDelayMs, 300000);
 });
 
+test("handleIncomingCallbackQuery renders status inside the topic control menu", async () => {
+  const edited = [];
+  const answered = [];
+  const topicControlPanelStore = createTopicControlPanelStore({
+    menu_message_id: 91,
+    active_screen: "root",
+  });
+  const session = {
+    session_key: "-1003577434463:55",
+    chat_id: "-1003577434463",
+    topic_id: "55",
+    topic_name: "Slice 4 test",
+    lifecycle_state: "active",
+    ui_language: "rus",
+    prompt_suffix_topic_enabled: true,
+    prompt_suffix_text: null,
+    prompt_suffix_enabled: false,
+    workspace_binding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  };
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-topic-status",
+      data: "tcfg:n:st",
+      from: { id: 5825672398, is_bot: false },
+      message: {
+        message_id: 91,
+        chat: { id: -1003577434463 },
+        message_thread_id: 55,
+      },
+    },
+    config,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async resolveContextSnapshot(current) {
+        return {
+          session: current,
+          snapshot: null,
+        };
+      },
+      async resolveCodexRuntimeProfile(_current, { target }) {
+        return target === "omni"
+          ? {
+              model: "gpt-5.4-mini",
+              modelSource: "default",
+              reasoningEffort: "high",
+              reasoningSource: "default",
+            }
+          : {
+              model: "gpt-5.4",
+              modelSource: "default",
+              reasoningEffort: "xhigh",
+              reasoningSource: "default",
+            };
+      },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
+    },
+    topicControlPanelStore,
+    workerPool: {
+      getActiveRun() {
+        return {
+          state: {
+            status: "running",
+          },
+        };
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "topic-control-menu-navigated");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /^Статус/u);
+  assert.match(edited[0].text, /run: running/u);
+  assert.match(edited[0].text, /лимиты: безлимит/u);
+  assert.equal(edited[0].reply_markup.inline_keyboard[0][0].text, "Refresh");
+  assert.equal(edited[0].reply_markup.inline_keyboard[0][1].text, "Back");
+  assert.equal(topicControlPanelStore.getState(session).active_screen, "status");
+});
+
 test("handleIncomingCallbackQuery updates the global panel language and refreshes the menu", async () => {
   const sent = [];
   const edited = [];
@@ -1472,6 +1728,9 @@ test("handleIncomingCallbackQuery updates the global panel language and refreshe
           prompt_suffix_text: null,
         };
       },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
     },
     workerPool: {
       getActiveRun() {
@@ -1491,6 +1750,7 @@ test("handleIncomingCallbackQuery updates the global panel language and refreshe
   assert.equal(store.getState().active_screen, "root");
   assert.match(edited[0].text, /Global control panel/u);
   assert.match(edited[0].text, /interface language: ENG/u);
+  assert.match(edited[0].text, /limits: unlimited/u);
   assert.match(sent[0].text, /Interface language updated\./u);
 });
 
@@ -2096,10 +2356,10 @@ test("handleIncomingMessage validates /reasoning global against the global targe
     ui_language: "eng",
     spike_model_override: "gpt-5.1-codex-mini",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -2198,10 +2458,10 @@ test("handleIncomingMessage stores topic Omni reasoning via /omni_reasoning", as
     ui_language: "eng",
     omni_reasoning_effort_override: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -2301,10 +2561,10 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -2349,6 +2609,9 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
               reasoningSource: "global",
             };
       },
+      async getCodexLimitsSummary() {
+        return buildWindowedLimitsSummary();
+      },
       async recordHandledSession() {},
     },
     workerPool: {
@@ -2366,6 +2629,72 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
   assert.match(sent[0].text, /reasoning: High \(high\)/u);
   assert.match(sent[0].text, /omni model: gpt-5\.4/u);
   assert.match(sent[0].text, /omni reasoning: Low \(low\)/u);
+  assert.match(sent[0].text, /лимиты 5h: 89% осталось/u);
+});
+
+test("handleIncomingMessage shows topic-local Codex limits", async () => {
+  const sent = [];
+  const session = {
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
+    topic_id: "77",
+    topic_name: "Limits topic",
+    lifecycle_state: "active",
+    ui_language: "eng",
+    workspace_binding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/limits",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async getCodexLimitsSummary() {
+        return buildWindowedLimitsSummary();
+      },
+      async recordHandledSession() {
+        return session;
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "limits");
+  assert.match(sent[0].text, /Codex limits/u);
+  assert.match(sent[0].text, /5h: 89% left/u);
+  assert.match(sent[0].text, /7d: 67% left/u);
 });
 
 test("handleIncomingMessage sends the help card from General topic", async () => {
@@ -2480,10 +2809,10 @@ test("handleIncomingMessage keeps /guide General-only", async () => {
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -2543,10 +2872,10 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -2629,10 +2958,10 @@ test("handleIncomingMessage sends the English help card inside an ENG topic", as
           lifecycle_state: "active",
           ui_language: "eng",
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },
@@ -2777,10 +3106,10 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
       async resolveInheritedBinding() {
         return {
           binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
           inheritedFromSessionKey: null,
         };
@@ -2796,10 +3125,10 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
             chat_id: "-1003577434463",
             topic_id: "55",
             workspace_binding: {
-              repo_root: "/workspace",
-              cwd: "/workspace",
+              repo_root: "/home/bloob/atlas",
+              cwd: "/home/bloob/atlas",
               branch: "main",
-              worktree_path: "/workspace",
+              worktree_path: "/home/bloob/atlas",
             },
           },
         };
@@ -2842,10 +3171,10 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
     omni_model_override: null,
     omni_reasoning_effort_override: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -2904,6 +3233,9 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
           prompt_suffix_text: null,
         };
       },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
       async recordHandledSession() {},
     },
     topicControlPanelStore,
@@ -2946,7 +3278,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
     botUsername: "gatewaybot",
     config,
     message: {
-      text: "/new cwd=projects/codex-telegram-gateway Bound repo",
+      text: "/new cwd=homelab/infra/automation/codex-telegram-gateway Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
       from: { id: 5825672398, is_bot: false },
       chat: { id: -1003577434463 },
@@ -2956,13 +3288,13 @@ test("handleIncomingMessage creates new topic session with explicit binding path
       async resolveBindingPath(requestedPath) {
         assert.equal(
           requestedPath,
-          "projects/codex-telegram-gateway",
+          "homelab/infra/automation/codex-telegram-gateway",
         );
         return {
-          repo_root: "/workspace/projects/codex-telegram-gateway",
-          cwd: "/workspace/projects/codex-telegram-gateway",
+          repo_root: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+          cwd: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
           branch: "main",
-          worktree_path: "/workspace/projects/codex-telegram-gateway",
+          worktree_path: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
         };
       },
       async createTopicSession({ title, workspaceBinding, inheritedFromSessionKey }) {
@@ -2970,7 +3302,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
         assert.equal(inheritedFromSessionKey, null);
         assert.equal(
           workspaceBinding.cwd,
-          "/workspace/projects/codex-telegram-gateway",
+          "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
         );
         return {
           forumTopic: {
@@ -3036,10 +3368,10 @@ test("handleIncomingMessage creates a new topic in English when General panel la
       async resolveInheritedBinding() {
         return {
           binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
           inheritedFromSessionKey: null,
         };
@@ -3058,10 +3390,10 @@ test("handleIncomingMessage creates a new topic in English when General panel la
             topic_id: "57",
             ui_language: "eng",
             workspace_binding: {
-              repo_root: "/workspace",
-              cwd: "/workspace",
+              repo_root: "/home/bloob/atlas",
+              cwd: "/home/bloob/atlas",
               branch: "main",
-              worktree_path: "/workspace",
+              worktree_path: "/home/bloob/atlas",
             },
           },
         };
@@ -3087,6 +3419,7 @@ test("handleIncomingMessage creates a new topic in English when General panel la
 test("handleIncomingMessage opens and pins the local topic control menu with /menu", async () => {
   const sent = [];
   const pinned = [];
+  const deleted = [];
   const topicControlPanelStore = createTopicControlPanelStore();
   const session = {
     session_key: "-1003577434463:55",
@@ -3102,10 +3435,10 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
     omni_model_override: null,
     omni_reasoning_effort_override: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -3117,6 +3450,10 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
       },
       async pinChatMessage(payload) {
         pinned.push(payload);
+        return true;
+      },
+      async deleteMessage(payload) {
+        deleted.push(payload);
         return true;
       },
     },
@@ -3153,6 +3490,9 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
           prompt_suffix_text: null,
         };
       },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
       async recordHandledSession() {},
     },
     topicControlPanelStore,
@@ -3171,8 +3511,205 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
   assert.equal(sent[0].message_thread_id, 55);
   assert.match(sent[0].text, /Topic control panel/u);
   assert.match(sent[0].text, /global suffix routing: on/u);
+  assert.match(sent[0].text, /лимиты: безлимит/u);
+  assert.equal(sent[0].reply_markup.inline_keyboard[3][0].text, "Status");
   assert.equal(pinned.length, 1);
+  assert.equal(deleted.length, 1);
+  assert.equal(deleted[0].message_id, 778);
   assert.equal(topicControlPanelStore.getState(session).menu_message_id, 777);
+});
+
+test("handleIncomingMessage opens the local topic control menu from a suggested /menu@bot command without relying on entities", async () => {
+  const sent = [];
+  const topicControlPanelStore = createTopicControlPanelStore();
+  const session = {
+    session_key: "-1003577434463:55",
+    chat_id: "-1003577434463",
+    topic_id: "55",
+    topic_name: "Slice 4 test",
+    ui_language: "rus",
+    prompt_suffix_topic_enabled: true,
+    prompt_suffix_text: null,
+    prompt_suffix_enabled: false,
+    workspace_binding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 778 };
+      },
+      async pinChatMessage() {
+        return true;
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/menu@gatewaybot",
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_thread_id: 55,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
+      async recordHandledSession() {},
+    },
+    topicControlPanelStore,
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "menu");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Topic control panel/u);
+});
+
+test("handleIncomingMessage recreates the local topic control menu when an explicit /menu hits an unchanged panel", async () => {
+  const sent = [];
+  const edited = [];
+  const pinned = [];
+  const deleted = [];
+  const topicControlPanelStore = createTopicControlPanelStore({
+    menu_message_id: 6871,
+    active_screen: "root",
+  });
+  const session = {
+    session_key: "-1003577434463:2203",
+    chat_id: "-1003577434463",
+    topic_id: "2203",
+    topic_name: "codex-telegram",
+    ui_language: "rus",
+    prompt_suffix_topic_enabled: true,
+    prompt_suffix_text: null,
+    prompt_suffix_enabled: false,
+    spike_model_override: null,
+    spike_reasoning_effort_override: null,
+    omni_model_override: null,
+    omni_reasoning_effort_override: null,
+    workspace_binding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async editMessageText(payload) {
+        edited.push(payload);
+        throw new Error("Telegram API editMessageText failed: message is not modified");
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 6889 };
+      },
+      async pinChatMessage(payload) {
+        pinned.push(payload);
+        return true;
+      },
+      async deleteMessage(payload) {
+        deleted.push(payload);
+        return true;
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/menu@gatewaybot",
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_thread_id: 2203,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async getGlobalCodexSettings() {
+        return {
+          spike_model: null,
+          spike_reasoning_effort: null,
+          omni_model: null,
+          omni_reasoning_effort: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
+      async recordHandledSession() {},
+    },
+    topicControlPanelStore,
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "menu");
+  assert.equal(edited.length, 1);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].message_thread_id, 2203);
+  assert.match(sent[0].text, /Topic control panel/u);
+  assert.equal(pinned.length, 1);
+  assert.equal(deleted.length, 3);
+  assert.equal(deleted[0].message_id, 6871);
+  assert.equal(deleted[1].message_id, 6872);
+  assert.equal(deleted[2].message_id, 6890);
+  assert.equal(topicControlPanelStore.getState(session).menu_message_id, 6889);
 });
 
 test("handleIncomingMessage reports binding resolution failures for /new", async () => {
@@ -4133,10 +4670,10 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
   const firstMessage = {
@@ -4268,10 +4805,10 @@ test("handleIncomingMessage shows /q status with queued prompt previews", async 
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -4319,6 +4856,8 @@ test("handleIncomingMessage shows /q status with queued prompt previews", async 
   assert.match(sent[0].text, /Очередь Spike: 2/u);
   assert.match(sent[0].text, /1\./u);
   assert.match(sent[0].text, /2\./u);
+  assert.match(sent[0].text, /`первый queued prompt на проверку/u);
+  assert.doesNotMatch(sent[0].text, /<code>/u);
 });
 
 test("handleIncomingMessage deletes a queued prompt by position via /q delete", async () => {
@@ -4331,10 +4870,10 @@ test("handleIncomingMessage deletes a queued prompt by position via /q delete", 
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -4382,6 +4921,8 @@ test("handleIncomingMessage deletes a queued prompt by position via /q delete", 
   assert.equal(result.reason, "queue-deleted");
   assert.match(sent[0].text, /Удалил элемент очереди #2/u);
   assert.match(sent[0].text, /Осталось: 1/u);
+  assert.match(sent[0].text, /Коротко: `второй prompt на удаление/u);
+  assert.doesNotMatch(sent[0].text, /<code>/u);
 });
 
 test("handleIncomingMessage queues /q captioned media with attachments when the topic is busy", async () => {
@@ -4395,10 +4936,10 @@ test("handleIncomingMessage queues /q captioned media with attachments when the 
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -4489,6 +5030,8 @@ test("handleIncomingMessage queues /q captioned media with attachments when the 
   assert.equal(queued[0].attachments.length, 1);
   assert.equal(queued[0].attachments[0].file_path, "/tmp/incoming-photo.jpg");
   assert.match(sent[0].text, /Поставил в очередь/u);
+  assert.match(sent[0].text, /Коротко: `Что на фото\?`/u);
+  assert.doesNotMatch(sent[0].text, /<code>/u);
 });
 
 test("handleIncomingMessage buffers long /q prompts and queues the merged text once", async () => {
@@ -4507,10 +5050,10 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
   const longHead = "A".repeat(3200);
@@ -4611,6 +5154,7 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
   assert.match(queued[0].rawPrompt, /tail fragment/u);
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /Поставил в очередь/u);
+  assert.doesNotMatch(sent[0].text, /<code>/u);
 });
 
 test("handleIncomingMessage stores prompt suffix text via /suffix", async () => {
@@ -4621,10 +5165,10 @@ test("handleIncomingMessage stores prompt suffix text via /suffix", async () => 
     prompt_suffix_text: null,
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -4751,10 +5295,10 @@ test("handleIncomingMessage disables topic prompt suffix routing via /suffix top
     prompt_suffix_text: "TOPIC\nKeep it short.",
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -4899,10 +5443,10 @@ test("handleIncomingMessage carries attachment-only message into the next text p
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
   const attachmentMessage = {
@@ -5036,10 +5580,10 @@ test("handleIncomingMessage keeps /q attachment buffering separate from direct S
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
     auto_mode: {
       enabled: false,
@@ -5482,10 +6026,10 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
           session_key: "-1003577434463:80",
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },
@@ -5522,10 +6066,10 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
           session_key: "-1003577434463:80",
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },
@@ -5568,10 +6112,10 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
   const waitCommand = {
@@ -5824,10 +6368,10 @@ test("handleIncomingMessage keeps /wait global persistent across topics", async 
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },
@@ -5838,10 +6382,10 @@ test("handleIncomingMessage keeps /wait global persistent across topics", async 
           topic_id: String(message.message_thread_id),
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },

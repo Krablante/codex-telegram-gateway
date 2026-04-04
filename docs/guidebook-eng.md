@@ -28,7 +28,7 @@ Short version: `Spike` is the live worker, and `Omni` is the `/auto` supervisor.
 
 ## Where to write and what happens next
 
-Inside a work topic, plain text is treated as a normal prompt. If the topic is free, the run starts immediately. If a run is still active, a follow-up can be folded into the same work stream as a continuation.
+Inside a work topic, plain text is treated as a normal prompt. If the topic is free, the run starts immediately. If a run is still active, a follow-up can be folded into the same work stream as a continuation. This is not limited to one extra message: while the live run is still open, you can keep sending additional follow-ups and they continue steering that same run.
 
 `/q` is for a different case: when you do not mean "here is one more thought", but explicitly mean "do this next after the current work finishes". In that case the prompt goes into the `Spike` queue.
 
@@ -81,8 +81,9 @@ If the rule belongs to one topic, use a topic suffix. If it is your default habi
 You often do not need to type commands by hand at all. `General` has a global menu for chat-wide settings, and each work topic has a local menu for that topic. Those menus are the easiest way to change language, wait windows, models, and other common settings without memorizing command syntax.
 
 - `/help` shows the command list with short explanations. If a command is unclear or you want to see the full list, start with `/help`.
+- `/limits` shows the current Codex limits state, including the live `5h` and `7d` windows or explicit unlimited mode.
 - `/status` shows the topic state and the effective model and reasoning profile.
-- `/menu` opens the local topic settings.
+- `/menu` opens the local topic settings, including an in-menu `Status` screen. Reopening it replaces the older menu cleanly, and Telegram-style `/menu@YourBot` suggestions work too.
 - `/language` changes the UI language.
 - `/model` and `/reasoning` control `Spike`.
 - `/omni_model` and `/omni_reasoning` control `Omni` when `/auto` is part of the deployment.

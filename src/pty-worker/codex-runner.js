@@ -13,6 +13,7 @@ const APP_SERVER_SHUTDOWN_GRACE_MS = 5000;
 const ROLLOUT_DISCOVERY_TIMEOUT_MS = 5000;
 const ROLLOUT_POLL_INTERVAL_MS = 1000;
 const ROLLOUT_STALL_AFTER_CHILD_EXIT_MS = 5000;
+const ROLLOUT_REPLAY_OVERLAP_BYTES = 64 * 1024;
 const CODEX_SESSIONS_ROOT = path.join(os.homedir(), ".codex", "sessions");
 
 export function buildCodexArgs({
@@ -485,7 +486,7 @@ export function runCodexTask({
   let primaryThreadId = sessionThreadId;
   let activeTurnId = null;
   let rolloutPath = null;
-  let rolloutOffsetAtDisconnect = null;
+  let rolloutObservedOffset = null;
   let resumeReplacement = null;
   let rpc = null;
   let shuttingDown = false;
@@ -593,6 +594,40 @@ export function runCodexTask({
     await onEvent?.(summary, null);
   };
 
+  const buildSummaryReplayKey = (summary) => {
+    if (!summary || typeof summary !== "object") {
+      return null;
+    }
+
+    return JSON.stringify({
+      kind: summary.kind || null,
+      eventType: summary.eventType || null,
+      text: summary.text || "",
+      messagePhase: summary.messagePhase || null,
+      threadId: summary.threadId || primaryThreadId || latestThreadId || null,
+      turnId: summary.turnId || null,
+      usage: summary.usage || null,
+      command: summary.command || null,
+      exitCode: summary.exitCode ?? null,
+    });
+  };
+
+  const seenSummaryKeys = new Set();
+
+  const rememberSummary = (summary) => {
+    const replayKey = buildSummaryReplayKey(summary);
+    if (!replayKey) {
+      return false;
+    }
+
+    if (seenSummaryKeys.has(replayKey)) {
+      return false;
+    }
+
+    seenSummaryKeys.add(replayKey);
+    return true;
+  };
+
   const summarizeRolloutLine = (line) => {
     const event = safeJsonParse(line);
     if (event?.type !== "event_msg" || !event.payload) {
@@ -640,10 +675,12 @@ export function runCodexTask({
     try {
       const stats = await handle.stat();
       let nextOffset = offset;
-      let nextCarryover = carryover;
+      let nextCarryover = Buffer.isBuffer(carryover)
+        ? carryover
+        : Buffer.from(String(carryover || ""), "utf8");
       if (stats.size < offset) {
         nextOffset = 0;
-        nextCarryover = "";
+        nextCarryover = Buffer.alloc(0);
       }
       if (stats.size === nextOffset) {
         return {
@@ -656,11 +693,38 @@ export function runCodexTask({
       const bytesToRead = stats.size - nextOffset;
       const buffer = Buffer.alloc(bytesToRead);
       const { bytesRead } = await handle.read(buffer, 0, bytesToRead, nextOffset);
-      const chunk = `${nextCarryover}${buffer.toString("utf8", 0, bytesRead)}`;
-      const parts = chunk.split("\n");
-      nextCarryover = parts.pop() ?? "";
+      const chunk = nextCarryover.length > 0
+        ? Buffer.concat([nextCarryover, buffer.subarray(0, bytesRead)])
+        : buffer.subarray(0, bytesRead);
+      const chunkStartOffset = nextOffset - nextCarryover.length;
+      const lines = [];
+      let lineStartIndex = 0;
+      for (let index = 0; index < chunk.length; index += 1) {
+        if (chunk[index] !== 0x0A) {
+          continue;
+        }
+
+        let lineBuffer = chunk.subarray(lineStartIndex, index);
+        if (
+          lineBuffer.length > 0 &&
+          lineBuffer[lineBuffer.length - 1] === 0x0D
+        ) {
+          lineBuffer = lineBuffer.subarray(0, lineBuffer.length - 1);
+        }
+
+        const text = lineBuffer.toString("utf8").trim();
+        if (text) {
+          lines.push({
+            text,
+            startOffset: chunkStartOffset + lineStartIndex,
+            endOffset: chunkStartOffset + index + 1,
+          });
+        }
+        lineStartIndex = index + 1;
+      }
+      nextCarryover = chunk.subarray(lineStartIndex);
       return {
-        lines: parts.map((part) => part.trim()).filter(Boolean),
+        lines,
         nextOffset: nextOffset + bytesRead,
         carryover: nextCarryover,
       };
@@ -671,6 +735,10 @@ export function runCodexTask({
 
   const followRolloutAfterDisconnect = async (disconnectError) => {
     const rolloutPathWasKnownAtDisconnect = Boolean(rolloutPath);
+    const replayFloorOffset = rolloutPathWasKnownAtDisconnect &&
+      Number.isInteger(rolloutObservedOffset)
+      ? rolloutObservedOffset
+      : 0;
     const startedAt = Date.now();
     while (!rolloutPath) {
       const resolved = await readLatestContextSnapshot({
@@ -689,12 +757,10 @@ export function runCodexTask({
     }
 
     let offset = rolloutPathWasKnownAtDisconnect &&
-      Number.isInteger(rolloutOffsetAtDisconnect)
-      ? rolloutOffsetAtDisconnect
-      : rolloutPathWasKnownAtDisconnect
-        ? await fs.stat(rolloutPath).then((stats) => stats.size)
-        : 0;
-    let carryover = "";
+      Number.isInteger(rolloutObservedOffset)
+      ? Math.max(0, rolloutObservedOffset - ROLLOUT_REPLAY_OVERLAP_BYTES)
+      : 0;
+    let carryover = Buffer.alloc(0);
     let lastObservedGrowthAt = Date.now();
     while (!settled) {
       const previousOffset = offset;
@@ -710,8 +776,15 @@ export function runCodexTask({
       }
 
       for (const line of delta.lines) {
-        const summary = summarizeRolloutLine(line);
+        if (line.endOffset <= replayFloorOffset) {
+          continue;
+        }
+
+        const summary = summarizeRolloutLine(line.text);
         if (!summary) {
+          continue;
+        }
+        if (!rememberSummary(summary)) {
           continue;
         }
         if (summary.kind === "turn" && summary.usage) {
@@ -752,12 +825,17 @@ export function runCodexTask({
     }
 
     const input = pendingSteerInputs.splice(0, pendingSteerInputs.length);
+    const expectedTurnId = activeTurnId;
     try {
-      await rpc.request("turn/steer", {
+      const steerResponse = await rpc.request("turn/steer", {
         threadId: latestThreadId,
-        expectedTurnId: activeTurnId,
+        expectedTurnId,
         input,
       });
+      activeTurnId =
+        steerResponse?.turn?.id
+        || steerResponse?.turnId
+        || expectedTurnId;
     } catch (error) {
       pendingSteerInputs.unshift(...input);
       throw error;
@@ -883,6 +961,7 @@ export function runCodexTask({
       }
 
       if (summary) {
+        rememberSummary(summary);
         try {
           await onEvent?.(summary, event);
         } catch {}
@@ -914,20 +993,6 @@ export function runCodexTask({
         rpc = null;
         activeTurnId = null;
         Promise.resolve()
-          .then(async () => {
-            if (!rolloutPath) {
-              rolloutOffsetAtDisconnect = null;
-              return;
-            }
-
-            try {
-              rolloutOffsetAtDisconnect = await fs
-                .stat(rolloutPath)
-                .then((stats) => stats.size);
-            } catch {
-              rolloutOffsetAtDisconnect = null;
-            }
-          })
           .then(() => followRolloutAfterDisconnect(error))
           .catch((disconnectError) => {
             if (settled) {
@@ -938,7 +1003,6 @@ export function runCodexTask({
           })
           .finally(() => {
             recoveringFromDisconnect = false;
-            rolloutOffsetAtDisconnect = null;
           });
       },
     });
@@ -995,6 +1059,11 @@ export function runCodexTask({
       knownRolloutPath: rolloutPath,
     });
     rolloutPath = latestContext.rolloutPath || rolloutPath;
+    if (rolloutPath) {
+      try {
+        rolloutObservedOffset = await fs.stat(rolloutPath).then((stats) => stats.size);
+      } catch {}
+    }
 
     const turnResponse = await rpc.request("turn/start", {
       threadId: latestThreadId,

@@ -52,10 +52,7 @@ import {
   normalizeReasoningEffort,
   resolveCodexRuntimeProfile,
 } from "../session-manager/codex-runtime-settings.js";
-import {
-  buildLegacyContextSnapshot,
-  normalizeContextSnapshot,
-} from "../session-manager/context-snapshot.js";
+import { formatCodexLimitsMessage } from "../codex-runtime/limits.js";
 import {
   canAutoModeAcceptPromptFromMessage,
   isAutoModeHumanInputLocked,
@@ -65,6 +62,10 @@ import { getTopicIdFromMessage } from "../session-manager/session-key.js";
 import { getHelpCardAssets } from "./help-card.js";
 import { getGuidebookAsset } from "./guidebook.js";
 import {
+  buildStatusMessage,
+  resolveStatusView,
+} from "./status-view.js";
+import {
   safeSendDocumentToTopic,
   safeSendMessage,
 } from "./topic-delivery.js";
@@ -72,6 +73,7 @@ import { clearTrackedGeneralMessages } from "./general-message-cleanup.js";
 
 export {
   buildReplyMessageParams,
+  buildStatusMessage,
   extractBotCommand,
   getTopicLabel,
   isForeignBotCommand,
@@ -251,13 +253,20 @@ function buildQueueEmptyMessage(language = DEFAULT_UI_LANGUAGE) {
     : "Очередь Spike пуста.";
 }
 
+function formatQueuePreview(preview) {
+  const normalized = String(preview || "")
+    .trim()
+    .replace(/`/gu, "'");
+  return normalized ? `\`${normalized}\`` : null;
+}
+
 function buildQueueQueuedMessage({
   position,
   preview,
   waitingForCapacity = false,
   language = DEFAULT_UI_LANGUAGE,
 } = {}) {
-  const escapedPreview = preview ? escapeHtml(preview) : null;
+  const formattedPreview = formatQueuePreview(preview);
   if (isEnglish(language)) {
     const lines = [
       position > 1
@@ -269,8 +278,8 @@ function buildQueueQueuedMessage({
         ? "It will start as soon as Spike gets a free worker slot."
         : "It will start right after the current run finishes.",
     ];
-    if (escapedPreview) {
-      lines.push("", `Preview: <code>${escapedPreview}</code>`);
+    if (formattedPreview) {
+      lines.push(`Preview: ${formattedPreview}`);
     }
     return lines.join("\n");
   }
@@ -285,8 +294,8 @@ function buildQueueQueuedMessage({
       ? "Запущу, как только у Spike освободится worker slot."
       : "Запущу сразу после завершения текущего run.",
   ];
-  if (escapedPreview) {
-    lines.push("", `Коротко: <code>${escapedPreview}</code>`);
+  if (formattedPreview) {
+    lines.push(`Коротко: ${formattedPreview}`);
   }
   return lines.join("\n");
 }
@@ -297,18 +306,20 @@ function buildQueueDeletedMessage(
   remaining,
   language = DEFAULT_UI_LANGUAGE,
 ) {
-  const preview = escapeHtml(summarizeQueuedPrompt(entry?.raw_prompt || entry?.prompt));
+  const preview = formatQueuePreview(
+    summarizeQueuedPrompt(entry?.raw_prompt || entry?.prompt),
+  );
   if (isEnglish(language)) {
     return [
       `Removed queue item #${position}.`,
-      preview ? `Preview: <code>${preview}</code>` : null,
+      preview ? `Preview: ${preview}` : null,
       `Remaining: ${remaining}.`,
     ].filter(Boolean).join("\n");
   }
 
   return [
     `Удалил элемент очереди #${position}.`,
-    preview ? `Коротко: <code>${preview}</code>` : null,
+    preview ? `Коротко: ${preview}` : null,
     `Осталось: ${remaining}.`,
   ].filter(Boolean).join("\n");
 }
@@ -331,10 +342,10 @@ function buildQueueStatusMessage(entries = [], language = DEFAULT_UI_LANGUAGE) {
     heading,
     "",
     ...entries.map((entry, index) => {
-      const preview = escapeHtml(
+      const preview = formatQueuePreview(
         summarizeQueuedPrompt(entry?.raw_prompt || entry?.prompt),
       );
-      return `${index + 1}. <code>${preview || "..."}</code>`;
+      return `${index + 1}. ${preview || "`...`"}`;
     }),
   ].join("\n");
 }
@@ -346,18 +357,6 @@ function formatBinding(binding) {
     `binding.branch: ${binding.branch ?? "none"}`,
     `binding.worktree_path: ${binding.worktree_path}`,
   ].join("\n");
-}
-
-function formatNumber(value, language = DEFAULT_UI_LANGUAGE) {
-  return Number.isInteger(value)
-    ? String(value)
-    : (isEnglish(language) ? "unknown" : "неизвестно");
-}
-
-function formatPercent(value, language = DEFAULT_UI_LANGUAGE) {
-  return Number.isFinite(value)
-    ? `${value.toFixed(1)}%`
-    : (isEnglish(language) ? "unknown" : "неизвестно");
 }
 
 function formatCodexSettingValue(kind, value, language = DEFAULT_UI_LANGUAGE) {
@@ -809,149 +808,6 @@ async function handleScopedRuntimeSettingCommand({
   };
 }
 
-function buildEffectiveContextSnapshot(
-  state,
-  session,
-  activeRun,
-  explicitSnapshot = null,
-) {
-  return (
-    normalizeContextSnapshot(
-      explicitSnapshot ??
-        activeRun?.state?.contextSnapshot ??
-        session.last_context_snapshot,
-    ) ??
-    buildLegacyContextSnapshot({
-      usage: activeRun?.state?.lastTokenUsage ?? session.last_token_usage,
-      contextWindow: state.codexContextWindow ?? null,
-    })
-  );
-}
-
-async function resolveStatusRuntimeProfile(
-  sessionService,
-  session,
-  state,
-  target,
-) {
-  if (typeof sessionService.resolveCodexRuntimeProfile === "function") {
-    return sessionService.resolveCodexRuntimeProfile(session, { target });
-  }
-
-  const globalSettings =
-    typeof sessionService.getGlobalCodexSettings === "function"
-      ? await sessionService.getGlobalCodexSettings()
-      : null;
-  const availableModels = await loadAvailableCodexModels({
-    configPath: state.codexConfigPath,
-  });
-  return resolveCodexRuntimeProfile({
-    session,
-    globalSettings,
-    config: state,
-    target,
-    availableModels,
-  });
-}
-
-function buildContextStatusLines(contextSnapshot, language = DEFAULT_UI_LANGUAGE) {
-  const usage = contextSnapshot?.last_token_usage ?? null;
-  const contextWindow = contextSnapshot?.model_context_window ?? null;
-  const english = isEnglish(language);
-
-  if (!usage) {
-    return [
-      english
-        ? "context usage: no completed turn yet"
-        : "использование контекста: ещё нет завершённого turn",
-      `${english ? "context tokens" : "токены контекста"}: ${english ? "unknown" : "неизвестно"} / ${formatNumber(contextWindow, language)}`,
-      `${english ? "available tokens" : "доступно токенов"}: ${english ? "unknown" : "неизвестно"}`,
-    ];
-  }
-
-  const totalTokens = usage.total_tokens;
-  const availableTokens =
-    contextWindow !== null && totalTokens !== null
-      ? Math.max(contextWindow - totalTokens, 0)
-      : null;
-  const usagePercent =
-    contextWindow !== null &&
-    contextWindow > 0 &&
-    totalTokens !== null
-      ? (totalTokens / contextWindow) * 100
-      : null;
-
-  const lines = [
-    `${english ? "context usage" : "использование контекста"}: ${formatPercent(usagePercent, language)}`,
-    `${english ? "context tokens" : "токены контекста"}: ${formatNumber(totalTokens, language)} / ${formatNumber(contextWindow, language)}`,
-    `${english ? "available tokens" : "доступно токенов"}: ${formatNumber(availableTokens, language)}`,
-    `${english ? "input/cached/output" : "вход/кэш/выход"}: ${formatNumber(usage.input_tokens, language)} / ${formatNumber(usage.cached_input_tokens, language)} / ${formatNumber(usage.output_tokens, language)}`,
-  ];
-
-  if (usage.reasoning_tokens !== null) {
-    lines.push(
-      `${english ? "reasoning tokens" : "reasoning tokens"}: ${formatNumber(usage.reasoning_tokens, language)}`,
-    );
-  }
-
-  return lines;
-}
-
-export function buildStatusMessage(
-  state,
-  message,
-  session,
-  activeRun = null,
-  contextSnapshot = null,
-  runtimeProfiles = null,
-  language = getSessionUiLanguage(session),
-) {
-  const english = isEnglish(language);
-  const omniEnabled = isOmniEnabled(state);
-  const runStatus = activeRun?.state.status ?? session.last_run_status ?? "idle";
-  const effectiveContextSnapshot = buildEffectiveContextSnapshot(
-    state,
-    session,
-    activeRun,
-    contextSnapshot,
-  );
-  const contextWindow =
-    effectiveContextSnapshot?.model_context_window ??
-    (Number.isInteger(state.codexContextWindow) ? state.codexContextWindow : null);
-  const spikeProfile = runtimeProfiles?.spike ?? {
-    model: state.codexModel ?? null,
-    reasoningEffort: state.codexReasoningEffort ?? null,
-  };
-  const omniProfile = runtimeProfiles?.omni ?? {
-    model: state.codexModel ?? null,
-    reasoningEffort: state.codexReasoningEffort ?? null,
-  };
-
-  return [
-    english ? "Status" : "Статус",
-    "",
-    `${english ? "topic" : "тема"}: ${session.topic_name ?? getTopicLabel(message)}`,
-    `${english ? "session" : "сессия"}: ${session.lifecycle_state}`,
-    `run: ${runStatus}`,
-    `${english ? "folder" : "папка"}: ${session.workspace_binding.cwd}`,
-    `${english ? "branch" : "ветка"}: ${session.workspace_binding.branch ?? "none"}`,
-    "",
-    `${english ? "language" : "язык"}: ${getLanguageLabel(language)}`,
-    `${english ? "model" : "модель"}: ${spikeProfile.model ?? (english ? "unknown" : "неизвестно")}`,
-    `${english ? "reasoning" : "reasoning"}: ${formatCodexSettingValue("reasoning", spikeProfile.reasoningEffort, language)}`,
-    ...(omniEnabled
-      ? [
-          `${english ? "omni model" : "omni model"}: ${omniProfile.model ?? (english ? "unknown" : "неизвестно")}`,
-          `${english ? "omni reasoning" : "omni reasoning"}: ${formatCodexSettingValue("reasoning", omniProfile.reasoningEffort, language)}`,
-        ]
-      : []),
-    `${english ? "context window" : "context window"}: ${formatNumber(contextWindow, language)}`,
-    `${english ? "auto-compact" : "auto-compact"}: ${formatNumber(state.codexAutoCompactTokenLimit, language)}`,
-    "",
-    ...buildContextStatusLines(effectiveContextSnapshot, language),
-  ].join("\n");
-}
-
 export function buildInterruptMessage(
   message,
   session,
@@ -975,13 +831,13 @@ export function buildUnknownCommandMessage(
 ) {
   if (isEnglish(language)) {
     return omniEnabled
-      ? "Available commands: /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact, and /purge."
-      : "Available commands: /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact, and /purge.";
+      ? "Available commands: /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact, and /purge."
+      : "Available commands: /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact, and /purge.";
   }
 
   return omniEnabled
-    ? "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact и /purge."
-    : "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact и /purge.";
+    ? "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact и /purge."
+    : "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact и /purge.";
 }
 
 function buildHelpTextMessage(
@@ -998,6 +854,7 @@ function buildHelpTextMessage(
       "/new [cwd=...|path=...] [title] — create a new work topic",
       "/zoo — open the dedicated Zoo topic",
       "/status — session, model, and context status",
+      "/limits — current Codex rate-limit windows",
       "/global — pin-friendly global settings menu in General",
       "/menu — pin-friendly local settings menu in this topic",
       ...(omniEnabled
@@ -1046,6 +903,7 @@ function buildHelpTextMessage(
     "/new [cwd=...|path=...] [title] — новая рабочая тема",
     "/zoo — открыть отдельный Zoo topic",
     "/status — статус сессии, модели и контекста",
+    "/limits — текущие окна лимитов Codex",
     "/global — pin-friendly Global settings menu в General",
     "/menu — pin-friendly menu локальных настроек в этом топике",
     ...(omniEnabled
@@ -1179,6 +1037,7 @@ function buildOmniUnavailableMessage(
 const AUTO_MODE_ALLOWED_HUMAN_COMMANDS = new Set([
   "help",
   "status",
+  "limits",
   "interrupt",
   "language",
   "diff",
@@ -2690,6 +2549,7 @@ export async function handleIncomingMessage({
       sessionService,
       topicControlPanelStore,
       applyTopicWaitChange,
+      workerPool,
     });
     if (topicControlReplyResult?.handled) {
       return topicControlReplyResult;
@@ -2943,6 +2803,7 @@ export async function handleIncomingMessage({
         session,
         sessionService,
         topicControlPanelStore,
+        workerPool,
         pin: true,
       });
     }
@@ -3012,6 +2873,7 @@ export async function handleIncomingMessage({
       promptFragmentAssembler,
       sessionService,
       topicControlPanelStore,
+      workerPool,
     });
     markCommandHandled(serviceState, command.name);
     return { handled: true, command: command.name, reason: result.reason };
@@ -3541,6 +3403,24 @@ export async function handleIncomingMessage({
     return { handled: true, command: command.name };
   }
 
+  if (command.name === "limits" && !topicId) {
+    const limitsSummary =
+      typeof sessionService.getCodexLimitsSummary === "function"
+        ? await sessionService.getCodexLimitsSummary()
+        : null;
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        formatCodexLimitsMessage(limitsSummary, generalUiLanguage),
+      ),
+      null,
+      lifecycleManager,
+    );
+    markCommandHandled(serviceState, command.name);
+    return { handled: true, command: command.name };
+  }
+
   if (!topicId) {
     await safeSendMessage(
       api,
@@ -3559,55 +3439,22 @@ export async function handleIncomingMessage({
   let handledSession = session;
   let backgroundCompactPromise = null;
   if (command.name === "status") {
-    const activeRun = workerPool.getActiveRun(session.session_key);
-    const contextState =
-      typeof sessionService.resolveContextSnapshot === "function"
-        ? await sessionService.resolveContextSnapshot(session, {
-            threadId: activeRun?.state?.threadId ?? session.codex_thread_id ?? null,
-            rolloutPath:
-              activeRun?.state?.rolloutPath ?? session.codex_rollout_path ?? null,
-          })
-        : {
-            session,
-            snapshot: null,
-          };
-    handledSession = contextState.session;
-    if (activeRun?.state && contextState.snapshot) {
-      activeRun.state.contextSnapshot = contextState.snapshot;
-      activeRun.state.rolloutPath =
-        contextState.snapshot.rollout_path ??
-        handledSession.codex_rollout_path ??
-        null;
-    }
-    const spikeRuntimeProfile = await resolveStatusRuntimeProfile(
-      sessionService,
-      handledSession,
-      serviceState,
-      "spike",
-    );
-    const omniRuntimeProfile =
-      config.omniEnabled !== false
-        ? await resolveStatusRuntimeProfile(
-            sessionService,
-            handledSession,
-            serviceState,
-            "omni",
-          )
-        : null;
-    responseText = buildStatusMessage(
-      serviceState,
+    const statusView = await resolveStatusView({
+      state: serviceState,
       message,
-      handledSession,
-      activeRun,
-      contextState.snapshot,
-      {
-        spike: spikeRuntimeProfile,
-        ...(config.omniEnabled !== false
-          ? { omni: omniRuntimeProfile }
-          : {}),
-      },
+      session,
+      sessionService,
+      workerPool,
       language,
-    );
+    });
+    handledSession = statusView.session;
+    responseText = statusView.text;
+  } else if (command.name === "limits") {
+    const limitsSummary =
+      typeof sessionService.getCodexLimitsSummary === "function"
+        ? await sessionService.getCodexLimitsSummary()
+        : null;
+    responseText = formatCodexLimitsMessage(limitsSummary, language);
   } else if (command.name === "interrupt") {
     responseText = buildInterruptMessage(
       message,
@@ -3987,6 +3834,7 @@ export async function handleIncomingCallbackQuery({
     promptFragmentAssembler,
     sessionService,
     topicControlPanelStore,
+    workerPool,
   });
 
   if (topicResult.handled) {
