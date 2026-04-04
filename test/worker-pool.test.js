@@ -1172,7 +1172,7 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
   assert.equal(sentDocuments[0].chat_id, -1003577434463);
   assert.equal(sentDocuments[0].message_thread_id, 1881);
   assert.equal(sentDocuments[0].caption, "Server report");
-  assert.equal(sentDocuments[0].document.filePath, filePath);
+  assert.equal(sentDocuments[0].document.filePath, await fs.realpath(filePath));
   assert.equal(sentDocuments[0].document.fileName, "report.txt");
   assert.equal(sentMessages.at(-1).text, "Отправил файл: report.txt.");
 
@@ -1412,6 +1412,7 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
     },
   });
 
+  const outsideFilePath = process.execPath;
   const sentMessages = [];
   const sentDocuments = [];
   const workerPool = new CodexWorkerPool({
@@ -1447,8 +1448,8 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
         const text = [
           "```telegram-file",
           "action: send",
-          "path: /etc/hosts",
-          "filename: hosts.txt",
+          `path: ${outsideFilePath}`,
+          `filename: ${path.basename(outsideFilePath)}`,
           "```",
         ].join("\n");
         await onEvent(
