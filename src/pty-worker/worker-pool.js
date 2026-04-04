@@ -414,7 +414,11 @@ async function resolveExistingRealPath(filePath) {
 }
 
 function isPathInsideRoot(targetPath, rootPath) {
-  return targetPath === rootPath || targetPath.startsWith(`${rootPath}${path.sep}`);
+  const relativePath = path.relative(rootPath, targetPath);
+  return (
+    relativePath === ""
+    || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
 }
 
 function buildReplyParams(session, text, replyToMessageId = null) {
@@ -1412,20 +1416,6 @@ export class CodexWorkerPool {
 
       const candidateFilePath = path.resolve(filePath);
 
-      if (
-        !allowedRoots.some((rootPath) =>
-          isPathInsideRoot(candidateFilePath, rootPath),
-        )
-      ) {
-        failures.push({
-          label,
-          error: isEnglish(language)
-            ? "path is outside allowed delivery roots; copy the file into the worktree, session state, or the system temp dir first"
-            : "путь вне разрешённых зон доставки; сначала скопируй файл в worktree, session state или системную temp-директорию",
-        });
-        continue;
-      }
-
       const resolvedFilePath = await resolveExistingRealPath(candidateFilePath);
       if (!resolvedFilePath) {
         failures.push({
@@ -1433,6 +1423,20 @@ export class CodexWorkerPool {
           error: isEnglish(language)
             ? `file not found: ${filePath}`
             : `файл не найден: ${filePath}`,
+        });
+        continue;
+      }
+
+      if (
+        !allowedRoots.some((rootPath) =>
+          isPathInsideRoot(resolvedFilePath, rootPath),
+        )
+      ) {
+        failures.push({
+          label,
+          error: isEnglish(language)
+            ? "path is outside allowed delivery roots; copy the file into the worktree, session state, or the system temp dir first"
+            : "путь вне разрешённых зон доставки; сначала скопируй файл в worktree, session state или системную temp-директорию",
         });
         continue;
       }
