@@ -10,6 +10,22 @@ import {
   resolveExecutablePath,
 } from "../src/runtime/executable-path.js";
 
+const HOST_EXECUTABLE_TEST_PLATFORM = process.platform === "win32"
+  ? "win32"
+  : "linux";
+
+function getHostExecutableFileName(baseName = "codex") {
+  return HOST_EXECUTABLE_TEST_PLATFORM === "win32"
+    ? `${baseName}.cmd`
+    : baseName;
+}
+
+function getHostExecutableEnv() {
+  return HOST_EXECUTABLE_TEST_PLATFORM === "win32"
+    ? { PATHEXT: ".CMD" }
+    : undefined;
+}
+
 async function makeExecutable(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, "#!/bin/sh\nexit 0\n", "utf8");
@@ -80,17 +96,19 @@ test("resolveExecutablePath prefers the node-adjacent directory before PATH", as
   );
   const preferredDir = path.join(tempRoot, "preferred");
   const pathDir = path.join(tempRoot, "path");
-  const preferredExecutable = path.join(preferredDir, "codex");
-  const pathExecutable = path.join(pathDir, "codex");
+  const executableFileName = getHostExecutableFileName();
+  const preferredExecutable = path.join(preferredDir, executableFileName);
+  const pathExecutable = path.join(pathDir, executableFileName);
 
   await makeExecutable(preferredExecutable);
   await makeExecutable(pathExecutable);
 
   try {
     const resolved = await resolveExecutablePath("codex", {
-      platform: "linux",
+      platform: HOST_EXECUTABLE_TEST_PLATFORM,
       preferredDirectories: [preferredDir],
       pathValue: pathDir,
+      env: getHostExecutableEnv(),
     });
 
     assert.equal(resolved, preferredExecutable);
@@ -103,15 +121,21 @@ test("resolveExecutablePath accepts repo-relative executable paths without a she
   const tempRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-executable-relative-"),
   );
-  const executablePath = path.join(tempRoot, "vendor", "bin", "codex");
+  const executablePath = path.join(
+    tempRoot,
+    "vendor",
+    "bin",
+    getHostExecutableFileName(),
+  );
 
   await makeExecutable(executablePath);
 
   try {
     const resolved = await resolveExecutablePath("./vendor/bin/codex", {
       cwd: tempRoot,
-      platform: "linux",
+      platform: HOST_EXECUTABLE_TEST_PLATFORM,
       pathValue: "",
+      env: getHostExecutableEnv(),
     });
 
     assert.equal(resolved, executablePath);

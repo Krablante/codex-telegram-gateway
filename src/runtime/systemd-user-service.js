@@ -56,9 +56,9 @@ export function buildServicePathEntries({
   currentPath = process.env.PATH || process.env.Path || "",
 } = {}) {
   return [
-    path.dirname(String(nodePath ?? "")),
+    path.posix.dirname(String(nodePath ?? "")),
     ...String(currentPath)
-      .split(path.delimiter)
+      .split(":")
       .map((entry) => entry.trim())
       .filter(Boolean),
     "/usr/local/sbin",
@@ -94,7 +94,7 @@ export function buildUserServiceUnit({
   exitType = null,
 }) {
   const pathValue = [...new Set(pathEntries.filter(Boolean))].join(":");
-  const scriptAbsolutePath = path.resolve(repoRoot, scriptPath);
+  const scriptAbsolutePath = path.posix.resolve(repoRoot, scriptPath);
 
   return [
     "[Unit]",
