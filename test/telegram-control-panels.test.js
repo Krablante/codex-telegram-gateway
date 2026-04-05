@@ -605,6 +605,64 @@ test("handleGlobalControlCallbackQuery dispatches /zoo from the global root menu
   }]);
 });
 
+test("handleIncomingCallbackQuery keeps zoo routing alive for the global Zoo button", async () => {
+  const answered = [];
+  const zooMessages = [];
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText() {
+        throw new Error("Zoo shortcut should route through zooService");
+      },
+      async sendMessage() {
+        throw new Error("Zoo shortcut should not send a General no-session reply");
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-zoo-live-route",
+      data: "gcfg:z:show",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      active_screen: "root",
+    }),
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService(),
+    workerPool: buildIdleWorkerPool(),
+    zooService: {
+      async handleCallbackQuery() {
+        return { handled: false };
+      },
+      async maybeHandleIncomingMessage({ message }) {
+        zooMessages.push(message);
+        return { handled: true, command: "zoo", reason: "zoo-topic-opened" };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "global-control-zoo-opened");
+  assert.equal(answered.length, 1);
+  assert.equal(zooMessages.length, 1);
+  assert.equal(zooMessages[0].text, "/zoo");
+  assert.equal(zooMessages[0].is_internal_global_control_dispatch, true);
+});
+
 test("handleGlobalControlCallbackQuery dispatches /clear from the global root menu", async () => {
   const answered = [];
   const dispatched = [];

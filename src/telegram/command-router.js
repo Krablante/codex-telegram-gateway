@@ -457,6 +457,7 @@ export async function handleIncomingCallbackQuery({
     globalControlPanelStore,
     generalMessageLedgerStore,
     topicControlPanelStore,
+    zooService,
     promptStartGuard,
     promptFragmentAssembler,
     queuePromptAssembler,
