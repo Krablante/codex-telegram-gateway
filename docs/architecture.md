@@ -89,10 +89,16 @@ This repo now explicitly follows a modular-first handler model.
 - keep tests aligned with the same ownership boundaries instead of pushing everything back into router-sized suites
 - use shared helper modules for real cross-domain contracts, not as a dumping ground for unrelated code
 
+## Current watchlist
+
+- `src/cli/run.js` is still the composition root, not a business-logic home. Keep new polling, rollout, and maintenance behavior moving outward into dedicated runtime modules instead of thickening the bootstrap loop.
+- `src/session-manager/session-store.js` is the broadest persistence slice. If it grows much further, split storage concerns by responsibility instead of leaving one ever-growing file-backed state hub.
+- `src/pty-worker/worker-pool-lifecycle.js` is intentionally the run-lifecycle owner, but new steer or delivery behavior should stay in `worker-pool-transport.js` and `worker-pool-delivery.js` unless it truly belongs to lifecycle coordination.
+
 ## Transport behavior
 
 - a normal prompt starts a Codex turn through `app-server`
-- repeated follow-up prompts that land while the run is still active are sent into that same live turn through `turn/steer`
+- repeated follow-up prompts that land while the run is still active are sent into that same live turn through `turn/steer`; short transient steer failures are retried before the gateway falls back to the next prompt queue
 - button-driven control-panel and status surfaces prefer cached Codex limits immediately and refresh them in the background instead of stalling a menu redraw on a slow limits source
 - button presses now also clear Telegram's callback spinner on a per-batch fast path before the full message/callback business logic finishes, so button pickup stays snappy even when the batch still has heavier work behind it
 - service rollout is now per-topic rather than whole-process drain: a retiring generation keeps only the topics that already had an active run, while the replacement generation becomes the intake leader for everything else
