@@ -76,7 +76,7 @@ This project deliberately stays focused:
 Core capabilities:
 
 - plain prompts start durable local sessions
-- live follow-ups steer into active runs
+- live follow-ups steer into active runs, with a short retry before queue fallback
 - `/q` queues prompts when you want batching instead of interruption
 - `/wait` buffers fragmented Telegram input into one prompt
 - `/suffix` adds persistent prompt tails per topic or globally
