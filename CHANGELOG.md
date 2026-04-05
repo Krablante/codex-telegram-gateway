@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.22] - 2026-04-05
+
+Fixed:
+
+- Zoo now rebuilds lost `zoo/topic.json` topic/menu binding from the next live Zoo menu callback, so button-driven flows like `Add project` stop failing as silent no-ops after state corruption
+- recovered Zoo topics re-enter the Zoo-only add-flow path immediately instead of falling through to ordinary topic session routing
+
+Docs:
+
+- README, architecture, runbook, state-contract, testing, and Zoo concept docs now describe the Zoo state-recovery path explicitly
+
+Tests:
+
+- added regression coverage for missing Zoo topic state recovery through a live menu callback plus immediate add-flow continuation
+
 ## [0.3.21] - 2026-04-05
 
 Fixed:
