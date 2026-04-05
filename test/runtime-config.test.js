@@ -85,7 +85,7 @@ test("buildRuntimeConfig validates ids and splits expected topics", () => {
   assert.equal(config.envFilePath, "/tmp/runtime.env");
   assert.equal(config.atlasWorkspaceRoot, "/workspace");
   assert.equal(config.defaultSessionBindingPath, "/workspace");
-  assert.equal(config.codexBinPath, "codex");
+  assert.equal(config.codexBinPath, getDefaultCodexBinPath());
   assert.equal(config.codexSessionsRoot, "/tmp/codex-sessions");
   assert.equal(config.codexLimitsSessionsRoot, "/tmp/codex-limits");
   assert.equal(config.codexLimitsCommand, "python3 /tmp/read-limits.py");
