@@ -220,27 +220,28 @@ export async function handleGlobalControlCallbackQuery({
       };
     }
 
-    if (parsed.kind === "help_show") {
-      await dispatchCommand({
-        actor: callbackQuery.from,
-        chat: menuMessage.chat,
-        commandText: "/help",
-      });
-      return {
-        handled: true,
-        reason: "global-control-help-sent",
-      };
-    }
+    const menuCommandTextByKind = {
+      help_show: "/help",
+      guide_show: "/guide",
+      zoo_show: "/zoo",
+      clear_run: "/clear",
+    };
+    const menuCommandReasonByKind = {
+      help_show: "global-control-help-sent",
+      guide_show: "global-control-guide-sent",
+      zoo_show: "global-control-zoo-opened",
+      clear_run: "global-control-clear-run",
+    };
 
-    if (parsed.kind === "guide_show") {
+    if (menuCommandTextByKind[parsed.kind]) {
       await dispatchCommand({
         actor: callbackQuery.from,
         chat: menuMessage.chat,
-        commandText: "/guide",
+        commandText: menuCommandTextByKind[parsed.kind],
       });
       return {
         handled: true,
-        reason: "global-control-guide-sent",
+        reason: menuCommandReasonByKind[parsed.kind],
       };
     }
 

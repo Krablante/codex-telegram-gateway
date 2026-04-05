@@ -53,6 +53,8 @@ Telegram bots do not have true arbitrary text animation for editable menu panels
 
 The panel keeps the menu message alive and sends separate status/error messages into `General` after each applied action.
 
+The root screen also exposes one-tap `Zoo`, `Clear`, `Guide`, and `Help` shortcuts so the normal `General` flow stays menu-first.
+
 The selected panel language also drives `General`-only replies for commands that do not have a topic session, such as `/help`, `/status`, `/wait global ...`, and other global-setting commands.
 
 The service also tracks incoming and outgoing `General` messages in a small ledger so `/clear` can remove them later while preserving the current menu message.
@@ -64,6 +66,8 @@ Current panel coverage:
 - `Bot Settings` submenu for Spike and Omni model/reasoning screens
 - live limits summary on the root screen
 - interface language switch for the `General` control panel
+- `Zoo` button that opens or refreshes the dedicated Zoo topic/menu
+- `Clear` button that runs the same General cleanup as `/clear`
 - `Guide` button that sends the same `/guide` beginner PDF from `General`
 - `/help` card delivery from the same menu
 

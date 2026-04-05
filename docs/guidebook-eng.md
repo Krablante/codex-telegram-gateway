@@ -6,7 +6,7 @@ The main idea is simple: for daily work, prefer menus over memory. Commands stil
 
 ## Quick start
 
-`General` is the lobby. You usually do three things there: open the global menu, grab the guidebook/help, and create new work topics.
+`General` is the lobby. You usually do three things there: open the global menu, run shared operator shortcuts from it, and create new work topics.
 
 The normal start looks like this:
 
@@ -40,6 +40,7 @@ Menus are the easier and safer path for things that change regularly but are not
 - opening `Bot Settings` and changing `Spike`/`Omni` model and reasoning there;
 - running topic ops through `Compact`, `Interrupt`, and `Purge` buttons;
 - turning suffixes on or off;
+- opening `Zoo` or running `Clear` straight from the global menu in `General`;
 - opening `Guide` or `Help` straight from the global menu in `General`;
 - refreshing the current screen.
 
@@ -51,15 +52,15 @@ Menus do not replace the work itself. Some things still belong to plain text or 
 
 - the normal prompt inside a work topic;
 - `/new`, because topic creation is command-driven;
-- `/guide`, `/zoo`, and `/clear` from `General`;
-- `Guide` and `Help` are available as buttons in the global menu, but `/guide` and `/help` still work directly too;
+- `/guide`, `/zoo`, and `/clear` still work from `General` if you prefer direct commands;
+- `Zoo`, `Clear`, `Guide`, and `Help` are available as buttons in the global menu, but the direct commands still work too;
 - `/q`, when you want to explicitly queue the next prompt;
 - `/diff`;
 - `/auto` and questions for `Omni`.
 
 One more practical detail matters: some values start from a menu but are not chosen by button. Custom wait values or free-form suffix text are usually entered as a reply to the menu message after the bot asks for input.
 
-Short version: menus are great for toggles, presets, and screen navigation. Free-form text, real work, and a few operational actions still live outside them.
+Short version: menus are great for toggles, presets, screen navigation, and the common `General` shortcuts. Free-form text and the real work still live outside them.
 
 ## How work usually flows in a topic
 
