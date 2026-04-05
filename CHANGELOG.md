@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.19] - 2026-04-05
+
+Fixed:
+
+- startup now recovers stale `running` sessions whose recorded owner generation is no longer live, so old crashed runs stop blocking fresh work after restart
+- rollout recovery now treats real `task_complete` entries as a valid completion fallback and picks up `last_agent_message` when the live websocket finalization path did not finish cleanly
+
+Docs:
+
+- architecture and testing docs now include the startup stale-run recovery slice and its focused regression coverage
+
 ## [0.3.18] - 2026-04-05
 
 Fixed:
