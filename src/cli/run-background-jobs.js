@@ -23,6 +23,7 @@ export function createBackgroundJobs({
   sessionLifecycleManager,
   sessionService,
   sessionStore,
+  timersEnabled = true,
   workerPool,
 }) {
   let retentionSweepInFlight = false;
@@ -75,6 +76,14 @@ export function createBackgroundJobs({
         promptQueueScanInFlight = false;
       });
   };
+
+  if (!timersEnabled) {
+    return {
+      scanPendingOmniPrompts,
+      scanPendingSpikeQueue,
+      stop() {},
+    };
+  }
 
   const heartbeatTimer = setIntervalImpl(() => {
     void runtimeObserver.writeHeartbeat().catch(() => {});

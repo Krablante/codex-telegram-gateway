@@ -193,6 +193,7 @@ async function main() {
     sessionLifecycleManager,
     sessionService,
     sessionStore,
+    timersEnabled: !RUN_ONCE,
     workerPool,
   });
   const {
