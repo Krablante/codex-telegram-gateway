@@ -84,6 +84,17 @@ export function summarizeRolloutLine(
     };
   }
 
+  if (event.payload.type === "task_complete") {
+    return {
+      kind: "agent_message",
+      eventType: "rollout.task_complete",
+      text: event.payload.last_agent_message || "",
+      messagePhase: "final_answer",
+      threadId: primaryThreadId,
+      turnId: event.payload.turn_id || activeTurnId,
+    };
+  }
+
   return null;
 }
 

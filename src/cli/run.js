@@ -21,6 +21,7 @@ import { createBackgroundJobs } from "./run-background-jobs.js";
 import { performRunOnceMaintenance } from "./run-maintenance.js";
 import { createRolloutController } from "./run-rollout-controller.js";
 import { createRunRuntimeContext } from "./run-runtime-context.js";
+import { recoverStaleRunningSessions } from "./run-stale-run-recovery.js";
 
 const TELEGRAM_ALLOWED_UPDATES = ["message", "callback_query"];
 const RUN_ONCE = process.env.RUN_ONCE === "1";
@@ -136,6 +137,18 @@ async function main() {
   });
   await forwardingServer.start();
   await generationStore.pruneStaleGenerations().catch(() => {});
+  const recoveredStaleSessions = await recoverStaleRunningSessions({
+    generationStore,
+    sessionStore,
+  }).catch((error) => {
+    console.error(`stale run recovery failed: ${error.message}`);
+    return [];
+  });
+  if (recoveredStaleSessions.length > 0) {
+    console.warn(
+      `recovered ${recoveredStaleSessions.length} stale running session(s) at startup`,
+    );
+  }
   await generationStore.heartbeat({
     mode: "standby",
     ipcEndpoint: getForwardingEndpoint(),

@@ -36,7 +36,7 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `node --test test/control-panel-store.test.js test/telegram-file-directive.test.js test/telegram-reply-normalizer.test.js` — focused control-panel store serialization and Telegram transport normalization regressions, including CRLF input paths
 - `node --test test/telegram-control-surface.test.js test/telegram-session-ops.test.js` — focused `/clear`, `/new`, `/diff`, `/compact`, and `/purge` ownership slices
 - `node --test test/command-router.test.js test/telegram-surface-settings.test.js test/telegram-surface-reference.test.js test/telegram-prompt-flow.test.js test/telegram-prompt-auto.test.js test/telegram-prompt-starts.test.js test/telegram-prompt-queue.test.js test/telegram-prompt-buffering.test.js test/telegram-prompt-attachments.test.js test/telegram-prompt-wait.test.js` — router spine, command-surface ownership, and split prompt-ingress coverage
-- `node --test test/run-update-processing.test.js test/run-maintenance.test.js test/run-rollout-controller.test.js test/run-background-jobs.test.js` — focused poll bootstrap, run-once maintenance, rollout control, background timer ownership, offset persistence, and forwarded-vs-local update processing coverage for the Spike runtime shell
+- `node --test test/run-update-processing.test.js test/run-stale-run-recovery.test.js test/run-maintenance.test.js test/run-rollout-controller.test.js test/run-background-jobs.test.js` — focused poll bootstrap, stale-running startup recovery, run-once maintenance, rollout control, background timer ownership, offset persistence, and forwarded-vs-local update processing coverage for the Spike runtime shell
 - `node --test test/codex-runner.test.js test/codex-runner-common.test.js test/codex-runner-lifecycle.test.js test/codex-runner-recovery.test.js` — focused codex-runner ownership slices for helper exports, live turn lifecycle, and rollout recovery
 - `node --test test/service-generation-store.test.js test/service-rollout.test.js test/service-rollout-command.test.js test/update-forwarding-ipc.test.js test/spike-update-routing.test.js` — focused session-aware rollout slices for leader lease, retiring-session ownership, repo-local operator rollout handoff, local IPC forwarding, and topic route resolution
 - `node --test test/worker-pool.test.js test/worker-pool-startup.test.js test/worker-pool-file-delivery.test.js test/worker-pool-delivery.test.js test/worker-pool-live-steer.test.js test/worker-pool-shutdown.test.js` — focused worker-pool ownership slices for startup, delivery, live steer, and shutdown behavior
@@ -145,6 +145,7 @@ Native Windows:
 - keep Codex limits parsing, cache refresh semantics, and stale-fast UI reads in `test/codex-limits.test.js`
 - keep batch-level callback early-ack behavior in `test/telegram-callback-batch-ack.test.js`
 - keep long-poll bootstrap, forwarded-vs-local update dispatch, and IPC forwarding probes in `test/run-update-processing.test.js`
+- keep stale-running startup cleanup in `test/run-stale-run-recovery.test.js`
 - keep run-once maintenance ordering in `test/run-maintenance.test.js`
 - keep rollout request/reconcile behavior in `test/run-rollout-controller.test.js`
 - keep background timer registration and leader-gated scans in `test/run-background-jobs.test.js`
