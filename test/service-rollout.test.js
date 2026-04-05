@@ -58,8 +58,8 @@ test("waitForGenerationReady returns once a live generation exposes IPC", async 
   let calls = 0;
   const record = await waitForGenerationReady({
     generationId: "gen-next",
-    pollIntervalMs: 1,
-    timeoutMs: 50,
+    pollIntervalMs: 5,
+    timeoutMs: 250,
     generationStore: {
       async loadGeneration() {
         calls += 1;
