@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
-## [0.3.1.5] - 2026-04-05
+## [0.3.15] - 2026-04-05
 
 Changed:
 
