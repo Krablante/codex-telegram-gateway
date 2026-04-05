@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.18] - 2026-04-05
+
+Fixed:
+
+- the global `Zoo` button now keeps the real Zoo routing path alive, so pressing it from `General` opens the Zoo flow instead of falling back to the generic "use a dedicated work topic" reply
+
+Tests:
+
+- added callback-path regression coverage for `global menu -> Zoo -> synthetic /zoo -> zooService`
+
 ## [0.3.17] - 2026-04-05
 
 Changed:
