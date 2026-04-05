@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.20] - 2026-04-05
+
+Fixed:
+
+- guidebook and runbook PDF generation now prefers Unicode-capable Windows system fonts, so Russian text no longer falls back to broken base-PDF glyphs on native Windows
+- when a Cyrillic PDF source is requested but no usable Unicode font can be found, generation now fails loudly instead of sending mojibake
+
+Tests:
+
+- added Windows font-resolution regression coverage for the PDF guidebook generator
+
 ## [0.3.19] - 2026-04-05
 
 Fixed:
