@@ -86,15 +86,15 @@ Core capabilities:
 - `/limits` surfaces Codex limits in chat
 - session-aware `Spike` rollout avoids blind restarts by default
 
-## v0.3.0 at a glance
+## Recent public wave
 
 | Area | What changed |
 | --- | --- |
-| Rollout | `Spike` now uses session-aware soft restart and rollout with generation/liveness checks. |
-| Cross-platform behavior | Windows process shutdown, PATH handling, `.cmd` lookup, and CI coverage were hardened on real runners. |
-| Architecture | Telegram handlers, worker-pool slices, Omni coordination, and Zoo flows were split into thinner modules with matching tests. |
-| Operator tooling | Public repo now ships `runbook:build`, Russian runbook source, refreshed docs, and stronger Windows helper scripts. |
-| Public parity | The public tree is now aligned with the current private implementation wave instead of the older `0.2.2.2` snapshot. |
+| Live follow-ups | Active-topic follow-up prompts now retry short transient `steer` failures before falling back to the next prompt queue. |
+| Runtime shell | The Spike poll/runtime shell is split into focused slices for bootstrap, update processing, background jobs, run-once maintenance, and rollout control. |
+| Session storage | `SessionStore` now keeps a thin public facade while lifecycle, file IO, meta shaping, and raw reads stay in separate modules. |
+| Cross-platform behavior | `RUN_ONCE` / smoke paths no longer start background timers, keeping one-shot maintenance deterministic on Linux and Windows. |
+| Public parity | The public tree stays aligned with the current private implementation wave while preserving public-safe paths, docs, and GitHub release metadata. |
 
 ## How it works
 

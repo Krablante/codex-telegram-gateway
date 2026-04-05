@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.17] - 2026-04-05
+
+Changed:
+
+- live follow-up prompts now retry short transient `steer` failures before falling back to the next prompt queue, so mid-run follow-ups stop bouncing to the generic busy reply
+- the Spike runtime shell and session-store internals were split into thinner modules while keeping the public command surface and cross-platform behavior stable
+
+Fixed:
+
+- `RUN_ONCE` / smoke maintenance no longer starts background timers that can race the explicit one-shot maintenance path
+
+Docs:
+
+- README now summarizes the current `0.3.17` wave more directly, and the public architecture/testing docs describe the modular runtime shell plus run-once maintenance ownership
+
 ## [0.3.16] - 2026-04-05
 
 Changed:
