@@ -433,3 +433,46 @@ test("ZooService does not let a stale Zoo callback replace the active menu messa
   assert.equal(topicState.menu_message_id, 901);
   assert.equal(api.calls.editMessageText.at(-1).message_id, 901);
 });
+
+test("ZooService recovers incomplete Zoo topic state from a live menu callback", async () => {
+  const stateRoot = await createStateRoot();
+  const api = createApiStub();
+  const zooStore = new ZooStore(stateRoot);
+  await zooStore.patchTopic({
+    chat_id: null,
+    topic_id: "700",
+    topic_name: "Zoo",
+    ui_language: "rus",
+    menu_message_id: null,
+  });
+  const service = new ZooService({
+    config: buildConfig(stateRoot),
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("ordinary session routing should stay out of recovered Zoo flow");
+      },
+    },
+    zooStore,
+  });
+
+  const result = await service.handleCallbackQuery({
+    api,
+    callbackQuery: {
+      id: "cb-incomplete-state",
+      data: "zoo:a:start",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        chat: { id: -1001234567890 },
+        message_thread_id: 700,
+        message_id: 901,
+      },
+    },
+  });
+
+  assert.equal(result.reason, "zoo-add-started");
+  const topicState = await zooStore.loadTopic({ force: true });
+  assert.equal(topicState.chat_id, "-1001234567890");
+  assert.equal(topicState.topic_id, "700");
+  assert.equal(topicState.menu_message_id, 901);
+  assert.equal(topicState.pending_add?.stage, "await_description");
+});
