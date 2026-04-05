@@ -22,6 +22,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - `src/cli/run-runtime-context.js` owns bootstrap-time runtime wiring, service construction, and store/layout setup
    - `src/cli/run-update-processing.js` owns bootstrap offset discovery, long-poll readiness cleanup, and the forwarded-vs-local Telegram update processing path
    - `src/cli/run-background-jobs.js` owns heartbeats, queued-prompt scans, and retention sweep timers
+   - `src/cli/run-maintenance.js` owns the explicit one-shot maintenance path so `RUN_ONCE`/smoke mode does not depend on background timer races
    - `src/cli/run-rollout-controller.js` owns rollout request/reconcile/retire control flow so the composition root stays focused on lifecycle orchestration instead of rollout detail
 2. The poll loop gives operator private-chat messages first chance to enter `src/emergency/`, which bypasses topic/session state and can launch one isolated `codex exec` repair run.
 3. `src/telegram/command-router.js` is the thin Telegram shell: it authenticates the configured operator, classifies message type, applies high-level policy, and dispatches into domain handlers.
