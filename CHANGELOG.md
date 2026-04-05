@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.1.5] - 2026-04-05
+
+Changed:
+
+- the global `General` menu root now includes one-tap `Zoo` and `Clear` shortcuts, keeping the common operator actions on the same pinned surface
+- `Bot Settings` and `Language` now sit on the top row of the global menu so the stable configuration entrypoints are front-loaded
+
+Docs:
+
+- README, Telegram surface docs, and both guidebooks now describe the current global-menu layout and shortcuts
+
 ## [0.3.1] - 2026-04-05
 
 Fixed:
