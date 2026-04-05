@@ -135,5 +135,6 @@ make service-restart-omni
 - if the final Spike reply hits a transient Telegram/network send failure, the gateway now retries that final delivery; if the send still never comes back, it keeps the final answer visible in the existing progress bubble instead of silently dropping the run result
 - if a long final reply already delivered some chunks before a later chunk failed, Spike final-event metadata now keeps the delivered Telegram message ids instead of pretending that nothing reached Telegram
 - if `turn/completed` wins the race against the real final `agent_message`, the runner now keeps a short grace window for that late primary final answer before falling back to a generic completion text
+- if local rollout-forwarding IPC hits a blocked or reserved loopback port, the server now retries the next candidate loopback port instead of failing on the first bind error
 - expired parked sessions may be auto-purged by retention sweep
 - the heartbeat now also exposes generation id, leader/retiring state, and rollout status for service-level handoff visibility

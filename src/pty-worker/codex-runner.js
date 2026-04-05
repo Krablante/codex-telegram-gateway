@@ -216,7 +216,6 @@ export function runCodexTask({
       pendingTurnCompletionTimer = null;
       finishCompletedTurn();
     }, TURN_COMPLETION_FINAL_MESSAGE_GRACE_MS);
-    pendingTurnCompletionTimer.unref?.();
   };
 
   const isPrimaryThreadEvent = (threadId) => {

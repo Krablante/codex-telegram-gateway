@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 
 import {
   buildForwardingEndpoint,
@@ -8,6 +9,7 @@ import {
   probeForwardingEndpoint,
   UpdateForwardingServer,
 } from "../src/runtime/update-forwarding-ipc.js";
+import { LoopbackJsonServer } from "../src/runtime/local-loopback-ipc.js";
 
 test("buildForwardingEndpoint returns a loopback HTTP endpoint", () => {
   const endpoint = buildForwardingEndpoint({
@@ -59,6 +61,46 @@ test("UpdateForwardingServer forwards payloads over loopback HTTP", async () => 
       },
       handled: true,
     });
+  } finally {
+    await server.stop();
+  }
+});
+
+test("LoopbackJsonServer retries a blocked loopback port and binds the next candidate", async () => {
+  const endpoint = "http://127.0.0.1:39000/ipc/forward-spike/retry-token";
+  let listenCalls = 0;
+  const server = new LoopbackJsonServer({
+    endpoint,
+    onRequest: async () => ({ ok: true }),
+    serverFactory() {
+      const server = new EventEmitter();
+      server.listen = () => {
+        listenCalls += 1;
+        setImmediate(() => {
+          if (listenCalls === 1) {
+            const error = new Error("permission denied");
+            error.code = "EACCES";
+            server.emit("error", error);
+            return;
+          }
+
+          server.emit("listening");
+        });
+      };
+      server.close = (callback) => {
+        callback?.();
+      };
+      return server;
+    },
+  });
+
+  await server.start();
+
+  try {
+    assert.notEqual(server.endpoint, endpoint);
+    const reboundUrl = new URL(server.endpoint);
+    assert.equal(reboundUrl.port, "39001");
+    assert.equal(listenCalls, 2);
   } finally {
     await server.stop();
   }

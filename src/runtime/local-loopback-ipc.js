@@ -6,6 +6,11 @@ const PORT_RANGE_START = 39000;
 const PORT_RANGE_SIZE = 20000;
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
 const DEFAULT_BIND_ATTEMPTS = 16;
+const RETRYABLE_BIND_ERROR_CODES = new Set([
+  "EACCES",
+  "EADDRINUSE",
+  "EPERM",
+]);
 
 function buildSeed(parts = []) {
   return parts
@@ -88,6 +93,7 @@ export class LoopbackJsonServer {
     endpoint,
     onRequest,
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+    serverFactory = http.createServer,
   }) {
     if (typeof onRequest !== "function") {
       throw new Error("LoopbackJsonServer requires onRequest");
@@ -95,6 +101,7 @@ export class LoopbackJsonServer {
     this.endpoint = endpoint;
     this.onRequest = onRequest;
     this.maxBodyBytes = maxBodyBytes;
+    this.serverFactory = serverFactory;
     this.server = null;
     this.url = parseEndpoint(endpoint);
   }
@@ -109,7 +116,7 @@ export class LoopbackJsonServer {
       const listenUrl =
         attempt === 0 ? this.url : buildRetryUrl(this.url, attempt);
       const expectedPath = listenUrl.pathname;
-      const server = http.createServer((req, res) => {
+      const server = this.serverFactory((req, res) => {
         if (req.method !== "POST" || req.url !== expectedPath) {
           writeJson(res, 404, {
             ok: false,
@@ -190,7 +197,7 @@ export class LoopbackJsonServer {
       } catch (error) {
         lastError = error;
         server.close();
-        if (error?.code !== "EADDRINUSE") {
+        if (!RETRYABLE_BIND_ERROR_CODES.has(String(error?.code || "").toUpperCase())) {
           throw error;
         }
       }
