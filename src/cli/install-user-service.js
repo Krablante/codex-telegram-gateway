@@ -7,12 +7,18 @@ import { promisify } from "node:util";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
 import {
+  MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION,
   SYSTEMD_USER_OMNI_SERVICE_NAME,
   SYSTEMD_USER_SERVICE_NAME,
+  buildServicePathEntries,
+  buildUnsupportedSystemdUserMessage,
   buildUserServiceUnit,
   getUserServiceUnitPath,
   isSystemdUserSupported,
+  parseSystemdVersion,
+  supportsExitTypeCgroup,
 } from "../runtime/systemd-user-service.js";
+import { resolveExecutablePath } from "../runtime/executable-path.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,33 +26,17 @@ function printLine(label, value) {
   console.log(`${label}: ${value}`);
 }
 
-function buildRuntimePath(nodePath) {
-  return [
-    path.dirname(nodePath),
-    "/usr/local/sbin",
-    "/usr/local/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/sbin",
-    "/bin",
-  ];
-}
-
-async function resolveCodexBinPath(config) {
-  if (path.isAbsolute(config.codexBinPath)) {
-    return config.codexBinPath;
+async function resolveCodexBinPath(config, nodePath) {
+  try {
+    return await resolveExecutablePath(config.codexBinPath, {
+      cwd: config.repoRoot,
+      preferredDirectories: [path.dirname(nodePath)],
+    });
+  } catch {
+    throw new Error(
+      `Unable to resolve codex binary: ${config.codexBinPath}. Set CODEX_BIN_PATH to an absolute path or a PATH-visible executable.`,
+    );
   }
-
-  const { stdout } = await execFileAsync("/bin/bash", [
-    "-lc",
-    `command -v ${config.codexBinPath}`,
-  ]);
-  const resolved = stdout.trim();
-  if (!resolved) {
-    throw new Error(`Unable to resolve codex binary: ${config.codexBinPath}`);
-  }
-
-  return resolved;
 }
 
 async function readLingerState() {
@@ -68,15 +58,20 @@ async function runSystemctl(args) {
   await execFileAsync("systemctl", ["--user", ...args]);
 }
 
+async function readSystemdVersion() {
+  const { stdout } = await execFileAsync("systemctl", ["--user", "--version"]);
+  return parseSystemdVersion(stdout);
+}
+
 async function main() {
+  const omniVariant = process.env.SERVICE_VARIANT === "omni";
   if (!isSystemdUserSupported()) {
-    throw new Error(
-      "systemd user services are Linux-only here; on Windows run the gateway directly with `npm run doctor` and `npm run run`.",
-    );
+    throw new Error(buildUnsupportedSystemdUserMessage({
+      omniVariant,
+    }));
   }
 
   const config = await loadRuntimeConfig();
-  const omniVariant = process.env.SERVICE_VARIANT === "omni";
   const serviceName = omniVariant
     ? SYSTEMD_USER_OMNI_SERVICE_NAME
     : SYSTEMD_USER_SERVICE_NAME;
@@ -84,17 +79,27 @@ async function main() {
     ? "Codex Telegram Gateway Omni"
     : "Codex Telegram Gateway";
   const scriptPath = omniVariant ? "src/cli/run-omni.js" : "src/cli/run.js";
+  const systemdVersion = await readSystemdVersion();
+  if (
+    !omniVariant
+    && !supportsExitTypeCgroup(systemdVersion)
+  ) {
+    throw new Error(
+      `Spike session-aware service install requires systemd >= ${MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION} for ExitType=cgroup; detected ${systemdVersion ?? "unknown"}. Use foreground runs or upgrade systemd.`,
+    );
+  }
   const nodePath = process.execPath;
-  const codexBinPath = await resolveCodexBinPath(config);
+  const codexBinPath = await resolveCodexBinPath(config, nodePath);
   const unitPath = getUserServiceUnitPath(undefined, serviceName);
   const unitText = buildUserServiceUnit({
     repoRoot: config.repoRoot,
     envFilePath: config.envFilePath,
     nodePath,
     codexBinPath,
-    pathEntries: buildRuntimePath(nodePath),
+    pathEntries: buildServicePathEntries({ nodePath }),
     description,
     scriptPath,
+    exitType: omniVariant ? null : "cgroup",
   });
 
   await fs.mkdir(path.dirname(unitPath), { recursive: true });
@@ -116,6 +121,7 @@ async function main() {
   printLine("unit_path", unitPath);
   printLine("node", nodePath);
   printLine("codex", codexBinPath);
+  printLine("systemd_version", systemdVersion ?? "unknown");
   printLine("linger", linger);
   printLine("systemd", stdout.trim().replace(/\n/gu, " "));
 

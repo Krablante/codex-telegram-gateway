@@ -18,33 +18,6 @@ function buildBinding() {
   };
 }
 
-test("SessionService getCodexLimitsSummary degrades to unavailable without a limits service", async () => {
-  const sessionsRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
-  );
-  const sessionStore = new SessionStore(sessionsRoot);
-  const service = new SessionService({
-    sessionStore,
-    config: {
-      workspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
-    },
-  });
-
-  const summary = await service.getCodexLimitsSummary();
-  assert.deepEqual(summary, {
-    available: false,
-    capturedAt: null,
-    source: null,
-    planType: null,
-    limitName: null,
-    unlimited: false,
-    windows: [],
-    primary: null,
-    secondary: null,
-  });
-});
-
 test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -54,7 +27,7 @@ test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
     runtimeObserver: {
@@ -90,7 +63,7 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
       codexContextWindow: 290000,
       codexSessionsRoot,
@@ -199,7 +172,7 @@ test("SessionService updatePromptSuffix and clearPromptSuffix persist topic-leve
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
   });
@@ -232,7 +205,7 @@ test("SessionService updatePromptSuffixTopicState persists topic suffix routing 
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
   });
@@ -268,7 +241,7 @@ test("SessionService updateGlobalPromptSuffix and clearGlobalPromptSuffix persis
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
     globalPromptSuffixStore,
@@ -302,7 +275,7 @@ test("SessionService persists global and topic Codex runtime settings with topic
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
       codexModel: "gpt-5.4",
       codexReasoningEffort: "medium",
@@ -400,7 +373,7 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
       codexConfigPath,
       codexModel: "gpt-5.4",
@@ -445,7 +418,7 @@ test("SessionService keeps Omni reasoning high by default while preserving expli
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
       codexModel: "gpt-5.4",
       codexReasoningEffort: "xhigh",
@@ -497,7 +470,7 @@ test("SessionService scheduleAutoSleep ignores stale disabled snapshots and keep
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
   });
@@ -548,7 +521,7 @@ test("SessionService markAutoDecision ignores stale disabled snapshots when reco
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
   });
@@ -583,6 +556,108 @@ test("SessionService markAutoDecision ignores stale disabled snapshots when reco
   assert.equal(done.auto_mode.last_result_summary, "One bounded cycle is complete.");
 });
 
+test("SessionService preserves overlapping auto-mode updates across concurrent callers", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/workspace",
+      defaultSessionBindingPath: "/workspace",
+    },
+  });
+
+  let session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 309,
+    topicName: "Auto overlap",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  session = await service.activateAutoMode(session, {
+    activatedByUserId: "1234567890",
+    omniBotId: "2234567890",
+    spikeBotId: "3234567890",
+  });
+  session = await service.captureAutoGoal(session, "Ship Omni auto mode safely.");
+  session = await service.captureAutoInitialPrompt(
+    session,
+    "Initial Spike prompt",
+  );
+  session = await service.markAutoDecision(session, {
+    phase: "running",
+    resultSummary: "Still active",
+  });
+
+  const originalPatchWithCurrent = sessionStore.patchWithCurrent.bind(sessionStore);
+  let firstPatchHeld = false;
+  let enteredFirstPatch;
+  const firstPatchEnteredPromise = new Promise((resolve) => {
+    enteredFirstPatch = resolve;
+  });
+  let releaseFirstPatch;
+  const releaseFirstPatchPromise = new Promise((resolve) => {
+    releaseFirstPatch = resolve;
+  });
+
+  sessionStore.patchWithCurrent = async (meta, patch) => {
+    if (firstPatchHeld) {
+      return originalPatchWithCurrent(meta, patch);
+    }
+
+    firstPatchHeld = true;
+    return originalPatchWithCurrent(meta, async (current) => {
+      enteredFirstPatch();
+      await releaseFirstPatchPromise;
+      return typeof patch === "function"
+        ? patch(current)
+        : patch;
+    });
+  };
+
+  try {
+    const blockedPromise = service.markAutoDecision(session, {
+      phase: "blocked",
+      blockedReason: "Need fresh logs",
+      resultSummary: "Waiting on operator input.",
+    });
+    await firstPatchEnteredPromise;
+
+    let secondFinished = false;
+    const inputPromise = service.queueAutoUserInput(
+      session,
+      "Upload the latest logs.",
+    ).then((value) => {
+      secondFinished = true;
+      return value;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(
+      secondFinished,
+      false,
+      "second auto-mode update should wait for the locked first mutation",
+    );
+
+    releaseFirstPatch();
+    await Promise.all([blockedPromise, inputPromise]);
+  } finally {
+    sessionStore.patchWithCurrent = originalPatchWithCurrent;
+  }
+
+  const loaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(loaded.auto_mode.enabled, true);
+  assert.equal(loaded.auto_mode.phase, "blocked");
+  assert.equal(loaded.auto_mode.blocked_reason, "Need fresh logs");
+  assert.equal(loaded.auto_mode.pending_user_input, "Upload the latest logs.");
+  assert.equal(
+    loaded.auto_mode.last_result_summary,
+    "Waiting on operator input.",
+  );
+});
+
 test("SessionService buffers and clears pending prompt attachments", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -591,7 +666,7 @@ test("SessionService buffers and clears pending prompt attachments", async () =>
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
   });
@@ -636,7 +711,7 @@ test("SessionService keeps queued attachments separate from direct prompt attach
   const service = new SessionService({
     sessionStore,
     config: {
-      workspaceRoot: "/workspace",
+      atlasWorkspaceRoot: "/workspace",
       defaultSessionBindingPath: "/workspace",
     },
   });

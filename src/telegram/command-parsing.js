@@ -143,6 +143,40 @@ export function extractBotCommand(message, botUsername) {
   };
 }
 
+function parseLeadingQuotedValue(text) {
+  if (!text || (text[0] !== "\"" && text[0] !== "'")) {
+    return null;
+  }
+
+  const quote = text[0];
+  let value = "";
+
+  for (let index = 1; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === "\\" && (next === quote || next === "\\")) {
+      value += next;
+      index += 1;
+      continue;
+    }
+
+    if (char === quote) {
+      return {
+        value,
+        rest: text.slice(index + 1).trim(),
+      };
+    }
+
+    value += char;
+  }
+
+  return {
+    value,
+    rest: "",
+  };
+}
+
 export function parseNewTopicCommandArgs(rawArgs) {
   const trimmed = rawArgs.trim();
   if (!trimmed) {
@@ -152,10 +186,8 @@ export function parseNewTopicCommandArgs(rawArgs) {
     };
   }
 
-  const tokens = trimmed.split(/\s+/u);
-  const firstToken = tokens[0];
   const prefixes = ["cwd=", "path=", "--cwd=", "--path="];
-  const matchedPrefix = prefixes.find((prefix) => firstToken.startsWith(prefix));
+  const matchedPrefix = prefixes.find((prefix) => trimmed.startsWith(prefix));
   if (!matchedPrefix) {
     return {
       bindingPath: null,
@@ -163,9 +195,26 @@ export function parseNewTopicCommandArgs(rawArgs) {
     };
   }
 
-  const bindingPath = firstToken.slice(matchedPrefix.length).trim();
+  const remainder = trimmed.slice(matchedPrefix.length).trimStart();
+  if (!remainder) {
+    return {
+      bindingPath: null,
+      title: "",
+    };
+  }
+
+  const quoted = parseLeadingQuotedValue(remainder);
+  if (quoted) {
+    return {
+      bindingPath: quoted.value.trim() || null,
+      title: quoted.rest,
+    };
+  }
+
+  const tokens = remainder.split(/\s+/u);
+  const bindingPath = tokens[0]?.trim() || null;
   return {
-    bindingPath: bindingPath || null,
+    bindingPath,
     title: tokens.slice(1).join(" ").trim(),
   };
 }

@@ -3,6 +3,10 @@ import { getDefaultEnvFilePath } from "./default-paths.js";
 
 export const DEFAULT_ENV_FILE = getDefaultEnvFilePath();
 
+function normalizeEnvText(text) {
+  return String(text ?? "").replace(/^\uFEFF/u, "");
+}
+
 function stripWrappingQuotes(value) {
   if (
     (value.startsWith('"') && value.endsWith('"')) ||
@@ -17,7 +21,7 @@ function stripWrappingQuotes(value) {
 export function parseEnvText(text) {
   const env = {};
 
-  for (const rawLine of text.split(/\r?\n/u)) {
+  for (const rawLine of normalizeEnvText(text).split(/\r?\n/u)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) {
       continue;

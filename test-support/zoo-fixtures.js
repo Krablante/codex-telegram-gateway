@@ -1,0 +1,75 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+export function buildConfig(stateRoot) {
+  return {
+    stateRoot,
+    atlasWorkspaceRoot: "/workspace",
+    codexBinPath: "codex",
+    telegramAllowedUserId: "1234567890",
+    telegramAllowedUserIds: ["1234567890"],
+    telegramAllowedBotIds: ["2234567890"],
+    telegramForumChatId: "-1001234567890",
+  };
+}
+
+export async function createStateRoot() {
+  return fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-zoo-service-"),
+  );
+}
+
+export function createApiStub() {
+  const calls = {
+    createForumTopic: [],
+    sendMessage: [],
+    editMessageText: [],
+    pinChatMessage: [],
+    deleteMessage: [],
+    answerCallbackQuery: [],
+  };
+
+  return {
+    calls,
+    async createForumTopic(params) {
+      calls.createForumTopic.push(params);
+      return {
+        message_thread_id: 700,
+        name: "Zoo",
+      };
+    },
+    async sendMessage(params) {
+      calls.sendMessage.push(params);
+      return {
+        message_id: 900 + calls.sendMessage.length,
+      };
+    },
+    async editMessageText(params) {
+      calls.editMessageText.push(params);
+      return true;
+    },
+    async pinChatMessage(params) {
+      calls.pinChatMessage.push(params);
+      return true;
+    },
+    async deleteMessage(params) {
+      calls.deleteMessage.push(params);
+      return true;
+    },
+    async answerCallbackQuery(params) {
+      calls.answerCallbackQuery.push(params);
+      return true;
+    },
+  };
+}
+
+export function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}

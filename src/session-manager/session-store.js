@@ -17,10 +17,148 @@ import {
   quarantineCorruptFile,
   writeTextAtomic,
 } from "../state/file-utils.js";
+import { normalizeSessionOwnerMode } from "../rollout/session-ownership.js";
 import {
   buildTopicContextFileText,
   TOPIC_CONTEXT_FILE_NAME,
 } from "./topic-context.js";
+
+function normalizeOptionalText(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function buildNormalizedSessionOwnership(
+  payload = null,
+  {
+    defaultMode = null,
+    fallbackGenerationId = null,
+    fallbackMode = null,
+    fallbackClaimedAt = null,
+  } = {},
+) {
+  const ownerGenerationId =
+    normalizeOptionalText(payload?.session_owner_generation_id)
+    ?? normalizeOptionalText(payload?.spike_run_owner_generation_id)
+    ?? normalizeOptionalText(fallbackGenerationId);
+
+  if (!ownerGenerationId) {
+    return {
+      session_owner_generation_id: null,
+      session_owner_mode: null,
+      session_owner_claimed_at: null,
+      spike_run_owner_generation_id: null,
+    };
+  }
+
+  return {
+    session_owner_generation_id: ownerGenerationId,
+    session_owner_mode:
+      normalizeSessionOwnerMode(payload?.session_owner_mode)
+      ?? normalizeSessionOwnerMode(defaultMode)
+      ?? normalizeSessionOwnerMode(fallbackMode)
+      ?? "active",
+    session_owner_claimed_at:
+      normalizeOptionalText(payload?.session_owner_claimed_at)
+      ?? normalizeOptionalText(fallbackClaimedAt),
+    spike_run_owner_generation_id: ownerGenerationId,
+  };
+}
+
+function normalizeStoredSessionMeta(meta) {
+  const normalizedOwnership = buildNormalizedSessionOwnership(meta, {
+    defaultMode: meta?.last_run_status === "running" ? "active" : null,
+  });
+
+  return {
+    ...meta,
+    ...normalizedOwnership,
+    auto_mode: normalizeAutoModeState(meta.auto_mode),
+    spike_model_override: normalizeStoredModelOverride(meta.spike_model_override),
+    spike_reasoning_effort_override: normalizeReasoningEffort(
+      meta.spike_reasoning_effort_override,
+    ),
+    omni_model_override: normalizeStoredModelOverride(meta.omni_model_override),
+    omni_reasoning_effort_override: normalizeReasoningEffort(
+      meta.omni_reasoning_effort_override,
+    ),
+  };
+}
+
+function normalizeOwnershipPatch(current, patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    return patch;
+  }
+
+  const hasSessionOwnerGenerationId = hasOwn(patch, "session_owner_generation_id");
+  const hasSessionOwnerMode = hasOwn(patch, "session_owner_mode");
+  const hasSessionOwnerClaimedAt = hasOwn(patch, "session_owner_claimed_at");
+  const hasLegacySpikeOwnerGenerationId = hasOwn(
+    patch,
+    "spike_run_owner_generation_id",
+  );
+
+  if (
+    !hasSessionOwnerGenerationId
+    && !hasSessionOwnerMode
+    && !hasSessionOwnerClaimedAt
+    && !hasLegacySpikeOwnerGenerationId
+  ) {
+    return patch;
+  }
+
+  const currentOwnership = buildNormalizedSessionOwnership(current, {
+    defaultMode: current?.last_run_status === "running" ? "active" : null,
+  });
+  const claimedAtNow = new Date().toISOString();
+
+  let ownerGenerationId = currentOwnership.session_owner_generation_id;
+  if (hasSessionOwnerGenerationId) {
+    ownerGenerationId = normalizeOptionalText(patch.session_owner_generation_id);
+  } else if (hasLegacySpikeOwnerGenerationId) {
+    ownerGenerationId = normalizeOptionalText(patch.spike_run_owner_generation_id);
+  }
+
+  let ownerMode = currentOwnership.session_owner_mode;
+  if (hasSessionOwnerMode) {
+    ownerMode = normalizeSessionOwnerMode(patch.session_owner_mode);
+  }
+
+  let ownerClaimedAt = currentOwnership.session_owner_claimed_at;
+  if (hasSessionOwnerClaimedAt) {
+    ownerClaimedAt = normalizeOptionalText(patch.session_owner_claimed_at);
+  }
+
+  const ownerGenerationChanged =
+    ownerGenerationId !== currentOwnership.session_owner_generation_id;
+  if (!ownerGenerationId) {
+    ownerMode = null;
+    ownerClaimedAt = null;
+  } else {
+    ownerMode = ownerMode ?? "active";
+    if (!ownerClaimedAt || (ownerGenerationChanged && !hasSessionOwnerClaimedAt)) {
+      ownerClaimedAt = claimedAtNow;
+    }
+  }
+
+  return {
+    ...patch,
+    ...buildNormalizedSessionOwnership(
+      {
+        session_owner_generation_id: ownerGenerationId,
+        session_owner_mode: ownerMode,
+        session_owner_claimed_at: ownerClaimedAt,
+      },
+      {
+        defaultMode: ownerGenerationId ? "active" : null,
+      },
+    ),
+  };
+}
 
 async function readMetaJson(filePath) {
   try {
@@ -31,16 +169,7 @@ async function readMetaJson(filePath) {
     }
 
     return {
-      ...parsed,
-      auto_mode: normalizeAutoModeState(parsed.auto_mode),
-      spike_model_override: normalizeStoredModelOverride(parsed.spike_model_override),
-      spike_reasoning_effort_override: normalizeReasoningEffort(
-        parsed.spike_reasoning_effort_override,
-      ),
-      omni_model_override: normalizeStoredModelOverride(parsed.omni_model_override),
-      omni_reasoning_effort_override: normalizeReasoningEffort(
-        parsed.omni_reasoning_effort_override,
-      ),
+      ...normalizeStoredSessionMeta(parsed),
     };
   } catch (error) {
     if (error?.code === "ENOENT") {
@@ -105,6 +234,10 @@ function buildRuntimeStateFields() {
     last_user_prompt: null,
     last_agent_reply: null,
     last_run_status: null,
+    session_owner_generation_id: null,
+    session_owner_mode: null,
+    session_owner_claimed_at: null,
+    spike_run_owner_generation_id: null,
     last_run_started_at: null,
     last_run_finished_at: null,
     last_token_usage: null,
@@ -155,6 +288,10 @@ function buildPurgedStub(current, reason) {
     retention_pin: current.retention_pin ?? false,
     purged_at: now,
     purged_reason: reason,
+    session_owner_generation_id: null,
+    session_owner_mode: null,
+    session_owner_claimed_at: null,
+    spike_run_owner_generation_id: null,
     artifact_count: 0,
     last_artifact: null,
     last_diff_artifact: null,
@@ -294,10 +431,7 @@ export class SessionStore {
 
   async saveUnlocked(meta) {
     const sessionDir = this.getSessionDir(meta.chat_id, meta.topic_id);
-    const normalizedMeta = {
-      ...meta,
-      auto_mode: normalizeAutoModeState(meta.auto_mode),
-    };
+    const normalizedMeta = normalizeStoredSessionMeta(meta);
     await fs.mkdir(sessionDir, { recursive: true });
     await writeTextAtomic(
       path.join(sessionDir, "meta.json"),
@@ -412,16 +546,58 @@ export class SessionStore {
   }
 
   async patch(meta, patch) {
+    return this.patchWithCurrent(meta, patch);
+  }
+
+  async patchWithCurrent(meta, patch) {
     return this.withMetaLock(meta.chat_id, meta.topic_id, async () => {
       const current =
         (await readMetaJson(this.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
+      const resolvedPatch =
+        typeof patch === "function"
+          ? await patch(current)
+          : patch;
+      if (resolvedPatch === null || resolvedPatch === undefined) {
+        return current;
+      }
+      if (
+        typeof resolvedPatch !== "object"
+        || Array.isArray(resolvedPatch)
+      ) {
+        throw new Error("SessionStore patch must be an object or null");
+      }
+      const normalizedPatch = normalizeOwnershipPatch(current, resolvedPatch);
       const updated = {
         ...stripLegacyMetaFields(current),
-        ...cloneJson(stripLegacyMetaFields(patch)),
+        ...cloneJson(stripLegacyMetaFields(normalizedPatch)),
         updated_at: new Date().toISOString(),
       };
       await this.saveUnlocked(updated);
       return updated;
+    });
+  }
+
+  async claimSessionOwner(
+    meta,
+    {
+      generationId,
+      mode = "active",
+      claimedAt = null,
+    },
+  ) {
+    return this.patch(meta, {
+      session_owner_generation_id: generationId,
+      session_owner_mode: mode,
+      session_owner_claimed_at: claimedAt,
+    });
+  }
+
+  async clearSessionOwner(meta) {
+    return this.patch(meta, {
+      session_owner_generation_id: null,
+      session_owner_mode: null,
+      session_owner_claimed_at: null,
+      spike_run_owner_generation_id: null,
     });
   }
 
@@ -618,15 +794,16 @@ export class SessionStore {
       content_type: contentType || "text/plain",
     };
 
-    const patch = {
-      artifact_count: (current.artifact_count ?? 0) + 1,
-      last_artifact: artifact,
-    };
-    if (kind === "diff") {
-      patch.last_diff_artifact = artifact;
-    }
-
-    const updated = await this.patch(current, patch);
+    const updated = await this.patchWithCurrent(current, (latest) => {
+      const patch = {
+        artifact_count: (latest.artifact_count ?? 0) + 1,
+        last_artifact: artifact,
+      };
+      if (kind === "diff") {
+        patch.last_diff_artifact = artifact;
+      }
+      return patch;
+    });
     return {
       artifact,
       filePath,

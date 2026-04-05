@@ -95,7 +95,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   const withRun = await sessionStore.patch(session, {
     codex_thread_id: "thread-before-compact",
     codex_rollout_path:
-      "/home/operator/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
+      "/home/testuser/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
     last_user_prompt: "Inspect compact state",
     last_agent_reply: "Workspace is clean and ready.",
     last_run_status: "completed",
@@ -119,7 +119,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
         total_tokens: 120450,
       },
       rollout_path:
-        "/home/operator/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
+        "/home/testuser/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
     },
     parked_reason: "telegram/forum-topic-closed",
     lifecycle_state: "parked",

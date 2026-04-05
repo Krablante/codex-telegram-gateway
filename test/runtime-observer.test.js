@@ -21,6 +21,10 @@ test("RuntimeObserver writes heartbeat and lifecycle events", async () => {
     pollErrors: 0,
     knownSessions: 2,
     activeRunCount: 1,
+    generationId: "gen-runtime",
+    isLeader: true,
+    retiring: false,
+    rolloutStatus: "in_progress",
     lastUpdateId: 200,
     lastCommandName: "status",
     lastCommandAt: "2026-03-22T12:01:00.000Z",
@@ -59,6 +63,9 @@ test("RuntimeObserver writes heartbeat and lifecycle events", async () => {
     .map((line) => JSON.parse(line));
 
   assert.equal(heartbeat.lifecycle_state, "stopped");
+  assert.equal(heartbeat.generation.id, "gen-runtime");
+  assert.equal(heartbeat.generation.is_leader, true);
+  assert.equal(heartbeat.generation.rollout_status, "in_progress");
   assert.equal(heartbeat.polling.current_offset, 130);
   assert.equal(
     heartbeat.polling.last_retention_sweep_at,

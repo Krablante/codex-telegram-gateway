@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { quarantineCorruptFile } from "../state/file-utils.js";
 import { isAutoModeHumanInputLocked } from "./auto-mode.js";
+import { shouldForwardSessionToOwner } from "../rollout/session-ownership.js";
 
 const SPIKE_PROMPT_QUEUE_FILE_NAME = "spike-prompt-queue.json";
 
@@ -137,6 +139,7 @@ export class SpikePromptQueueStore {
   }
 
   async readUnlocked(session) {
+    const filePath = this.getPath(session);
     const text = await this.sessionStore.readSessionText(
       session,
       SPIKE_PROMPT_QUEUE_FILE_NAME,
@@ -146,8 +149,16 @@ export class SpikePromptQueueStore {
     }
 
     try {
-      return parseQueueState(JSON.parse(text));
-    } catch {
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.items)) {
+        await quarantineCorruptFile(filePath);
+        return buildEmptyQueueState();
+      }
+      return parseQueueState(parsed);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        await quarantineCorruptFile(filePath);
+      }
       return buildEmptyQueueState();
     }
   }
@@ -242,6 +253,7 @@ export async function drainPendingSpikePromptQueue({
   sessionStore,
   workerPool,
   promptQueueStore,
+  currentGenerationId = null,
 }) {
   const sessions = session
     ? [((await sessionStore.load(session.chat_id, session.topic_id)) || session)]
@@ -262,6 +274,13 @@ export async function drainPendingSpikePromptQueue({
     if (
       currentSession.lifecycle_state !== "active"
       || isAutoModeHumanInputLocked(currentSession)
+    ) {
+      continue;
+    }
+
+    if (
+      currentGenerationId
+      && shouldForwardSessionToOwner(currentSession, currentGenerationId)
     ) {
       continue;
     }

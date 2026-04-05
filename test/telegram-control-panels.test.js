@@ -1,0 +1,546 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  handleIncomingCallbackQuery,
+  handleIncomingMessage,
+} from "../src/telegram/command-router.js";
+import { handleGlobalControlCallbackQuery } from "../src/telegram/global-control-panel.js";
+import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembler.js";
+import {
+  buildIdleWorkerPool,
+  buildUnlimitedLimitsSummary,
+  config,
+  createGlobalControlPanelStore,
+  createGlobalControlSessionService,
+  createTopicControlPanelStore,
+} from "../test-support/control-panel-fixtures.js";
+
+test("handleIncomingMessage opens the persistent global control panel in General", async () => {
+  const sent = [];
+  const limitsRequests = [];
+  const store = createGlobalControlPanelStore();
+  const serviceState = {
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    lastCommandName: null,
+    lastCommandAt: null,
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 901 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    message: {
+      text: "/global",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState,
+    sessionService: createGlobalControlSessionService({
+      async getCodexLimitsSummary(options) {
+        limitsRequests.push(options ?? {});
+        return buildUnlimitedLimitsSummary();
+      },
+    }),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.command, "global");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Global control panel/u);
+  assert.doesNotMatch(sent[0].text, /Закрепи это сообщение/u);
+  assert.match(sent[0].text, /interface language: RUS/u);
+  assert.match(sent[0].text, /лимиты: безлимит/u);
+  assert.match(sent[0].text, /spike: .+ \([a-z]+\)/u);
+  assert.doesNotMatch(sent[0].text, /spike reasoning:/u);
+  assert.equal(Array.isArray(sent[0].reply_markup.inline_keyboard), true);
+  assert.deepEqual(
+    sent[0].reply_markup.inline_keyboard[2].map((button) => button.text),
+    ["Guide", "Help"],
+  );
+  assert.equal(
+    sent[0].reply_markup.inline_keyboard.some((row) =>
+      row.some((button) => button.text === "Bot Settings"),
+    ),
+    true,
+  );
+  assert.equal(
+    sent[0].reply_markup.inline_keyboard.some((row) =>
+      row.some((button) => button.text === "Spike model"),
+    ),
+    false,
+  );
+  assert.deepEqual(limitsRequests, [{ allowStale: true }]);
+  assert.equal(store.getState().menu_message_id, 901);
+});
+
+test("handleIncomingMessage opens the persistent global control panel when General uses thread id 0", async () => {
+  const sent = [];
+  const store = createGlobalControlPanelStore();
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 901 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    message: {
+      text: "/global",
+      entities: [{ type: "bot_command", offset: 0, length: 7 }],
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 0,
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.command, "global");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Global control panel/u);
+});
+
+test("handleIncomingMessage keeps /menu General guidance in the selected General language", async () => {
+  const sent = [];
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 902 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      ui_language: "eng",
+    }),
+    topicControlPanelStore: createTopicControlPanelStore(),
+    message: {
+      text: "/menu",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.command, "menu");
+  assert.match(sent[0].text, /Use \/menu inside a topic\./u);
+});
+
+test("handleIncomingCallbackQuery applies a global wait preset from the control panel", async () => {
+  const sent = [];
+  const edited = [];
+  const answered = [];
+  const callOrder = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "wait",
+  });
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        callOrder.push("ack");
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        callOrder.push("edit");
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        callOrder.push("send");
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-1",
+      data: "gcfg:w:60",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  const waitState = promptFragmentAssembler.getStateForMessage({
+    chat: { id: -1001234567890 },
+    from: { id: 1234567890 },
+  });
+
+  assert.equal(result.reason, "global-control-action-applied");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(sent.length, 0);
+  assert.equal(waitState.global.active, true);
+  assert.equal(waitState.global.flushDelayMs, 60000);
+  assert.equal(callOrder[0], "ack");
+  assert.equal(callOrder.includes("send"), false);
+  assert.equal(callOrder.indexOf("ack") < callOrder.indexOf("edit"), true);
+});
+
+test("handleGlobalControlCallbackQuery reports unavailable global wait without throwing", async () => {
+  const sent = [];
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "wait",
+  });
+
+  const result = await handleGlobalControlCallbackQuery({
+    applyGlobalWaitChange: async () => ({ available: false }),
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    callbackQuery: {
+      id: "cbq-wait-unavailable",
+      data: "gcfg:w:60",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    dispatchCommand: async () => {
+      throw new Error("dispatchCommand should not run for unavailable wait");
+    },
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    sessionService: createGlobalControlSessionService(),
+  });
+
+  assert.equal(result.reason, "global-control-action-applied");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Manual collection window|Manual collection windows/u);
+});
+
+test("handleIncomingCallbackQuery updates the global panel language and refreshes the menu", async () => {
+  const sent = [];
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "language",
+    ui_language: "rus",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-language",
+      data: "gcfg:l:eng",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService({
+      async getCodexLimitsSummary() {
+        return buildUnlimitedLimitsSummary();
+      },
+    }),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-language-updated");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(sent.length, 1);
+  assert.equal(store.getState().ui_language, "eng");
+  assert.equal(store.getState().active_screen, "root");
+  assert.match(edited[0].text, /Global control panel/u);
+  assert.match(edited[0].text, /interface language: ENG/u);
+  assert.match(edited[0].text, /limits: unlimited/u);
+  assert.match(sent[0].text, /Interface language updated\./u);
+});
+
+test("handleIncomingCallbackQuery opens bot settings inside the global control menu", async () => {
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-bots",
+      data: "gcfg:n:b",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-menu-navigated");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /Bot settings|Настройки ботов/u);
+  assert.equal(edited[0].reply_markup.inline_keyboard[0][0].text, "Spike model");
+  assert.equal(edited[0].reply_markup.inline_keyboard.at(-1)[0].text, "Back");
+  assert.equal(store.getState().active_screen, "bot_settings");
+});
+
+test("handleIncomingCallbackQuery shows the full global suffix text on the suffix screen", async () => {
+  const edited = [];
+  const longSuffix = [
+    "НЕ переусложняй: нужен практичный и эффективный результат.",
+    "Можешь использовать ЛЮБЫЕ доступные MCP/инструменты.",
+    "Держи фокус на efficiency, modularity, security, agentness, convenience.",
+  ].join("\n");
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery() {},
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage() {
+        throw new Error("suffix screen navigation should edit the menu in place");
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-suffix-full",
+      data: "gcfg:n:s",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      active_screen: "root",
+      ui_language: "rus",
+    }),
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService({
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: true,
+          prompt_suffix_text: longSuffix,
+        };
+      },
+    }),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-menu-navigated");
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /НЕ переусложняй/u);
+  assert.match(edited[0].text, /agentness, convenience\./u);
+  assert.doesNotMatch(edited[0].text, /\.\.\./u);
+});
+
+test("handleIncomingCallbackQuery sends help cards in the selected global panel language", async () => {
+  const documents = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async sendDocument(payload) {
+        documents.push(payload);
+      },
+      async sendMessage() {},
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-help",
+      data: "gcfg:h:show",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-help-sent");
+  assert.equal(answered.length, 1);
+  assert.equal(documents.length, 2);
+  assert.equal(documents[0].document.fileName, "severus-help-summer-eng-1.png");
+  assert.equal(documents[1].document.fileName, "severus-help-summer-eng-2.png");
+});
+
+test("handleIncomingCallbackQuery sends the guidebook in the selected global panel language", async () => {
+  const documents = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async sendDocument(payload) {
+        documents.push(payload);
+      },
+      async sendMessage() {},
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-guide",
+      data: "gcfg:g:show",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("should not be called");
+      },
+    },
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-guide-sent");
+  assert.equal(answered.length, 1);
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].document.fileName, "codex-telegram-guidebook-eng.pdf");
+});

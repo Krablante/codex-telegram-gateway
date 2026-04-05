@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - main
+      - release/**
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,6 +37,9 @@ jobs:
 
       - name: Build guidebook smoke artifact
         run: npm run guidebook:build -- --language eng --output "${RUNNER_TEMP}/guidebook-eng.pdf"
+
+      - name: Build runbook smoke artifact
+        run: npm run runbook:build -- --language eng --output "${RUNNER_TEMP}/runbook-eng.pdf"
 
   test-windows:
     name: Test (Windows)

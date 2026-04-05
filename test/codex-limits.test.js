@@ -149,7 +149,7 @@ test("CodexLimitsService reads the newest unlimited snapshot from sessions root"
   }
 });
 
-test("CodexLimitsService accepts CODEX_LIMITS_COMMAND JSON wrapper payloads", async () => {
+test("CodexLimitsService accepts CODEX_LIMITS_COMMAND JSON argv payloads", async () => {
   const tempRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-limits-command-"),
   );
@@ -173,7 +173,7 @@ test("CodexLimitsService accepts CODEX_LIMITS_COMMAND JSON wrapper payloads", as
 
   try {
     const service = new CodexLimitsService({
-      command: `node ${scriptPath}`,
+      command: JSON.stringify(["node", scriptPath]),
       cacheTtlMs: 1000,
       commandTimeoutMs: 5000,
     });
@@ -192,6 +192,49 @@ test("CodexLimitsService accepts CODEX_LIMITS_COMMAND JSON wrapper payloads", as
   }
 });
 
+test("CodexLimitsService still accepts simple quoted CODEX_LIMITS_COMMAND strings without a shell", async () => {
+  const tempRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-limits-command-legacy-"),
+  );
+  const scriptDir = path.join(tempRoot, "with spaces");
+  const scriptPath = path.join(scriptDir, "read limits.mjs");
+
+  await fs.mkdir(scriptDir, { recursive: true });
+  await fs.writeFile(
+    scriptPath,
+    [
+      "console.log(JSON.stringify({",
+      '  source: "legacy_string",',
+      '  captured_at: "2026-04-04T13:20:00.000Z",',
+      "  snapshot: {",
+      '    limit_id: "codex",',
+      "    primary: { used_percent: 20, window_minutes: 300, resets_at: 1775277600 },",
+      "    secondary: { used_percent: 45, window_minutes: 10080, resets_at: 1775882400 }",
+      "  }",
+      "}));",
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const service = new CodexLimitsService({
+      command: `node "${scriptPath}"`,
+      cacheTtlMs: 1000,
+      commandTimeoutMs: 5000,
+    });
+    const summary = await service.getSummary();
+
+    assert.equal(summary.available, true);
+    assert.equal(summary.source, "legacy_string");
+    assert.deepEqual(buildCodexLimitsStatusLines(summary, "eng"), [
+      "limits 5h: 80% left -> 2026-04-04T04:40:00 UTC",
+      "limits 7d: 55% left -> 2026-04-11T04:40:00 UTC",
+    ]);
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("CodexLimitsService degrades to unavailable instead of throwing when the command fails", async () => {
   const service = new CodexLimitsService({
     command: "node -e \"process.stderr.write('boom'); process.exit(1)\"",
@@ -204,4 +247,98 @@ test("CodexLimitsService degrades to unavailable instead of throwing when the co
   assert.equal(summary.available, false);
   assert.equal(summary.unlimited, false);
   assert.equal(summary.source, "command");
+});
+
+test("CodexLimitsService can return stale limits immediately while refreshing in the background", async () => {
+  let currentNow = 2000;
+  const service = new CodexLimitsService({
+    cacheTtlMs: 1000,
+    now: () => currentNow,
+  });
+
+  service.cachedRecord = {
+    fetchedAt: 0,
+    value: {
+      capturedAt: "2026-04-04T13:00:00.000Z",
+      source: "cached",
+      snapshot: {
+        limit_id: "codex",
+        primary: {
+          used_percent: 20,
+          window_minutes: 300,
+          resets_at: 1775277600,
+        },
+      },
+    },
+  };
+
+  let refreshCalls = 0;
+  let resolveRefresh = null;
+  service.refresh = async () => {
+    refreshCalls += 1;
+    await new Promise((resolve) => {
+      resolveRefresh = resolve;
+    });
+    service.cachedRecord = {
+      fetchedAt: currentNow,
+      value: {
+        capturedAt: "2026-04-04T13:01:00.000Z",
+        source: "refreshed",
+        snapshot: {
+          limit_id: "codex",
+          primary: {
+            used_percent: 5,
+            window_minutes: 300,
+            resets_at: 1775278200,
+          },
+        },
+      },
+    };
+    return service.cachedRecord.value;
+  };
+
+  const staleSummary = await service.getSummary({ allowStale: true });
+
+  assert.equal(refreshCalls, 1);
+  assert.equal(staleSummary.source, "cached");
+  assert.equal(staleSummary.primary.remainingPercent, 80);
+  assert.ok(service.inFlightPromise);
+
+  resolveRefresh();
+  await service.inFlightPromise;
+
+  currentNow = 2500;
+  const refreshedSummary = await service.getSummary();
+
+  assert.equal(refreshCalls, 1);
+  assert.equal(refreshedSummary.source, "refreshed");
+  assert.equal(refreshedSummary.primary.remainingPercent, 95);
+});
+
+test("CodexLimitsService degrades to unavailable when CODEX_LIMITS_COMMAND expects implicit shell operators", async () => {
+  const tempRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-limits-command-shell-"),
+  );
+  const scriptPath = path.join(tempRoot, "read-limits.mjs");
+
+  await fs.writeFile(
+    scriptPath,
+    "console.log('{}');\n",
+    "utf8",
+  );
+
+  try {
+    const service = new CodexLimitsService({
+      command: `node ${scriptPath} | cat`,
+      cacheTtlMs: 1000,
+      commandTimeoutMs: 5000,
+    });
+    const summary = await service.getSummary();
+
+    assert.equal(summary.available, false);
+    assert.equal(summary.unlimited, false);
+    assert.equal(summary.source, "command");
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
 });

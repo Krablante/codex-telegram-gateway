@@ -19,7 +19,7 @@ const session = {
 test("buildTopicContextPrompt stays compact and points to the topic context file", () => {
   const prompt = buildTopicContextPrompt(session, {
     topicContextPath:
-      "/state/codex-telegram-gateway/sessions/-1001234567890/2203/telegram-topic-context.md",
+      "/home/testuser/.local/state/codex-telegram-gateway/sessions/<chat-id>/<topic-id>/telegram-topic-context.md",
   });
 
   assert.match(prompt, /Telegram topic routing context:/u);
@@ -39,7 +39,7 @@ test("buildTopicContextPrompt stays compact and points to the topic context file
 test("buildTopicContextFileText keeps the detailed safe file-delivery instructions", () => {
   const text = buildTopicContextFileText(session, {
     topicContextPath:
-      "/state/codex-telegram-gateway/sessions/-1001234567890/2203/telegram-topic-context.md",
+      "/home/testuser/.local/state/codex-telegram-gateway/sessions/<chat-id>/<topic-id>/telegram-topic-context.md",
   });
 
   assert.match(text, /# Telegram topic context/u);

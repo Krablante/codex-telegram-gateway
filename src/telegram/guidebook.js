@@ -14,6 +14,11 @@ const GUIDEBOOK_SOURCES = {
   eng: fileURLToPath(new URL("../../docs/guidebook-eng.md", import.meta.url)),
 };
 
+const RUNBOOK_SOURCES = {
+  rus: fileURLToPath(new URL("../../docs/runbook-rus.md", import.meta.url)),
+  eng: fileURLToPath(new URL("../../docs/runbook.md", import.meta.url)),
+};
+
 const GUIDEBOOK_RASTERIZE_SCRIPT = fileURLToPath(
   new URL("../../scripts/rasterize-pdf.py", import.meta.url),
 );
@@ -21,6 +26,11 @@ const GUIDEBOOK_RASTERIZE_SCRIPT = fileURLToPath(
 const GUIDEBOOK_FILE_NAMES = {
   rus: "codex-telegram-guidebook-rus.pdf",
   eng: "codex-telegram-guidebook-eng.pdf",
+};
+
+const RUNBOOK_FILE_NAMES = {
+  rus: "codex-telegram-runbook-rus.pdf",
+  eng: "codex-telegram-runbook-eng.pdf",
 };
 
 const PAGE = {
@@ -98,11 +108,26 @@ function getGuidebookFileName(language) {
   return GUIDEBOOK_FILE_NAMES[getNormalizedLanguage(language)] || GUIDEBOOK_FILE_NAMES.rus;
 }
 
+function getRunbookSourcePath(language) {
+  return RUNBOOK_SOURCES[getNormalizedLanguage(language)] || RUNBOOK_SOURCES.rus;
+}
+
+function getRunbookFileName(language) {
+  return RUNBOOK_FILE_NAMES[getNormalizedLanguage(language)] || RUNBOOK_FILE_NAMES.rus;
+}
+
 function resolveGuidebookOutputPath(language, stateRoot = null) {
   const outputRoot = stateRoot
     ? path.join(stateRoot, "tmp", "guidebook")
     : path.join(os.tmpdir(), "codex-telegram-gateway-guidebook");
   return path.join(outputRoot, getGuidebookFileName(language));
+}
+
+function resolveRunbookOutputPath(language, stateRoot = null) {
+  const outputRoot = stateRoot
+    ? path.join(stateRoot, "tmp", "runbook")
+    : path.join(os.tmpdir(), "codex-telegram-gateway-runbook");
+  return path.join(outputRoot, getRunbookFileName(language));
 }
 
 function contentWidth(doc) {
@@ -578,9 +603,136 @@ async function renderGuidebookVectorPdf({ language, outputPath }) {
   };
 }
 
+async function renderRunbookVectorPdf({ language, outputPath }) {
+  const normalizedLanguage = getNormalizedLanguage(language);
+  const sourcePath = getRunbookSourcePath(normalizedLanguage);
+  const markdown = await fsp.readFile(sourcePath, "utf8");
+  const blocks = parseMarkdownBlocks(markdown);
+  const titleBlock = blocks.find((block) => block.type === "heading-1");
+  const title =
+    titleBlock?.text ||
+    (normalizedLanguage === "eng"
+      ? "Codex Telegram Gateway Runbook"
+      : "Runbook для Codex Telegram Gateway");
+  const footerLabel =
+    normalizedLanguage === "eng"
+      ? "Codex Telegram Gateway runbook"
+      : "Codex Telegram Gateway runbook";
+
+  await fsp.mkdir(path.dirname(outputPath), { recursive: true });
+
+  await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      ...PAGE,
+      bufferPages: true,
+      info: {
+        Title: title,
+        Author: "codex-telegram-gateway",
+        Subject: footerLabel,
+      },
+    });
+    const stream = fs.createWriteStream(outputPath);
+
+    doc.pipe(stream);
+    registerFonts(doc);
+    let currentPageNumber = 1;
+    drawPageHeader(doc, footerLabel, currentPageNumber);
+    doc.on("pageAdded", () => {
+      currentPageNumber += 1;
+      drawPageHeader(doc, footerLabel, currentPageNumber);
+    });
+
+    let firstParagraphDrawn = false;
+    for (let index = 0; index < blocks.length; index += 1) {
+      const block = blocks[index];
+      if (block.type === "heading-1") {
+        const nextBlock = blocks[index + 1];
+        ensureSpace(
+          doc,
+          estimateBlockHeight(doc, block) +
+            estimateBlockHeight(doc, nextBlock, {
+              leadParagraph: firstParagraphDrawn,
+            }),
+        );
+        drawHeading(doc, block.text, 1);
+        continue;
+      }
+      if (block.type === "heading-2") {
+        const nextBlock = blocks[index + 1];
+        ensureSpace(
+          doc,
+          estimateBlockHeight(doc, block) +
+            estimateBlockHeight(doc, nextBlock, {
+              leadParagraph: firstParagraphDrawn,
+            }),
+        );
+        drawHeading(doc, block.text, 2);
+        continue;
+      }
+      if (block.type === "paragraph") {
+        drawParagraph(doc, block.text, { lead: !firstParagraphDrawn });
+        firstParagraphDrawn = true;
+        continue;
+      }
+      if (block.type === "bullets") {
+        drawList(doc, block.items, { ordered: false });
+        continue;
+      }
+      if (block.type === "numbered") {
+        drawList(doc, block.items, { ordered: true });
+        continue;
+      }
+      if (block.type === "code") {
+        drawCode(doc, block.text);
+      }
+    }
+
+    doc.end();
+
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    doc.on("error", reject);
+  });
+
+  return {
+    filePath: outputPath,
+    fileName: getRunbookFileName(normalizedLanguage),
+    contentType: "application/pdf",
+    sourcePath,
+  };
+}
+
 async function renderGuidebookPdf({ language, outputPath }) {
   const tempVectorPath = `${outputPath}.vector-${process.pid}-${Date.now()}.pdf`;
   const result = await renderGuidebookVectorPdf({
+    language,
+    outputPath: tempVectorPath,
+  });
+
+  try {
+    const rasterized = await rasterizeGuidebookPdf({
+      inputPath: tempVectorPath,
+      outputPath,
+    });
+
+    if (!rasterized) {
+      await fsp.copyFile(tempVectorPath, outputPath);
+    }
+  } finally {
+    await fsp.rm(tempVectorPath, {
+      force: true,
+    });
+  }
+
+  return {
+    ...result,
+    filePath: outputPath,
+  };
+}
+
+async function renderRunbookPdf({ language, outputPath }) {
+  const tempVectorPath = `${outputPath}.vector-${process.pid}-${Date.now()}.pdf`;
+  const result = await renderRunbookVectorPdf({
     language,
     outputPath: tempVectorPath,
   });
@@ -614,6 +766,17 @@ export async function generateGuidebookPdf({
   return renderGuidebookPdf({
     language,
     outputPath: outputPath || resolveGuidebookOutputPath(language, stateRoot),
+  });
+}
+
+export async function generateRunbookPdf({
+  language = "rus",
+  outputPath = null,
+  stateRoot = null,
+} = {}) {
+  return renderRunbookPdf({
+    language,
+    outputPath: outputPath || resolveRunbookOutputPath(language, stateRoot),
   });
 }
 

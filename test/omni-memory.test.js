@@ -74,3 +74,67 @@ test("OmniMemoryStore quarantines malformed memory files and falls back to defau
   assert.equal(entries.includes("omni-memory.json"), false);
   assert.ok(entries.some((entry) => entry.startsWith("omni-memory.json.corrupt-")));
 });
+
+test("OmniMemoryStore patch computes from the latest locked memory state", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-omni-memory-concurrent-"),
+  );
+  const storeA = new SessionStore(sessionsRoot);
+  const storeB = new SessionStore(sessionsRoot);
+  const memoryStoreA = new OmniMemoryStore(storeA);
+  const memoryStoreB = new OmniMemoryStore(storeB);
+  const session = await ensureSession(storeA);
+
+  await memoryStoreA.write(session, {
+    continuation_count_since_compact: 0,
+    goal_constraints: ["Ship Omni safely."],
+  });
+
+  let releaseFirstPatch;
+  let firstPatchEntered;
+  const firstPatchEnteredPromise = new Promise((resolve) => {
+    firstPatchEntered = resolve;
+  });
+  const releaseFirstPatchPromise = new Promise((resolve) => {
+    releaseFirstPatch = resolve;
+  });
+
+  const firstPatch = memoryStoreA.patch(session, async (current) => {
+    firstPatchEntered();
+    await releaseFirstPatchPromise;
+    return {
+      continuation_count_since_compact:
+        current.continuation_count_since_compact + 1,
+      primary_next_action: "Run the next bounded verification.",
+    };
+  });
+  await firstPatchEnteredPromise;
+
+  let secondFinished = false;
+  const secondPatch = memoryStoreB.patch(session, (current) => ({
+    continuation_count_since_compact:
+      current.continuation_count_since_compact + 1,
+    last_decision_mode: "pivot_to_next_line",
+  })).then((value) => {
+    secondFinished = true;
+    return value;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(
+    secondFinished,
+    false,
+    "second Omni memory patch should wait for the locked first mutation",
+  );
+
+  releaseFirstPatch();
+  await Promise.all([firstPatch, secondPatch]);
+
+  const loaded = await memoryStoreA.load(session);
+  assert.equal(loaded.continuation_count_since_compact, 2);
+  assert.equal(
+    loaded.primary_next_action,
+    "Run the next bounded verification.",
+  );
+  assert.equal(loaded.last_decision_mode, "pivot_to_next_line");
+});

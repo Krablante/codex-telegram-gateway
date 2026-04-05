@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.0] - 2026-04-05
+
+Added:
+
+- session-aware Spike rollout and handoff via `make service-rollout`, `make service-restart`, `make service-hard-restart`, plus generation/liveness verification and rollout ownership storage
+- modular handler/runtime slices across Telegram, worker-pool, Omni, and Zoo, with matching `test-support/` fixtures and a much broader public regression suite
+- public runbook PDF build support, Russian runbook source, `scripts/windows/admin.cmd`, and `scripts/windows/user-e2e.cmd`
+
+Changed:
+
+- public repo is now fully resynced to the current private architecture wave while keeping public defaults: XDG config/state on Linux, `%LOCALAPPDATA%` on Windows, repo-local `.env` for `make`, and public GitHub package metadata
+- systemd install flow now resolves `CODEX_BIN_PATH` without invoking a shell, preserves `PATH` inside the user unit, and documents the `systemd >= 250` requirement for soft Spike rollout
+- README, deployment, testing, runbook, state-contract, and Telegram surface docs now describe the current menu/control/rollout behavior instead of the older `0.2.2.2` surface
+
+Fixed:
+
+- native Windows stop/restart handling no longer depends on POSIX-only negative-pid signaling; interrupted runs now fall back to `taskkill /t`
+- Windows `PATH`/`Path` lookup and `.cmd` shim handling are now robust for native installs and GitHub Actions runners
+- rollout handoff now rejects stale or mismatched update-forwarding traffic instead of trusting the first generation heartbeat that appears
+
 ## [0.2.2.2] - 2026-04-04
 
 Added:

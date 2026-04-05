@@ -1,14 +1,19 @@
-import input from "input";
 import process from "node:process";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 
+import { promptPassword, promptText } from "./interactive-prompts.js";
+import { getOperatorCommandHint } from "../runtime/operator-command-hints.js";
 import {
   buildTelegramUserAccountSnapshot,
   loadTelegramUserBootstrap,
   readTelegramUserSession,
   writeTelegramUserSession,
 } from "../live-user/client.js";
+
+function buildUserLoginRetryHint() {
+  return getOperatorCommandHint("user-login") || "make user-login";
+}
 
 async function main() {
   let bootstrap;
@@ -24,7 +29,7 @@ async function main() {
     console.error(
       [
         `Created ${bootstrap.paths.envFilePath}.`,
-        "Fill TELEGRAM_USER_API_ID and TELEGRAM_USER_API_HASH from https://my.telegram.org/apps, then rerun make user-login.",
+        `Fill TELEGRAM_USER_API_ID and TELEGRAM_USER_API_HASH from https://my.telegram.org/apps, then rerun ${buildUserLoginRetryHint()}.`,
       ].join(" "),
     );
     process.exitCode = 1;
@@ -35,7 +40,7 @@ async function main() {
       [
         bootstrap.userConfigError?.message
           || `Missing Telegram user config in ${bootstrap.paths.envFilePath}.`,
-        "Fill TELEGRAM_USER_API_ID and TELEGRAM_USER_API_HASH from https://my.telegram.org/apps, then rerun make user-login.",
+        `Fill TELEGRAM_USER_API_ID and TELEGRAM_USER_API_HASH from https://my.telegram.org/apps, then rerun ${buildUserLoginRetryHint()}.`,
       ].join(" "),
     );
     process.exitCode = 1;
@@ -57,11 +62,11 @@ async function main() {
     await client.start({
       phoneNumber: async () =>
         userConfig.phoneNumber
-        || input.text("Telegram phone number (+123456789):"),
+        || promptText("Telegram phone number (+123456789): "),
       phoneCode: async () =>
-        input.text("Telegram login code from Telegram app/SMS:"),
+        promptText("Telegram login code from Telegram app/SMS: "),
       password: async () =>
-        input.password("Telegram 2FA password:"),
+        promptPassword("Telegram 2FA password: "),
       onError: (error) => {
         console.error(`Telegram user login failed: ${error.message}`);
       },

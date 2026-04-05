@@ -76,6 +76,12 @@ export class RuntimeObserver {
         last_prompt_at: this.serviceState.lastPromptAt,
         bootstrap_dropped_update_id: this.serviceState.bootstrapDroppedUpdateId,
       },
+      generation: {
+        id: this.serviceState.generationId ?? null,
+        is_leader: Boolean(this.serviceState.isLeader),
+        retiring: Boolean(this.serviceState.retiring),
+        rollout_status: this.serviceState.rolloutStatus ?? "idle",
+      },
       polling: {
         current_offset: this.currentOffset,
         last_retention_sweep_at: this.lastRetentionSweepAt,

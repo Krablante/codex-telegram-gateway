@@ -1,6 +1,6 @@
 {
   "name": "codex-telegram-gateway",
-  "version": "0.2.2.2",
+  "version": "0.3.0",
   "description": "Telegram forum-topic gateway for the real Codex CLI runtime.",
   "keywords": [
     "telegram",
@@ -27,6 +27,7 @@
     "doctor": "node src/cli/doctor.js",
     "guidebook:build": "node scripts/generate-guidebook-pdf.mjs",
     "install-user-service": "node src/cli/install-user-service.js",
+    "runbook:build": "node scripts/generate-runbook-pdf.mjs",
     "run": "node src/cli/run.js",
     "run:omni": "node src/cli/run-omni.js",
     "smoke": "bash -lc 'systemctl --user is-active --quiet codex-telegram-gateway.service && { echo \"codex-telegram-gateway.service is active; refuse smoke run to avoid Telegram poll conflict\" >&2; exit 1; } || true; TELEGRAM_POLL_TIMEOUT_SECS=1 RUN_ONCE=1 node src/cli/run.js'",
@@ -42,7 +43,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "input": "^1.0.1",
     "pdfkit": "^0.18.0",
     "telegram": "^2.26.22"
   }
