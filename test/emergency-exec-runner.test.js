@@ -70,6 +70,7 @@ test("startEmergencyExecRun launches codex exec in a detached process group", ()
         repoRoot: "/repo",
         stateRoot: "/tmp/state-root",
         prompt: "repair it",
+        platform: "linux",
         spawnProcess(_bin, _args, options) {
           spawnOptions = options;
           throw new Error("spawn blocked");
