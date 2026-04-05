@@ -5,11 +5,11 @@
 <h1 align="center">codex-telegram-gateway</h1>
 
 <p align="center">
-  <strong>Turn a Telegram forum into a practical control surface for your local Codex runtime.</strong>
+  <strong>Turn a Telegram forum into a durable control surface for the real Codex CLI on your own machine.</strong>
 </p>
 
 <p align="center">
-  One topic = one session. <code>Spike</code> does the live work. <code>Omni</code> optionally supervises <code>/auto</code>. <code>Zoo</code> adds an experimental project-tamagotchi lane.
+  One topic = one session. <code>Spike</code> does the live work. <code>Omni</code> optionally supervises <code>/auto</code>. <code>Zoo</code> adds an experimental project-card lane.
 </p>
 
 <p align="center">
@@ -40,60 +40,62 @@
   <a href="./CHANGELOG.md">Changelog</a>
 </p>
 
-`codex-telegram-gateway` is a focused bridge between Telegram forum topics and a real machine where `codex` is already installed.
+`codex-telegram-gateway` is a practical bridge between Telegram forum topics and a machine where `codex` is already installed, authenticated, and allowed to touch real repos, files, and tools.
 
-It is designed for operators who want something small, understandable, and durable:
+This repo is for people who want something direct:
 
-- one task, one topic, one durable local session
-- commentary-style progress instead of raw tool spam
-- real local files and commands, not a hosted wrapper
-- recovery that survives long-running work
-- optional autonomy through `Omni`, without turning the project into a general agent platform
-- one dedicated `Zoo` topic for experimental project cards
+- one work topic maps to one durable local session
+- the real Codex CLI does the work, not a hosted proxy
+- follow-up prompts can steer into a still-running task
+- progress stays readable instead of turning chat into tool spam
+- recovery, compaction, queues, waits, and suffixes are built in
+- Linux and native Windows are both first-class paths
 
-## Why People Use It
+## Why this exists
 
-- Telegram is already open all day.
-- A forum topic is a natural task lane.
-- The local machine already has the real Codex CLI, repo access, and auth.
-- The operator wants one practical system instead of a large orchestration stack.
+Telegram is already open all day. A forum topic is a natural task lane. Codex already lives on the operator machine. The missing piece is a small, durable gateway that turns those three facts into one usable system.
 
-## What's New In v0.3.0
+This project deliberately stays focused:
 
-| Area | What changed |
-| --- | --- |
-| Service rollout | `Spike` now supports soft, session-aware rollout and restart. Active work can finish on the retiring generation while new traffic moves only after the replacement is proven live. |
-| Runtime hardening | Generation identity checks, update-forwarding IPC, PATH resolution, `.cmd` shim behavior, and Windows process-tree shutdown were tightened for real cross-platform operation. |
-| Architecture | Telegram command handling, worker-pool logic, Omni coordination, and Zoo flows were split into thinner modules with matching test ownership. |
-| Operator tooling | Public repo now ships `runbook:build`, `scripts/windows/admin.cmd`, `scripts/windows/user-e2e.cmd`, and refreshed runbook coverage. |
-| Public release surface | Docs, changelog, tests, and CI are now aligned with the current private implementation instead of the older `0.2.2.2` snapshot. |
+- it is not a hosted Codex wrapper
+- it is not a generic Telegram bot framework
+- it is not a multi-tenant orchestration platform
+- it is a tight operator-facing bridge for personal or small-team use
 
-## Highlights
-
-- one Telegram topic maps to one durable local session
-- live follow-ups can steer into an active run
-- queued prompts with `/q` and buffered prompts with `/wait`
-- topic-local and global prompt suffixes with `/suffix`
-- topic-local and global menus through `/menu` and `/global`
-- `/limits` plus limits summaries in status and menus
-- compacted recovery memory rebuilt from the clean exchange log
-- optional `Omni` bot with goal-locked `/auto`
-- native Windows wrapper scripts for install, doctor, test, run, admin, and live-user helpers
-- GitHub Actions CI for Ubuntu and native Windows runners
-- dedicated menu-only `Zoo` topic for project cards with duplicate private/public repo disambiguation
-
-## Mental Model
+## What you get
 
 | Piece | Role |
 | --- | --- |
-| `General` topic | global controls, `/guide`, `/help`, `/global`, `/clear`, creating new work topics |
-| `Zoo` topic | dedicated menu-only project lane |
+| `General` topic | global controls, `/help`, `/guide`, `/global`, `/clear`, and new-topic creation |
 | work topic | the actual task lane |
-| `Spike` | the live worker that reads code, edits files, runs commands, and sends progress/final replies |
-| `Omni` | optional lightweight supervisor for `/auto` |
-| local state root | durable memory: sessions, briefs, logs, queued prompts, artifacts |
+| `Spike` | the main worker bot that reads code, edits files, runs commands, and streams progress |
+| `Omni` | optional second bot for goal-locked `/auto` supervision |
+| `Zoo` | optional menu-only topic with experimental project cards |
+| local state root | durable sessions, briefs, exchange logs, artifacts, queue state, and rollout metadata |
 
-Architecture at a glance:
+Core capabilities:
+
+- plain prompts start durable local sessions
+- live follow-ups steer into active runs
+- `/q` queues prompts when you want batching instead of interruption
+- `/wait` buffers fragmented Telegram input into one prompt
+- `/suffix` adds persistent prompt tails per topic or globally
+- `/menu` and `/global` expose control panels instead of command memorization
+- `/compact` rebuilds concise continuity from clean state
+- `/limits` surfaces Codex limits in chat
+- session-aware `Spike` rollout avoids blind restarts by default
+
+## v0.3.0 at a glance
+
+| Area | What changed |
+| --- | --- |
+| Rollout | `Spike` now uses session-aware soft restart and rollout with generation/liveness checks. |
+| Cross-platform behavior | Windows process shutdown, PATH handling, `.cmd` lookup, and CI coverage were hardened on real runners. |
+| Architecture | Telegram handlers, worker-pool slices, Omni coordination, and Zoo flows were split into thinner modules with matching tests. |
+| Operator tooling | Public repo now ships `runbook:build`, Russian runbook source, refreshed docs, and stronger Windows helper scripts. |
+| Public parity | The public tree is now aligned with the current private implementation wave instead of the older `0.2.2.2` snapshot. |
+
+## How it works
 
 ```text
 Telegram forum
@@ -112,7 +114,9 @@ Telegram forum
 Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
 ```
 
-## Quick Start
+The important mental model is simple: Telegram is only the surface. The actual work happens locally, against your real filesystem, your real repos, and your real `codex` runtime.
+
+## Quick start
 
 Requirements:
 
@@ -129,57 +133,41 @@ cd codex-telegram-gateway
 
 npm install
 cp .env.example .env
+```
 
-# fill the required values in .env first:
-# TELEGRAM_BOT_TOKEN
-# TELEGRAM_ALLOWED_USER_ID or TELEGRAM_ALLOWED_USER_IDS
-# TELEGRAM_FORUM_CHAT_ID
-# WORKSPACE_ROOT
-# optional: DEFAULT_SESSION_BINDING_PATH
+Fill at least:
 
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
+- `TELEGRAM_FORUM_CHAT_ID`
+- `WORKSPACE_ROOT`
+- optional: `DEFAULT_SESSION_BINDING_PATH`
+
+Then run:
+
+```bash
 make doctor
 make test
 make run
 ```
 
-The actual minimum is `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`, `TELEGRAM_FORUM_CHAT_ID`, and `WORKSPACE_ROOT`.
+Make the bot an admin in the forum chat. The smooth path is with rights to post, edit, delete, pin, and manage topics.
 
-Make the bot an admin in the forum chat. The cleanest experience is with rights to post, edit, delete, pin, and manage topics.
-
-Then in Telegram:
+In Telegram:
 
 1. Open `General`.
 2. Send `/help`.
 3. Create a work topic with `/new Backend Cleanup`.
-4. Optionally send `/zoo` to open the experimental Zoo topic.
-5. Enter your work topic and send a plain text prompt.
+4. Enter that topic and send a plain text prompt.
+5. Optionally open `/zoo` or enable `Omni` later.
 
-If you want the exact first-time setup flow, use [docs/setup.md](./docs/setup.md).
+If you want the exact first-time setup path, start with [docs/setup.md](./docs/setup.md).
 
-## Native Windows
-
-Native Windows is a first-class path.
-
-```powershell
-copy .env.example .env
-scripts\windows\install.cmd
-scripts\windows\install-codex.cmd
-scripts\windows\doctor.cmd
-scripts\windows\test.cmd
-scripts\windows\run.cmd
-```
-
-If you enable `Omni`, run `scripts\windows\run-omni.cmd` in a second shell.
-
-When `ENV_FILE` is unset, the repo first uses `%LOCALAPPDATA%\codex-telegram-gateway\runtime.env` if it already exists, then falls back to repo-local `.env`, and otherwise uses that default config path. Runtime state lives under `%LOCALAPPDATA%\codex-telegram-gateway` by default.
-
-The Windows wrappers intentionally call `npm.cmd` directly, avoid the common PowerShell execution-policy trap, and stay on the reproducible `npm ci --ignore-scripts` path.
-
-## Deployment Modes
+## Deployment lanes
 
 ### Spike-only
 
-The recommended starting point.
+The recommended default.
 
 Leave `OMNI_BOT_TOKEN` and `OMNI_BOT_ID` unset, or set `OMNI_ENABLED=false`.
 
@@ -196,10 +184,32 @@ Add `OMNI_BOT_TOKEN` and `OMNI_BOT_ID` to enable `/auto`.
 In this mode:
 
 - `Spike` still does the heavy live work
-- `Omni` evaluates completed cycles and decides whether to continue, sleep, pivot, block, or finish
-- human direct prompts stop going to `Spike` while `/auto` owns that topic
+- `Omni` evaluates finished cycles and decides whether to continue, sleep, pivot, block, or finish
+- direct human prompts stop going to `Spike` while `/auto` owns that topic
 
-## Operator Commands
+### Native Windows
+
+Native Windows is supported directly.
+
+```powershell
+copy .env.example .env
+scripts\windows\install.cmd
+scripts\windows\install-codex.cmd
+scripts\windows\doctor.cmd
+scripts\windows\test.cmd
+scripts\windows\run.cmd
+```
+
+If `Omni` is enabled, run `scripts\windows\run-omni.cmd` in a second shell.
+
+Notes:
+
+- Windows wrappers call `npm.cmd` directly and avoid common PowerShell execution-policy traps
+- repo-local `.env` works out of the box
+- runtime state defaults to `%LOCALAPPDATA%\codex-telegram-gateway`
+- Linux-only `systemd --user` service install is intentionally replaced with Windows-native wrapper scripts
+
+## Operator commands
 
 Linux/operator path:
 
@@ -213,6 +223,7 @@ make service-install-omni
 make service-rollout
 make service-restart
 make service-hard-restart
+make service-restart-omni
 make admin ARGS='status'
 ```
 
@@ -226,23 +237,45 @@ scripts\windows\run-omni.cmd
 scripts\windows\admin.cmd status
 ```
 
-## Notes
+Operational notes:
 
-- `Spike` stays the only heavy live worker; `Omni` uses short one-shot `codex exec` passes
-- `service-install` is intentionally Linux-only because it targets `systemd --user`
-- `make service-rollout` and `make service-restart` are the soft rollout path for `Spike`; use `make service-hard-restart` only when you want a blind restart
-- native Windows now supports direct `.env`-based startup without Linux-only assumptions; `WORKSPACE_ROOT` is preferred and `ATLAS_WORKSPACE_ROOT` remains a compatibility alias
-- `make user-login` and `scripts\windows\user-login.cmd` now use a small built-in Node terminal prompt layer instead of the older `input` stack
-- local file refs stay human-readable in chat instead of leaking long host paths
+- `make service-rollout` and `make service-restart` are the soft default path for `Spike`
+- `make service-hard-restart` is the explicit blind restart path
+- `make service-restart-omni` is the direct restart path for `Omni`
+- `service-install` is Linux-only because it targets `systemd --user`
 
-## Docs
+## Good fit if...
 
-- [docs/setup.md](./docs/setup.md) — first-time setup
-- [docs/index.md](./docs/index.md) — doc map
-- [docs/architecture.md](./docs/architecture.md) — runtime shape and flow
-- [docs/telegram-surface.md](./docs/telegram-surface.md) — commands, waits, suffixes, rendering, file delivery
-- [docs/omni-auto.md](./docs/omni-auto.md) — `/auto`, `Omni`, phases, sleep, blockers
-- [docs/deployment.md](./docs/deployment.md) — env, services, Spike-only vs Spike+Omni deployment
-- [docs/testing.md](./docs/testing.md) — automated, smoke, and live-user validation
-- [docs/runbook.md](./docs/runbook.md) and [docs/runbook-rus.md](./docs/runbook-rus.md) — operator troubleshooting and recovery
-- [docs/state-contract.md](./docs/state-contract.md) — mutable state surfaces
+- you already use Telegram as your lightweight operator console
+- you want one topic per task instead of one giant agent thread
+- you care about readable progress, durable state, and clean restart behavior
+- you want the real Codex CLI working against local repos, not a separate hosted abstraction
+
+## Docs map
+
+| Doc | Why you care |
+| --- | --- |
+| [docs/setup.md](./docs/setup.md) | first-time installation and onboarding |
+| [docs/index.md](./docs/index.md) | full doc map |
+| [docs/architecture.md](./docs/architecture.md) | runtime shape, module boundaries, and flow |
+| [docs/telegram-surface.md](./docs/telegram-surface.md) | commands, waits, suffixes, menus, rendering, file delivery |
+| [docs/omni-auto.md](./docs/omni-auto.md) | `/auto`, `Omni`, phases, sleep, blockers, direct questions |
+| [docs/deployment.md](./docs/deployment.md) | env model, services, Spike-only vs Spike+Omni deployment |
+| [docs/testing.md](./docs/testing.md) | automated, smoke, and live-user validation |
+| [docs/runbook.md](./docs/runbook.md) | operator troubleshooting and recovery |
+| [docs/runbook-rus.md](./docs/runbook-rus.md) | Russian runbook |
+| [docs/state-contract.md](./docs/state-contract.md) | mutable state surfaces under the configured state root |
+
+## Validation
+
+The public repo is validated with:
+
+- `npm test`
+- guidebook PDF smoke build
+- runbook PDF smoke build
+- GitHub Actions on `ubuntu-latest`
+- GitHub Actions on `windows-latest`
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
