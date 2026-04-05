@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.1] - 2026-04-05
+
+Fixed:
+
+- native Windows Codex startup now defaults cleanly to `codex.cmd`, launches shim wrappers through explicit `cmd.exe /d /s /c`, and avoids `detached` app-server / exec runs where Windows process handling is fragile
+- app-server startup failures now surface recent `stdout` / `stderr` lines instead of only returning a blind timeout
+- Windows symlinked-worktree coverage now uses directory junctions, avoiding unnecessary `Developer Mode` / elevated-privilege requirements for that test slice
+- cross-platform CI expectations now correctly distinguish Linux and native Windows defaults for `CODEX_BIN_PATH` and detached `codex exec` behavior
+
 ## [0.3.0] - 2026-04-05
 
 Added:
