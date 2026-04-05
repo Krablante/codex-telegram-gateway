@@ -11,7 +11,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
 - one operator-only private chat acts as the emergency rescue lane
 - optional `/auto` adds a second trusted bot, `Omni`, in the same topic; Spike executes and Omni orchestrates
 - if Omni is disabled globally, Spike falls back to a plain single-bot surface and ignores stale topic auto locks
-- the gateway keeps durable topic memory under `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/sessions/<chat>/<topic>/`
+- the gateway keeps durable topic memory under `state/.../sessions/<chat>/<topic>/`
 - the real model execution path is `codex app-server`, not a fake wrapper around static prompts
 
 ## Main flow
@@ -52,7 +52,10 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
 6. `src/session-manager/` resolves the topic session, workspace binding, suffixes, wait-mode state, exchange log, compact brief, and topic context file.
    - `src/session-manager/session-service.js` keeps the stable public session facade used by the Telegram, Omni, Zoo, and CLI surfaces
    - `src/session-manager/session-auto-mode-service.js` owns topic `auto_mode` mutations and always computes them from the latest locked session state before save
-   - `src/session-manager/session-store.js` keeps the file-backed meta store and the lock-aware `patchWithCurrent()` mutation path for state updates that must merge against fresh disk state
+   - `src/session-manager/session-store.js` is the thin public facade for the file-backed session store
+   - `src/session-manager/session-store-lifecycle.js` owns lock-aware meta mutations, save semantics, reactivation, parking, and purge flows
+   - `src/session-manager/session-store-files.js` owns exchange-log IO, artifact writes, compact-state reads, and generic session file helpers
+   - `src/session-manager/session-store-common.js` keeps normalization, ownership shaping, exchange-log normalization, and meta-lock constants
 7. The worker layer now follows the same shell-plus-domain split:
    - `src/pty-worker/worker-pool.js` is the thin public shell that keeps the exported `CodexWorkerPool` surface stable
    - `src/pty-worker/worker-pool-transport.js` owns progress bubbles, typing heartbeats, and live steer buffering/flush behavior, including the short retry window before follow-up fallback
@@ -92,7 +95,7 @@ This repo now explicitly follows a modular-first handler model.
 ## Current watchlist
 
 - `src/cli/run.js` is still the composition root, not a business-logic home. Keep new polling, rollout, and maintenance behavior moving outward into dedicated runtime modules instead of thickening the bootstrap loop.
-- `src/session-manager/session-store.js` is the broadest persistence slice. If it grows much further, split storage concerns by responsibility instead of leaving one ever-growing file-backed state hub.
+- the session-store boundary is healthier now, but keep new persistence logic split between `session-store-lifecycle.js` and `session-store-files.js` instead of letting the facade or one helper file become the next storage monolith.
 - `src/pty-worker/worker-pool-lifecycle.js` is intentionally the run-lifecycle owner, but new steer or delivery behavior should stay in `worker-pool-transport.js` and `worker-pool-delivery.js` unless it truly belongs to lifecycle coordination.
 
 ## Transport behavior
@@ -120,15 +123,15 @@ Canonical durable surfaces:
 - `active-brief.md` — derived recovery summary with enough continuity for a fresh post-compact or post-recovery run
 - `telegram-topic-context.md` — compact routing/file-delivery contract for Codex
 - `artifacts/` — generated diffs and related outputs
-- `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/emergency/` — isolated rescue-lane scratch space for downloaded private-chat attachments and `codex exec` output files
-- `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/omni/runs/` — one-shot `codex exec` outputs for Omni decisions
+- `state/.../emergency/` — isolated rescue-lane scratch space for downloaded private-chat attachments and `codex exec` output files
+- `state/.../omni/runs/` — one-shot `codex exec` outputs for Omni decisions
 
 The gateway does not treat raw PTY output or full tool chatter as canonical memory.
 
 ## Operational boundaries
 
 - Telegram remains the only user-facing transport in this repo
-- service runtime/state lives under `the configured state root`, not inside the repo
+- service runtime/state lives under `atlas/state/...`, not inside the repo
 - file delivery is intentionally restricted to the current worktree, the session state directory, and the system temp dir
 - the service is intentionally single-operator in this phase
 - emergency mode is on-demand only: writing in operator private chat starts one isolated rescue run, and the lock disappears automatically when that run finishes or is interrupted
