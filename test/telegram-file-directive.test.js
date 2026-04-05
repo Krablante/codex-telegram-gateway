@@ -77,3 +77,29 @@ test("extractTelegramFileDirectives ignores the legacy placeholder example even 
   assert.deepEqual(parsed.documents, []);
   assert.deepEqual(parsed.warnings, []);
 });
+
+test("extractTelegramFileDirectives understands CRLF fenced blocks", () => {
+  const source = [
+    "Uploading artifact.",
+    "",
+    "```telegram-file",
+    "action: send",
+    "path: C:/Temp/report.txt",
+    "filename: report.txt",
+    "caption: Windows report",
+    "```",
+    "",
+    "Check it here.",
+  ].join("\r\n");
+
+  const parsed = extractTelegramFileDirectives(source, { language: "eng" });
+  assert.equal(parsed.text, "Uploading artifact.\n\nCheck it here.");
+  assert.deepEqual(parsed.documents, [
+    {
+      filePath: "C:/Temp/report.txt",
+      fileName: "report.txt",
+      caption: "Windows report",
+    },
+  ]);
+  assert.deepEqual(parsed.warnings, []);
+});

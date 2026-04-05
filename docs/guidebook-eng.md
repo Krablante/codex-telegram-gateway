@@ -1,56 +1,87 @@
 # Spike + Omni: newcomer guidebook
 
-This is a short human guide to the bot. It is not a reference for every flag. It is a practical map: who does the work, where to write, when to use `/q`, `/wait`, `/suffix`, what `/auto` is for, and when `/diff`, `/compact`, and `/purge` actually matter.
+This is a short practical guide to the bot. It is not a full flag reference. It is a starting map: where to work, when to use menus, what you do not need to memorize, and which commands are actually worth remembering.
 
-## How to think about the system
+The main idea is simple: for daily work, prefer menus over memory. Commands still expose the full surface, but menus and buttons already cover most common settings.
 
-Think of it this way: `General` is the lobby, and work topics are separate rooms for separate tasks. In `General` you open global settings, ask for reference material, and request the guidebook. Real work usually does not happen there; it lives in a concrete topic.
+## Quick start
 
-The normal starting flow is simple: create a topic directly with `/new Topic Name`, enter it, and send a plain-text prompt. If the task gets long, check `/diff` and run `/compact` from time to time.
+`General` is the lobby. You usually do three things there: open the global menu, grab the guidebook/help, and create new work topics.
 
-Example:
+The normal start looks like this:
 
 ```text
 /new Backend Cleanup
 ```
 
-The most useful beginner rule is: one topic, one work stream. Do not mix five unrelated tasks into the same thread.
+Then enter the new topic and send the task as plain text. That is the normal happy path. Do not use `General` as a regular work session, and do not pile several unrelated tasks into one topic.
 
 ## Who does what
 
-`Spike` is the main worker. It receives the normal prompts, reads code, edits files, runs commands, and sends the final answer. If you enter a topic and start working normally, you are almost certainly working with `Spike`.
+`Spike` is the main worker. It reads code, edits files, runs commands, and answers the task.
 
-`Omni` exists only for `/auto`. It does not replace `Spike` and it is not meant to become a second heavy worker. Its job is to keep the goal in view, look at completed Spike cycles, and decide what should happen next.
+`Omni` exists only for `/auto`. It is a supervisor, not a second heavy worker. It watches completed `Spike` cycles and decides whether the task should continue.
 
-You do not need `Omni` to start using the system. If you are on a capped plan such as `ChatGPT Plus`, it is often smarter to start with `Spike` only: `/auto` with `Omni` usually spends noticeably more tokens and burns through limits faster.
+If you are new, `Spike` alone is almost always enough. `/auto` becomes useful later, when you truly want a longer autonomous task and understand the token cost.
 
-Short version: `Spike` is the live worker, and `Omni` is the `/auto` supervisor.
+## Why menus should be your default
 
-## Where to write and what happens next
+The bot is no longer a “memorize twenty commands” interface. The basic path is:
 
-Inside a work topic, plain text is treated as a normal prompt. If the topic is free, the run starts immediately. If a run is still active, a follow-up can be folded into the same work stream as a continuation. This is not limited to one extra message: while the live run is still open, you can keep sending additional follow-ups and they continue steering that same run.
+- use `/global` in `General` for chat-wide settings;
+- use `/menu` inside a work topic for topic-local settings;
+- use the pinned menu and inline buttons in `Zoo`.
 
-`/q` is for a different case: when you do not mean "here is one more thought", but explicitly mean "do this next after the current work finishes". In that case the prompt goes into the `Spike` queue.
+Menus are the easier and safer path for things that change regularly but are not the task itself:
 
-Example:
+- viewing `Status` inside a topic;
+- changing the UI language through the global menu in `General`;
+- turning `wait` on or off;
+- opening `Bot Settings` and changing `Spike`/`Omni` model and reasoning there;
+- running topic ops through `Compact`, `Interrupt`, and `Purge` buttons;
+- turning suffixes on or off;
+- opening `Guide` or `Help` straight from the global menu in `General`;
+- refreshing the current screen.
+
+The practical rule is simple: if you need to change a stable setting, start with a menu. It is faster, cleaner, and usually does not require remembering syntax. Two small layout details are worth knowing: bot-specific runtime controls now sit behind a dedicated `Bot Settings` screen instead of living on the root menu, and the effective bot summary is now intentionally compact, for example `spike: gpt-5.4 (xhigh)`.
+
+## What menus do not replace
+
+Menus do not replace the work itself. Some things still belong to plain text or direct commands:
+
+- the normal prompt inside a work topic;
+- `/new`, because topic creation is command-driven;
+- `/guide`, `/zoo`, and `/clear` from `General`;
+- `Guide` and `Help` are available as buttons in the global menu, but `/guide` and `/help` still work directly too;
+- `/q`, when you want to explicitly queue the next prompt;
+- `/diff`;
+- `/auto` and questions for `Omni`.
+
+One more practical detail matters: some values start from a menu but are not chosen by button. Custom wait values or free-form suffix text are usually entered as a reply to the menu message after the bot asks for input.
+
+Short version: menus are great for toggles, presets, and screen navigation. Free-form text, real work, and a few operational actions still live outside them.
+
+## How work usually flows in a topic
+
+Inside a work topic, plain text is treated as a normal prompt. If the run is free, it starts immediately. If the run is still active, a follow-up can be folded into that same stream.
+
+`/q` is not for “one more thought.” It is for an explicit “do this next.”
 
 ```text
 /q After the current check finishes, prepare a README patch.
 ```
 
-If nothing is running in that topic, the prompt usually starts right away. If the previous run is still finishing its final reply and shutting down, `/q` simply waits and starts next. During `/auto`, this queue path is intentionally unavailable because `Omni` already owns the routing.
+If nothing is running, that prompt usually starts right away. If the current run is still closing out, `/q` simply waits its turn. During `/auto`, this queue path is unavailable because `Omni` already owns routing.
 
-## When to use /wait
+## When /wait matters
 
-`/wait` is not for queueing. It is for collecting one larger prompt from several smaller messages. This is useful when you want to send context in parts, add an attachment, and then flush everything as one cleaner request to `Spike`.
-
-Example:
+`/wait` is for collecting one larger prompt out of several smaller messages. For example: first send context, then a log chunk, then one more clarification, and only then flush everything as one clean request to `Spike`.
 
 ```text
 /wait 60
 ```
 
-After that you can send several short messages, and then send a separate flush message. Any of these words will work:
+After that, send a few messages and then flush them with a separate message. Any of these work:
 
 ```text
 All
@@ -58,50 +89,69 @@ All
 Всё
 ```
 
-`/wait global` does the same thing across the whole chat, but for daily work the local one-shot mode is usually enough.
+For daily work, local `/wait` is usually enough. If you want the same collection window across the whole chat, there is also `/wait global`.
 
-## Why /suffix matters
+## Why /suffix exists
 
-`/suffix` is a persistent appended instruction. It is not for one-off wishes. It is for habits and stable reply rules. Good suffixes sound like this: "stay concise", "always say what you verified", "leave commands and code untranslated", or "mention whether tests were run before the final answer".
+`/suffix` is not for one-off instructions. It is for stable reply habits such as:
 
-Examples:
+- stay concise;
+- always say what you verified;
+- keep commands and code untranslated;
+- mention whether tests were run before the final answer.
 
-```text
-/suffix Keep answers concise and always say what you verified.
-```
+If the rule belongs to one topic, use a topic suffix. If it is your default habit across the whole chat, use a global suffix. For one-time instructions, a normal prompt is usually simpler than a suffix.
 
-```text
-/suffix global Keep answers concise. Always call out verification.
-```
+## Zoo without the bloat
 
-If the rule belongs to one topic, use a topic suffix. If it is your default habit across the chat, use a global suffix. If the instruction matters only once, a normal prompt is simpler.
+`/zoo` is not a normal `Spike` work topic. It is a separate operator board for projects. Its job is to show which repo looks healthy, which one slipped, and where attention probably makes sense next.
 
-## Useful commands without the noise
+The normal Zoo flow is almost entirely menu-only:
 
-You often do not need to type commands by hand at all. `General` has a global menu for chat-wide settings, and each work topic has a local menu for that topic. Those menus are the easiest way to change language, wait windows, models, and other common settings without memorizing command syntax.
+1. Open `/zoo`.
+2. Tap `Add project`.
+3. Describe the project in normal words.
+4. The bot suggests the matching root.
+5. Reply `Yes` or `No`.
 
-- `/help` shows the command list with short explanations. If a command is unclear or you want to see the full list, start with `/help`.
-- `/limits` shows the current Codex limits state, including the live `5h` and `7d` windows or explicit unlimited mode.
-- `/status` shows the topic state and the effective model and reasoning profile.
-- `/menu` opens the local topic settings, including an in-menu `Status` screen. Reopening it replaces the older menu cleanly, and Telegram-style `/menu@YourBot` suggestions work too.
-- `/language` changes the UI language.
-- `/model` and `/reasoning` control `Spike`.
-- `/omni_model` and `/omni_reasoning` control `Omni` when `/auto` is part of the deployment.
+After that, the topic mostly holds one pinned panel with pet cards and buttons such as `Back`, `Refresh`, `Remove`, and `Respawn menu`. In Zoo, the buttons intentionally stay English even when the card text is localized.
 
-For a longer task, three more commands matter most:
+What matters in practice:
 
-- `/diff` gives you a quick look at what already changed in the workspace.
-- `/compact` turns a long topic history into a short working brief. The bot keeps the important context and next-step facts so you can continue without dragging the full message log forever.
-- `/purge` clears the local topic memory when it is no longer useful and you want a near-clean start.
+- Zoo is not for normal prompts or coding sessions;
+- `Refresh` updates the project card without extra topic spam;
+- `Remove` deletes the pet from Zoo, not the repo itself;
+- if you track many projects, the list becomes paginated.
 
-## How to think about /auto
+That is enough to use it well. Do not think of Zoo as a second command surface; it is closer to a compact repo status board.
 
-`/auto` is for a longer autonomous task, not for normal back-and-forth chat. You enable `/auto`, give the goal, provide the starting prompt, and then `Omni` watches the completed `Spike` cycles and keeps the task moving. While `/auto` is running, remember three things: `Spike` is still the main worker, the operator-facing dialogue in that topic is handled through `Omni`, and `/q` is intentionally unavailable there.
+## When /auto is actually worth it
 
-If you just want to ask "what is already done?" or "why are we waiting?", you can still ask that directly in the same topic.
+`/auto` is for a longer autonomous task, not for normal back-and-forth chat. You set the goal, give the starting prompt, and then `Omni` watches completed `Spike` cycles and decides what should happen next.
+
+If you just want normal interaction with the bot, `/auto` is almost certainly unnecessary. Learn the standard `Spike` topic flow with `/menu`, `/diff`, and `/compact` first, then bring in `Omni` only when it has a practical payoff.
+
+## What is worth remembering
+
+If you do not want to keep many commands in your head, these are enough to start:
+
+- `/new` for a new work topic;
+- `/global` for the global menu in `General`;
+- `/menu` for the local topic menu;
+- `/status` for a quick topic check;
+- `/q` to queue the next prompt;
+- `/diff` to see what already changed;
+- `/compact` to compress a long topic into a brief;
+- `/guide` to receive the PDF guidebook;
+- `/zoo` to open the project board;
+- `/interrupt` to stop a run when that is really necessary.
+
+Everything else can be picked up as needed through help and menus.
 
 ## Good habits
 
-Do not try to keep everything inside one topic. Do not use `General` as a work session. If you really mean "do this next after the current work", use `/q` instead of hoping timing will line up. If the task grows, run `/compact` before the topic turns into a mess. If you want a stable reply style, move it into `/suffix` instead of repeating it in every prompt.
+Work with the rule “one topic = one stream of work.” Do not use `General` as a normal work session. For settings, look at menus first. For the actual task, use plain messages. For an explicit “do this after the current work,” use `/q`. If the topic gets too long, do not wait too long before `/compact`.
 
-That is already enough to start using the bot confidently without diving into the internals.
+One more practical note: if the operator rolls the service forward while your topic already has an active run, that run should normally finish instead of being cut off in the middle.
+
+That is already enough to use the bot confidently without diving into the internals.

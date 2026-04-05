@@ -161,14 +161,14 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     rawEnv.ENV_FILE?.trim()
     || rawEnv.CODEX_TELEGRAM_GATEWAY_ENV_FILE?.trim()
     || DEFAULT_ENV_FILE;
-  const workspaceRoot =
+  const atlasWorkspaceRoot =
     rawEnv.WORKSPACE_ROOT?.trim()
     || rawEnv.ATLAS_WORKSPACE_ROOT?.trim()
     || getDefaultWorkspaceRoot({ repoRoot });
   const telegramApiBaseUrl =
     rawEnv.TELEGRAM_API_BASE_URL?.trim() || DEFAULT_TELEGRAM_API_BASE_URL;
   const defaultSessionBindingPath =
-    rawEnv.DEFAULT_SESSION_BINDING_PATH?.trim() || workspaceRoot;
+    rawEnv.DEFAULT_SESSION_BINDING_PATH?.trim() || atlasWorkspaceRoot;
   const codexBinPath =
     rawEnv.CODEX_BIN_PATH?.trim() || DEFAULT_CODEX_BIN_PATH;
   const codexConfigPath =
@@ -253,7 +253,7 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     envFilePath,
     repoRoot,
     stateRoot,
-    workspaceRoot,
+    atlasWorkspaceRoot,
     defaultSessionBindingPath,
     codexBinPath,
     codexConfigPath,

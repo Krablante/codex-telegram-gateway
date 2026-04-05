@@ -15,7 +15,7 @@ test("resolveWorkspaceBinding returns repo and cwd for workspace-root paths", as
   const resolvedWorkspaceRoot = await fs.realpath(workspaceRoot);
 
   const binding = await resolveWorkspaceBinding({
-    workspaceRoot: workspaceRoot,
+    atlasWorkspaceRoot: workspaceRoot,
     requestedPath: workspaceRoot,
   });
 
@@ -38,7 +38,7 @@ test("resolveWorkspaceBinding rejects paths outside the workspace root", async (
 
   await assert.rejects(
     resolveWorkspaceBinding({
-      workspaceRoot: workspaceRoot,
+      atlasWorkspaceRoot: workspaceRoot,
       requestedPath: outsideRoot,
     }),
     /escapes workspace root/u,
@@ -54,7 +54,7 @@ test("resolveWorkspaceBinding rejects file paths", async () => {
 
   await assert.rejects(
     resolveWorkspaceBinding({
-      workspaceRoot: workspaceRoot,
+      atlasWorkspaceRoot: workspaceRoot,
       requestedPath: filePath,
     }),
     /not a directory/u,

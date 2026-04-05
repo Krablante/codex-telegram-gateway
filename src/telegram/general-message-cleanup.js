@@ -19,11 +19,14 @@ function isDeleteMessageAlreadyGoneError(error) {
   );
 }
 
+function isGeneralThreadId(value) {
+  return value === undefined || value === 0 || value === "0";
+}
+
 function isGeneralChatPayload(params, config) {
   return (
     normalizeChatId(params?.chat_id) === normalizeChatId(config?.telegramForumChatId)
-    && params?.message_thread_id === undefined
-    && params?.message_thread_id !== 0
+    && isGeneralThreadId(params?.message_thread_id)
   );
 }
 

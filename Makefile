@@ -3,7 +3,7 @@
 ENV_FILE ?= .env
 NODE ?= node
 
-.PHONY: config doctor run run-omni smoke smoke-omni soak test test-live user-login user-status user-e2e admin service-install service-install-omni service-status service-status-omni service-logs service-logs-omni service-restart service-restart-omni
+.PHONY: config doctor run run-omni smoke smoke-omni soak test test-live user-login user-status user-e2e admin service-install service-install-omni service-status service-status-omni service-logs service-logs-omni service-rollout service-restart service-hard-restart service-restart-omni
 
 config:
 	test -f "$(ENV_FILE)"
@@ -64,7 +64,12 @@ service-logs:
 service-logs-omni:
 	journalctl --user -u codex-telegram-gateway-omni.service -n 100 --no-pager
 
-service-restart:
+service-rollout:
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/service-rollout.js
+
+service-restart: service-rollout
+
+service-hard-restart:
 	systemctl --user restart codex-telegram-gateway.service
 
 service-restart-omni:

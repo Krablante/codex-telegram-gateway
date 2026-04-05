@@ -5,8 +5,9 @@ import { EmergencyPrivateChatRouter } from "../src/emergency/private-chat-router
 
 const config = {
   telegramAllowedUserId: "5825672398",
-  repoRoot: "/workspace/projects/codex-telegram-gateway",
-  stateRoot: "/state/codex-telegram-gateway",
+  telegramAllowedUserIds: ["5825672398", "5825672400"],
+  repoRoot: "/workspace/codex-telegram-gateway",
+  stateRoot: "/workspace/state/homelab/infra/automation/codex-telegram-gateway",
   codexBinPath: "codex",
 };
 
@@ -24,7 +25,7 @@ function buildTopicMessage(overrides = {}) {
   return {
     text: "normal topic message",
     from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463, type: "supergroup" },
+    chat: { id: -1001234567890, type: "supergroup" },
     message_thread_id: 2203,
     message_id: 1,
     ...overrides,
@@ -71,6 +72,42 @@ test("EmergencyPrivateChatRouter starts an isolated emergency run in operator pr
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(sent[1].text, /fixed/u);
+});
+
+test("EmergencyPrivateChatRouter accepts a private emergency prompt from any allowed operator id", async () => {
+  const started = [];
+  const router = new EmergencyPrivateChatRouter({
+    api: {
+      async sendMessage() {},
+      async sendChatAction() {},
+    },
+    config,
+    startRun(args) {
+      started.push(args);
+      return {
+        child: {
+          exitCode: null,
+          signalCode: null,
+          kill() {},
+        },
+        done: Promise.resolve({
+          ok: true,
+          interrupted: false,
+          finalReply: "done",
+        }),
+      };
+    },
+  });
+
+  const result = await router.handleMessage(
+    buildPrivateMessage({
+      from: { id: 5825672400, is_bot: false },
+      chat: { id: 5825672400, type: "private" },
+    }),
+  );
+
+  assert.equal(result.reason, "emergency-started");
+  assert.equal(started.length, 1);
 });
 
 test("EmergencyPrivateChatRouter buffers attachment-first prompts in private chat", async () => {
@@ -273,7 +310,7 @@ test("EmergencyPrivateChatRouter refuses to start while normal topic runs are ac
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     normalRunState: {
       hasActiveRuns: () => true,
@@ -348,7 +385,7 @@ test("EmergencyPrivateChatRouter blocks normal topic prompts while emergency mod
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     startRun() {
       return {
@@ -369,6 +406,42 @@ test("EmergencyPrivateChatRouter blocks normal topic prompts while emergency mod
   assert.match(sent.at(-1).text, /Emergency repair is active in private chat/u);
 });
 
+test("EmergencyPrivateChatRouter blocks competing topic prompts from any allowed operator id", async () => {
+  const sent = [];
+  const router = new EmergencyPrivateChatRouter({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+      async sendChatAction() {},
+    },
+    config: {
+      ...config,
+      telegramForumChatId: "-1001234567890",
+    },
+    startRun() {
+      return {
+        child: {
+          exitCode: null,
+          signalCode: null,
+          kill() {},
+        },
+        done: new Promise(() => {}),
+      };
+    },
+  });
+
+  await router.handleMessage(buildPrivateMessage());
+  const result = await router.handleCompetingTopicMessage(
+    buildTopicMessage({
+      from: { id: 5825672400, is_bot: false },
+    }),
+  );
+
+  assert.equal(result.reason, "emergency-topic-locked");
+  assert.match(sent.at(-1).text, /Emergency repair is active in private chat/u);
+});
+
 test("EmergencyPrivateChatRouter lets topic commands pass through while emergency mode is active", async () => {
   const sent = [];
   const router = new EmergencyPrivateChatRouter({
@@ -380,7 +453,7 @@ test("EmergencyPrivateChatRouter lets topic commands pass through while emergenc
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     botUsername: "gatewaybot",
     startRun() {

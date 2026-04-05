@@ -13,7 +13,7 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   const store = new ZooStore(stateRoot);
 
   const topic = await store.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "777",
     topic_name: "Zoo",
     selected_pet_id: null,

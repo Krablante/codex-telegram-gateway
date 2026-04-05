@@ -75,6 +75,7 @@ export class TopicControlPanelStore {
 
     this.sessionStore = sessionStore;
     this.cachedStates = new Map();
+    this.writeChains = new Map();
   }
 
   getCacheKey(session) {
@@ -86,6 +87,24 @@ export class TopicControlPanelStore {
       this.sessionStore.getSessionDir(session.chat_id, session.topic_id),
       TOPIC_CONTROL_PANEL_FILE_NAME,
     );
+  }
+
+  async runExclusive(session, operation) {
+    const cacheKey = this.getCacheKey(session);
+    const previous = this.writeChains.get(cacheKey) || Promise.resolve();
+    const current = previous
+      .catch(() => {})
+      .then(operation);
+
+    this.writeChains.set(cacheKey, current);
+
+    try {
+      return await current;
+    } finally {
+      if (this.writeChains.get(cacheKey) === current) {
+        this.writeChains.delete(cacheKey);
+      }
+    }
   }
 
   async load(session, { force = false } = {}) {
@@ -117,7 +136,7 @@ export class TopicControlPanelStore {
     }
   }
 
-  async save(session, nextState) {
+  async saveUnlocked(session, nextState) {
     const normalized = normalizeTopicControlPanelState({
       ...nextState,
       updated_at: new Date().toISOString(),
@@ -129,11 +148,35 @@ export class TopicControlPanelStore {
     return cloneJson(normalized);
   }
 
+  async save(session, nextState) {
+    return this.runExclusive(session, () => this.saveUnlocked(session, nextState));
+  }
+
   async patch(session, patch) {
-    const current = await this.load(session);
-    return this.save(session, {
-      ...current,
-      ...patch,
+    return this.patchWithCurrent(session, patch);
+  }
+
+  async patchWithCurrent(session, patch) {
+    return this.runExclusive(session, async () => {
+      const current = await this.load(session, { force: true });
+      const resolvedPatch =
+        typeof patch === "function"
+          ? await patch(current)
+          : patch;
+      if (resolvedPatch === null || resolvedPatch === undefined) {
+        return cloneJson(current);
+      }
+      if (
+        typeof resolvedPatch !== "object"
+        || Array.isArray(resolvedPatch)
+      ) {
+        throw new Error("TopicControlPanelStore patch must be an object or null");
+      }
+
+      return this.saveUnlocked(session, {
+        ...current,
+        ...resolvedPatch,
+      });
     });
   }
 }

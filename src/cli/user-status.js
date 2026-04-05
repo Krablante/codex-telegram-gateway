@@ -2,11 +2,16 @@ import process from "node:process";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 
+import { getOperatorCommandHint } from "../runtime/operator-command-hints.js";
 import {
   buildTelegramUserAccountSnapshot,
   loadTelegramUserBootstrap,
   readTelegramUserSession,
 } from "../live-user/client.js";
+
+function buildUserLoginHint() {
+  return getOperatorCommandHint("user-login") || "make user-login";
+}
 
 async function main() {
   const bootstrap = await loadTelegramUserBootstrap();
@@ -29,7 +34,7 @@ async function main() {
   const sessionString = await readTelegramUserSession(bootstrap.paths);
   if (!sessionString) {
     console.error(
-      `Missing Telegram user session. Run make user-login first. Expected: ${bootstrap.paths.sessionFilePath}`,
+      `Missing Telegram user session. Run ${buildUserLoginHint()} first. Expected: ${bootstrap.paths.sessionFilePath}`,
     );
     process.exitCode = 1;
     return;

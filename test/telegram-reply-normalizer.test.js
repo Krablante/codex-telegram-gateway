@@ -12,7 +12,7 @@ const TELEGRAM_INDENT = "\u00A0\u00A0\u00A0\u00A0";
 test("normalizeTelegramReply keeps plain session-friendly text and strips local file targets", () => {
   const source = [
     "Создан [`test.js`](/workspace/test.js).",
-    "Проверил `SIGTERM` и **workspace**.",
+    "Проверил `SIGTERM` и **atlas**.",
     "",
     "Смотри [документацию](https://example.com/docs).",
   ].join("\n");
@@ -21,7 +21,7 @@ test("normalizeTelegramReply keeps plain session-friendly text and strips local 
     normalizeTelegramReply(source),
     [
       "Создан test.js.",
-      "Проверил SIGTERM и workspace.",
+      "Проверил SIGTERM и atlas.",
       "",
       "Смотри документацию: https://example.com/docs.",
     ].join("\n"),
@@ -112,4 +112,26 @@ test("splitTelegramReply keeps fenced code blocks valid across chunks", () => {
     assert.match(chunk, /^<pre>/u);
     assert.match(chunk, /<\/pre>$/u);
   }
+});
+
+test("telegram reply normalizer handles CRLF markdown safely", () => {
+  const lfSource = [
+    "# Header",
+    "",
+    "- bullet",
+    "",
+    "```txt",
+    "line",
+    "```",
+  ].join("\n");
+  const crlfSource = lfSource.replace(/\n/gu, "\r\n");
+
+  assert.equal(
+    normalizeTelegramReply(crlfSource),
+    normalizeTelegramReply(lfSource),
+  );
+  assert.equal(
+    renderTelegramHtml(crlfSource),
+    renderTelegramHtml(lfSource),
+  );
 });

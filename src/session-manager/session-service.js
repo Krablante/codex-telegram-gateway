@@ -1,13 +1,9 @@
 import { markSessionSeen } from "../runtime/service-state.js";
+import { cloneJson } from "../state/file-utils.js";
 import { ingestIncomingAttachments } from "../telegram/incoming-attachments.js";
 import { createWorkspaceDiffArtifact } from "../workspace/diff-artifact.js";
 import { resolveWorkspaceBinding } from "../workspace/binding-resolver.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
-import {
-  buildDefaultAutoModeState,
-  normalizeAutoModeState,
-  normalizeGoalInterpretation,
-} from "./auto-mode.js";
 import {
   buildEmptyGlobalCodexSettingsState,
   getGlobalRuntimeSettingFieldName,
@@ -20,26 +16,10 @@ import {
   normalizeContextSnapshot,
   readLatestContextSnapshot,
 } from "./context-snapshot.js";
+import { SessionAutoModeService } from "./session-auto-mode-service.js";
 import { drainPendingSpikePromptQueue } from "./prompt-queue.js";
 import { normalizePromptSuffixText } from "./prompt-suffix.js";
 import { getSessionKey, getTopicIdFromMessage } from "./session-key.js";
-
-function cloneJson(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function appendUserInput(existingInput, nextInput) {
-  const base = String(existingInput || "").trim();
-  const next = String(nextInput || "").trim();
-  if (!base) {
-    return next || null;
-  }
-  if (!next) {
-    return base;
-  }
-
-  return `${base}\n\n${next}`;
-}
 
 function buildGeneratedTopicName() {
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
@@ -138,13 +118,16 @@ export class SessionService {
     this.globalCodexSettingsStore = globalCodexSettingsStore;
     this.promptQueueStore = promptQueueStore;
     this.codexLimitsService = codexLimitsService;
+    this.autoModeService = new SessionAutoModeService({
+      sessionStore: this.sessionStore,
+    });
     this.defaultBindingPromise = null;
   }
 
   async getDefaultBinding() {
     if (!this.defaultBindingPromise) {
       this.defaultBindingPromise = resolveWorkspaceBinding({
-        workspaceRoot: this.config.workspaceRoot,
+        atlasWorkspaceRoot: this.config.atlasWorkspaceRoot,
         requestedPath: this.config.defaultSessionBindingPath,
       });
     }
@@ -154,7 +137,7 @@ export class SessionService {
 
   async resolveBindingPath(requestedPath) {
     return resolveWorkspaceBinding({
-      workspaceRoot: this.config.workspaceRoot,
+      atlasWorkspaceRoot: this.config.atlasWorkspaceRoot,
       requestedPath,
     });
   }
@@ -334,7 +317,13 @@ export class SessionService {
     return this.promptQueueStore.deleteAt(current, position);
   }
 
-  async drainPromptQueue(workerPool, { session = null } = {}) {
+  async drainPromptQueue(
+    workerPool,
+    {
+      session = null,
+      currentGenerationId = null,
+    } = {},
+  ) {
     if (!this.promptQueueStore) {
       return [];
     }
@@ -344,6 +333,7 @@ export class SessionService {
       sessionStore: this.sessionStore,
       workerPool,
       promptQueueStore: this.promptQueueStore,
+      currentGenerationId,
     });
   }
 
@@ -520,7 +510,7 @@ export class SessionService {
     });
   }
 
-  async getCodexLimitsSummary({ force = false } = {}) {
+  async getCodexLimitsSummary({ force = false, allowStale = false } = {}) {
     if (!this.codexLimitsService) {
       return {
         available: false,
@@ -535,7 +525,7 @@ export class SessionService {
       };
     }
 
-    return this.codexLimitsService.getSummary({ force });
+    return this.codexLimitsService.getSummary({ force, allowStale });
   }
 
   async resolveContextSnapshot(
@@ -601,40 +591,15 @@ export class SessionService {
   }
 
   getAutoMode(session) {
-    return normalizeAutoModeState(session?.auto_mode);
+    return this.autoModeService.getAutoMode(session);
   }
 
   async loadCurrentAutoMode(session) {
-    const current =
-      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
-    return {
-      session: current,
-      autoMode: normalizeAutoModeState(current.auto_mode),
-    };
+    return this.autoModeService.loadCurrentAutoMode(session);
   }
 
   async updateAutoMode(session, patch = {}) {
-    const current =
-      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
-    const previous = normalizeAutoModeState(current.auto_mode);
-    const now = new Date().toISOString();
-    const next = normalizeAutoModeState({
-      ...previous,
-      ...cloneJson(patch),
-      updated_at: now,
-      last_state_changed_at:
-        patch.phase && patch.phase !== previous.phase
-          ? now
-          : previous.last_state_changed_at ?? now,
-    });
-
-    if (!next.enabled) {
-      next.phase = "off";
-    }
-
-    return this.sessionStore.patch(current, {
-      auto_mode: next,
-    });
+    return this.autoModeService.updateAutoMode(session, patch);
   }
 
   async activateAutoMode(session, {
@@ -642,68 +607,30 @@ export class SessionService {
     omniBotId = null,
     spikeBotId = null,
   } = {}) {
-    const now = new Date().toISOString();
-    return this.updateAutoMode(session, {
-      ...buildDefaultAutoModeState(),
-      enabled: true,
-      phase: "await_goal",
-      activated_at: now,
-      last_state_changed_at: now,
-      updated_at: now,
-      activated_by_user_id: activatedByUserId,
-      omni_bot_id: omniBotId,
-      spike_bot_id: spikeBotId,
+    return this.autoModeService.activateAutoMode(session, {
+      activatedByUserId,
+      omniBotId,
+      spikeBotId,
     });
   }
 
   async clearAutoMode(session) {
-    return this.updateAutoMode(session, buildDefaultAutoModeState());
+    return this.autoModeService.clearAutoMode(session);
   }
 
   async captureAutoGoal(session, literalGoalText) {
-    const { session: currentSession, autoMode: currentAutoMode } =
-      await this.loadCurrentAutoMode(session);
-    return this.updateAutoMode(currentSession, {
-      ...currentAutoMode,
-      enabled: true,
-      phase: "await_initial_prompt",
-      literal_goal_text: String(literalGoalText || "").trim() || null,
-      normalized_goal_interpretation: normalizeGoalInterpretation(
-        literalGoalText,
-      ),
-      blocked_reason: null,
-      pending_user_input: null,
-    });
+    return this.autoModeService.captureAutoGoal(session, literalGoalText);
   }
 
   async captureAutoInitialPrompt(session, initialWorkerPrompt) {
-    const { session: currentSession, autoMode: currentAutoMode } =
-      await this.loadCurrentAutoMode(session);
-    return this.updateAutoMode(currentSession, {
-      ...currentAutoMode,
-      enabled: true,
-      phase: "await_initial_prompt",
-      initial_worker_prompt: String(initialWorkerPrompt || "").trim() || null,
-      blocked_reason: null,
-      pending_user_input: null,
-      last_result_summary: null,
-    });
+    return this.autoModeService.captureAutoInitialPrompt(
+      session,
+      initialWorkerPrompt,
+    );
   }
 
   async queueAutoUserInput(session, userInput) {
-    const { session: currentSession, autoMode: currentAutoMode } =
-      await this.loadCurrentAutoMode(session);
-    return this.updateAutoMode(currentSession, {
-      ...currentAutoMode,
-      pending_user_input: appendUserInput(
-        currentAutoMode.pending_user_input,
-        userInput,
-      ),
-      blocked_reason:
-        currentAutoMode.phase === "blocked"
-          ? currentAutoMode.blocked_reason
-          : null,
-    });
+    return this.autoModeService.queueAutoUserInput(session, userInput);
   }
 
   async scheduleAutoSleep(session, {
@@ -712,21 +639,11 @@ export class SessionService {
     resultSummary = null,
     clearPendingUserInput = true,
   } = {}) {
-    const { session: currentSession, autoMode: currentAutoMode } =
-      await this.loadCurrentAutoMode(session);
-    const wakeAt = new Date(Date.now() + (sleepMinutes * 60 * 1000)).toISOString();
-    return this.updateAutoMode(currentSession, {
-      ...currentAutoMode,
-      phase: "sleeping",
-      sleep_until: wakeAt,
-      sleep_next_prompt: String(nextPrompt || "").trim() || null,
-      blocked_reason: null,
-      last_result_summary: resultSummary,
-      last_evaluated_exchange_log_entries:
-        currentAutoMode.last_spike_exchange_log_entries,
-      pending_user_input: clearPendingUserInput
-        ? null
-        : currentAutoMode.pending_user_input,
+    return this.autoModeService.scheduleAutoSleep(session, {
+      sleepMinutes,
+      nextPrompt,
+      resultSummary,
+      clearPendingUserInput,
     });
   }
 
@@ -738,18 +655,10 @@ export class SessionService {
       summary = null,
     } = {},
   ) {
-    const { session: currentSession, autoMode: currentAutoMode } =
-      await this.loadCurrentAutoMode(session);
-    if (!currentAutoMode.enabled) {
-      return currentSession;
-    }
-
-    return this.updateAutoMode(currentSession, {
-      ...currentAutoMode,
-      phase: "evaluating",
-      last_spike_final_message_id: messageId,
-      last_spike_exchange_log_entries: exchangeLogEntries,
-      last_result_summary: summary,
+    return this.autoModeService.markAutoSpikeFinal(session, {
+      messageId,
+      exchangeLogEntries,
+      summary,
     });
   }
 
@@ -760,22 +669,12 @@ export class SessionService {
     incrementContinuation = false,
     clearPendingUserInput = false,
   } = {}) {
-    const { session: currentSession, autoMode: currentAutoMode } =
-      await this.loadCurrentAutoMode(session);
-    return this.updateAutoMode(currentSession, {
-      ...currentAutoMode,
-      enabled: phase !== "off",
+    return this.autoModeService.markAutoDecision(session, {
       phase,
-      blocked_reason: blockedReason,
-      last_result_summary: resultSummary,
-      last_evaluated_exchange_log_entries:
-        currentAutoMode.last_spike_exchange_log_entries,
-      continuation_count: incrementContinuation
-        ? currentAutoMode.continuation_count + 1
-        : currentAutoMode.continuation_count,
-      pending_user_input: clearPendingUserInput
-        ? null
-        : currentAutoMode.pending_user_input,
+      blockedReason,
+      resultSummary,
+      incrementContinuation,
+      clearPendingUserInput,
     });
   }
 

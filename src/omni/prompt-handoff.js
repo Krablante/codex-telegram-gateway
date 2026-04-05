@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { normalizeAutoModeState } from "../session-manager/auto-mode.js";
+import { shouldForwardSessionToOwner } from "../rollout/session-ownership.js";
+import { quarantineCorruptFile } from "../state/file-utils.js";
 import { handleIncomingMessage } from "../telegram/command-router.js";
 
 const OMNI_PENDING_PROMPT_FILE_NAME = "omni-pending-prompt.json";
@@ -70,6 +72,7 @@ export class OmniPromptHandoffStore {
   }
 
   async load(session) {
+    const filePath = this.getPath(session);
     const text = await this.sessionStore.readSessionText(
       session,
       OMNI_PENDING_PROMPT_FILE_NAME,
@@ -79,8 +82,16 @@ export class OmniPromptHandoffStore {
     }
 
     try {
-      return parseQueueEntry(JSON.parse(text));
-    } catch {
+      const entry = parseQueueEntry(JSON.parse(text));
+      if (!entry) {
+        await quarantineCorruptFile(filePath);
+        return null;
+      }
+      return entry;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        await quarantineCorruptFile(filePath);
+      }
       return null;
     }
   }
@@ -116,6 +127,7 @@ export async function drainPendingOmniPrompts({
   api,
   botUsername,
   config,
+  currentGenerationId = null,
   lifecycleManager = null,
   promptFragmentAssembler = null,
   serviceState,
@@ -150,6 +162,13 @@ export async function drainPendingOmniPrompts({
     }
 
     if (!workerPool.canStart(session.session_key).ok) {
+      continue;
+    }
+
+    if (
+      currentGenerationId
+      && shouldForwardSessionToOwner(session, currentGenerationId)
+    ) {
       continue;
     }
 

@@ -7,8 +7,8 @@ import {
 } from "../src/session-manager/topic-context.js";
 
 const session = {
-  session_key: "-1003577434463:2203",
-  chat_id: "-1003577434463",
+  session_key: "-1001234567890:2203",
+  chat_id: "-1001234567890",
   topic_id: "2203",
   topic_name: "codex-telegram",
   workspace_binding: {
@@ -19,7 +19,7 @@ const session = {
 test("buildTopicContextPrompt stays compact and points to the topic context file", () => {
   const prompt = buildTopicContextPrompt(session, {
     topicContextPath:
-      "/state/codex-telegram-gateway/sessions/-1003577434463/2203/telegram-topic-context.md",
+      "/home/testuser/.local/state/codex-telegram-gateway/sessions/<chat-id>/<topic-id>/telegram-topic-context.md",
   });
 
   assert.match(prompt, /Telegram topic routing context:/u);
@@ -39,12 +39,12 @@ test("buildTopicContextPrompt stays compact and points to the topic context file
 test("buildTopicContextFileText keeps the detailed safe file-delivery instructions", () => {
   const text = buildTopicContextFileText(session, {
     topicContextPath:
-      "/state/codex-telegram-gateway/sessions/-1003577434463/2203/telegram-topic-context.md",
+      "/home/testuser/.local/state/codex-telegram-gateway/sessions/<chat-id>/<topic-id>/telegram-topic-context.md",
   });
 
   assert.match(text, /# Telegram topic context/u);
   assert.match(text, /The live run prompt carries only a short Telegram routing stub/u);
-  assert.match(text, /chat_id: -1003577434463/u);
+  assert.match(text, /chat_id: -1001234567890/u);
   assert.match(text, /File delivery:/u);
   assert.match(text, /Example below is inert until you add action: send:/u);
   assert.match(text, /```telegram-file/u);

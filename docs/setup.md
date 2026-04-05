@@ -135,6 +135,8 @@ Optional but commonly useful:
 - `TELEGRAM_EXPECTED_TOPICS`
 - `STATE_ROOT`
 - `CODEX_BIN_PATH`
+- `CODEX_LIMITS_SESSIONS_ROOT`
+- `CODEX_LIMITS_COMMAND`
 - `MAX_PARALLEL_SESSIONS`
 
 Optional Omni setup:
@@ -164,10 +166,11 @@ What that means in practice:
 
 - `/new Backend Cleanup` starts in `/home/you/work/main-repo`
 - `/new cwd=experiments/prototype Prototype work` resolves to `/home/you/work/experiments/prototype`
+- `/new cwd="C:/Users/Example User/Source Repos" Audit topic` works too because quoted explicit paths with spaces are supported
 - if `DEFAULT_SESSION_BINDING_PATH` is unset, the gateway falls back to `WORKSPACE_ROOT`
 - if `WORKSPACE_ROOT` is also unset, the final fallback is your home directory, which is usually not what you want
 - on Windows, use Windows paths for both env values and absolute `cwd=...` values
-- for `/new cwd=...`, prefer paths without spaces because the command parser splits on spaces
+- if a path contains spaces, quote the explicit `cwd=...` value
 
 ## 5. Validate Before Running
 
@@ -209,9 +212,11 @@ User service:
 ```bash
 make service-install
 make service-status
+make service-rollout
 ```
 
 Those `service-*` flows are Linux-only because they target `systemd --user`.
+Use `make service-rollout` or `make service-restart` for the soft Spike handoff path. Reserve `make service-hard-restart` for blind restarts.
 
 If Omni is configured:
 
@@ -222,6 +227,7 @@ make run-omni
 Native Windows equivalent:
 
 ```powershell
+scripts\windows\admin.cmd status
 scripts\windows\run-omni.cmd
 ```
 
