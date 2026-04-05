@@ -43,7 +43,7 @@ const PAGE = {
   },
 };
 
-const FONT_CANDIDATES = {
+const LINUX_FONT_CANDIDATES = {
   sans: [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -58,9 +58,44 @@ const FONT_CANDIDATES = {
   ],
 };
 
-function resolveFontPath(candidates = []) {
+function buildWindowsFontCandidates(env = process.env) {
+  const windowsRoots = Array.from(
+    new Set([env.WINDIR, env.SystemRoot, "C:\\Windows"].filter(Boolean)),
+  );
+
+  return {
+    sans: windowsRoots.flatMap((root) => [
+      path.win32.join(root, "Fonts", "arial.ttf"),
+      path.win32.join(root, "Fonts", "segoeui.ttf"),
+      path.win32.join(root, "Fonts", "tahoma.ttf"),
+    ]),
+    bold: windowsRoots.flatMap((root) => [
+      path.win32.join(root, "Fonts", "arialbd.ttf"),
+      path.win32.join(root, "Fonts", "segoeuib.ttf"),
+      path.win32.join(root, "Fonts", "tahomabd.ttf"),
+    ]),
+    mono: windowsRoots.flatMap((root) => [
+      path.win32.join(root, "Fonts", "consola.ttf"),
+      path.win32.join(root, "Fonts", "cour.ttf"),
+      path.win32.join(root, "Fonts", "lucon.ttf"),
+    ]),
+  };
+}
+
+function buildFontCandidates({
+  platform = process.platform,
+  env = process.env,
+} = {}) {
+  if (platform === "win32") {
+    return buildWindowsFontCandidates(env);
+  }
+
+  return LINUX_FONT_CANDIDATES;
+}
+
+function resolveFontPath(candidates = [], existsSync = fs.existsSync) {
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
+    if (existsSync(candidate)) {
       return candidate;
     }
   }
@@ -68,11 +103,37 @@ function resolveFontPath(candidates = []) {
   return null;
 }
 
-const RESOLVED_FONTS = {
-  sans: resolveFontPath(FONT_CANDIDATES.sans),
-  bold: resolveFontPath(FONT_CANDIDATES.bold),
-  mono: resolveFontPath(FONT_CANDIDATES.mono),
-};
+function resolveFontSet({
+  platform = process.platform,
+  env = process.env,
+  existsSync = fs.existsSync,
+} = {}) {
+  const candidates = buildFontCandidates({ platform, env });
+  return {
+    sans: resolveFontPath(candidates.sans, existsSync),
+    bold: resolveFontPath(candidates.bold, existsSync),
+    mono: resolveFontPath(candidates.mono, existsSync),
+  };
+}
+
+const RESOLVED_FONTS = resolveFontSet();
+
+function ensureUnicodeFontCoverage(
+  markdown,
+  sourcePath,
+  fontSet = RESOLVED_FONTS,
+) {
+  if (!/[\u0400-\u04FF]/u.test(String(markdown || ""))) {
+    return;
+  }
+  if (fontSet.sans) {
+    return;
+  }
+
+  throw new Error(
+    `Could not find a Unicode-capable PDF font for Cyrillic guidebook text (${sourcePath}).`,
+  );
+}
 
 function registerFonts(doc) {
   if (RESOLVED_FONTS.sans) {
@@ -88,10 +149,22 @@ function registerFonts(doc) {
 
 function getFontName(kind) {
   if (kind === "bold") {
-    return RESOLVED_FONTS.bold ? "GuideBold" : "Helvetica-Bold";
+    if (RESOLVED_FONTS.bold) {
+      return "GuideBold";
+    }
+    if (RESOLVED_FONTS.sans) {
+      return "GuideSans";
+    }
+    return "Helvetica-Bold";
   }
   if (kind === "mono") {
-    return RESOLVED_FONTS.mono ? "GuideMono" : "Courier";
+    if (RESOLVED_FONTS.mono) {
+      return "GuideMono";
+    }
+    if (RESOLVED_FONTS.sans) {
+      return "GuideSans";
+    }
+    return "Courier";
   }
   return RESOLVED_FONTS.sans ? "GuideSans" : "Helvetica";
 }
@@ -512,6 +585,7 @@ async function renderGuidebookVectorPdf({ language, outputPath }) {
   const normalizedLanguage = getNormalizedLanguage(language);
   const sourcePath = getGuidebookSourcePath(normalizedLanguage);
   const markdown = await fsp.readFile(sourcePath, "utf8");
+  ensureUnicodeFontCoverage(markdown, sourcePath);
   const blocks = parseMarkdownBlocks(markdown);
   const titleBlock = blocks.find((block) => block.type === "heading-1");
   const title = titleBlock?.text || "Guidebook";
@@ -607,6 +681,7 @@ async function renderRunbookVectorPdf({ language, outputPath }) {
   const normalizedLanguage = getNormalizedLanguage(language);
   const sourcePath = getRunbookSourcePath(normalizedLanguage);
   const markdown = await fsp.readFile(sourcePath, "utf8");
+  ensureUnicodeFontCoverage(markdown, sourcePath);
   const blocks = parseMarkdownBlocks(markdown);
   const titleBlock = blocks.find((block) => block.type === "heading-1");
   const title =
@@ -788,6 +863,10 @@ export async function getGuidebookAsset(language, { stateRoot = null } = {}) {
 }
 
 export const __guidebookTest = {
+  buildFontCandidates,
+  ensureUnicodeFontCoverage,
+  getFontName,
   normalizeInlineMarkdown,
   parseMarkdownBlocks,
+  resolveFontSet,
 };

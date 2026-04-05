@@ -55,3 +55,35 @@ Use \`/new Topic Name\` in **General** and open /menu after that.
     },
   ]);
 });
+
+test("guidebook font resolution picks Unicode Windows fonts before PDF base fonts", () => {
+  const fontSet = __guidebookTest.resolveFontSet({
+    platform: "win32",
+    env: {
+      WINDIR: "C:\\Windows",
+    },
+    existsSync(candidate) {
+      return /arial(?:bd)?\.ttf$|consola\.ttf$/iu.test(candidate);
+    },
+  });
+
+  assert.match(fontSet.sans, /arial\.ttf$/iu);
+  assert.match(fontSet.bold, /arialbd\.ttf$/iu);
+  assert.match(fontSet.mono, /consola\.ttf$/iu);
+});
+
+test("guidebook font coverage fails loudly instead of generating broken Cyrillic PDF text", () => {
+  assert.throws(
+    () =>
+      __guidebookTest.ensureUnicodeFontCoverage(
+        "# Привет\n\nТест",
+        "/tmp/guidebook-rus.md",
+        {
+          sans: null,
+          bold: null,
+          mono: null,
+        },
+      ),
+    /Unicode-capable PDF font for Cyrillic guidebook text/iu,
+  );
+});
