@@ -144,7 +144,7 @@ Suggested layout:
 - `zoo/pets/<pet-id>/latest-snapshot.json` for the current rendered source of truth
 - `zoo/pets/<pet-id>/history/<timestamp>.json` for snapshot history
 - `zoo/runs/` for transient `codex exec` output files during lookup and refresh runs
-- if `zoo/topic.json` is missing or quarantined, the next live Zoo menu callback should rebuild the stored topic binding from callback context instead of degrading into a silent no-op ordinary topic
+- if `zoo/topic.json` is missing, incomplete, or quarantined, the next live Zoo menu callback should rebuild the stored topic binding from callback context instead of degrading into a silent no-op ordinary topic
 
 ## Security And Guardrails
 

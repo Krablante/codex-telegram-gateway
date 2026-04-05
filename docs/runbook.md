@@ -129,7 +129,7 @@ make service-restart-omni
 
 - if a stored `codex_thread_id` no longer resumes cleanly, the runtime retries once before falling back to compact recovery
 - if Omni is disabled globally, old topic `auto_mode` state stays on disk but becomes inert
-- if `zoo/topic.json` is missing or quarantined, a live Zoo menu callback now rebuilds the stored chat/topic/menu binding; before this fix the symptom was silent Zoo button no-ops or the Zoo topic falling back into ordinary session routing
+- if `zoo/topic.json` is missing, incomplete, or quarantined, a live Zoo menu callback now rebuilds the stored chat/topic/menu binding; before this fix the symptom was silent Zoo button no-ops or the Zoo topic falling back into ordinary session routing
 - if Telegram reports a topic as unavailable, the session may move into `parked`
 - if Telegram loses the original reply target for a topic message, topic delivery falls back to a plain send in the same topic
 - expired parked sessions may be auto-purged by retention sweep

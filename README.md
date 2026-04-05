@@ -82,7 +82,7 @@ Core capabilities:
 - `/suffix` adds persistent prompt tails per topic or globally
 - `/menu` and `/global` expose control panels instead of command memorization
 - the root `/global` menu in `General` now stacks `Bot Settings` / `Language` first, then `Guide` / `Help`, with `Wait` / `Suffix` and `Zoo` / `Clear` below
-- live Zoo menu callbacks now rebuild lost Zoo topic binding from Telegram callback context, so a missing `zoo/topic.json` no longer turns buttons into silent no-ops
+- live Zoo menu callbacks now rebuild lost or incomplete Zoo topic binding from Telegram callback context, so a broken `zoo/topic.json` no longer turns buttons into silent no-ops
 - `/compact` rebuilds concise continuity from clean state
 - `/limits` surfaces Codex limits in chat
 - session-aware `Spike` rollout avoids blind restarts by default

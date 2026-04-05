@@ -51,7 +51,7 @@ Current slices guarantee:
 - session metadata may store `ui_language`, `codex_thread_id`, `codex_rollout_path`, `last_context_snapshot`, topic-level prompt suffix settings and routing flags, separate pending attachment buffers for direct Spike prompts and queued `/q` prompts, last prompt/reply, last run status, lifecycle state, `purge_after`, artifact pointers, exchange-log counters, progress message ids, rollout ownership fields such as `session_owner_generation_id`, `session_owner_mode`, `session_owner_claimed_at`, mirrored `spike_run_owner_generation_id`, compaction timestamps, and lightweight Omni auto-compact counters such as `first_omni_prompt_at` and `continuation_count_since_compact`
 - `omni/runs/` may store one-shot `codex exec` output files used by Omni evaluations
 - malformed file-backed queue, handoff, panel, Omni memory, or Zoo state may be quarantined and rebuilt empty instead of being silently reused
-- if `zoo/topic.json` is missing, the next live Zoo menu callback may rebuild the stored chat/topic/menu binding from Telegram callback context
+- if `zoo/topic.json` is missing or incomplete, the next live Zoo menu callback may rebuild the stored chat/topic/menu binding from Telegram callback context
 - transport may switch from message edits to append-only status messages when edit delivery degrades
 - transport may strip fenced `telegram-file` control blocks with `action: send` from the final visible reply and use them to send local files into the current Telegram topic
 - outgoing file delivery is scoped to safe local roots such as the active worktree, the per-session state dir, and the system temp dir
