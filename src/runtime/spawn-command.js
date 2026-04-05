@@ -28,6 +28,14 @@ function quoteWindowsShellValue(value) {
   return /[\s&()<>^|"]/u.test(normalized) ? `"${escaped}"` : normalized;
 }
 
+function getWindowsCommandShell(env) {
+  return String(env?.ComSpec || env?.COMSPEC || "cmd.exe").trim() || "cmd.exe";
+}
+
+function buildWindowsCommandLine(command, args) {
+  return [command, ...args].map((value) => quoteWindowsShellValue(value)).join(" ");
+}
+
 export function buildSpawnCommand(
   command,
   args = [],
@@ -63,10 +71,14 @@ export function buildSpawnCommand(
   const extension = path.win32.extname(resolvedCommand).toLowerCase();
   if (WINDOWS_SHELL_EXTENSIONS.has(extension)) {
     return {
-      command: quoteWindowsShellValue(resolvedCommand),
-      args: normalizedArgs.map((arg) => quoteWindowsShellValue(arg)),
+      command: getWindowsCommandShell(env),
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        buildWindowsCommandLine(resolvedCommand, normalizedArgs),
+      ],
       spawnOptions: {
-        shell: true,
         windowsHide: true,
       },
     };

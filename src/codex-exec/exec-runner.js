@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 
 import { appendCodexRuntimeConfigArgs } from "../codex-runtime/config-args.js";
 import { spawnRuntimeCommand } from "../runtime/spawn-command.js";
@@ -58,6 +59,7 @@ export function startCodexExecRun({
   model = null,
   reasoningEffort = null,
   spawnProcess,
+  platform = process.platform,
 }) {
   const outputPath = buildOutputFilePath(outputDir, outputPrefix);
   mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -70,8 +72,9 @@ export function startCodexExecRun({
   });
   const child = spawnRuntimeCommand(codexBinPath, args, {
     cwd: repoRoot,
-    detached: true,
+    detached: platform !== "win32",
     env: process.env,
+    platform,
     stdio: ["pipe", "pipe", "pipe"],
     spawnImpl: spawnProcess,
   });

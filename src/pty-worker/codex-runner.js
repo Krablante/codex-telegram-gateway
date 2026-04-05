@@ -89,6 +89,7 @@ export function runCodexTask({
   rolloutStallAfterChildExitMs = ROLLOUT_STALL_AFTER_CHILD_EXIT_MS,
   model = null,
   reasoningEffort = null,
+  platform = process.platform,
 }) {
   const args = buildCodexArgs({
     model,
@@ -97,8 +98,9 @@ export function runCodexTask({
   const child = spawnRuntimeCommand(codexBinPath, args, {
     cwd,
     env: process.env,
+    platform,
     stdio: ["ignore", "pipe", "pipe"],
-    detached: true,
+    detached: platform !== "win32",
     spawnImpl,
   });
 

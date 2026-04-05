@@ -205,7 +205,8 @@ If `Omni` is enabled, run `scripts\windows\run-omni.cmd` in a second shell.
 Notes:
 
 - Windows wrappers call `npm.cmd` directly and avoid common PowerShell execution-policy traps
-- repo-local `.env` works out of the box
+- repo-local `.env` works out of the box; leave `CODEX_BIN_PATH` empty to use `codex` on Linux and `codex.cmd` on native Windows
+- if you override `CODEX_BIN_PATH` on Windows, prefer `codex.cmd` or an absolute `...\codex.cmd` path
 - runtime state defaults to `%LOCALAPPDATA%\codex-telegram-gateway`
 - Linux-only `systemd --user` service install is intentionally replaced with Windows-native wrapper scripts
 

@@ -141,7 +141,7 @@ Optional Omni:
 - `codex-telegram-gateway-omni.service`
 
 These user-service flows are Linux-only because they target `systemd --user`.
-`make service-install` now resolves `CODEX_BIN_PATH` without a shell. Absolute paths, repo-relative paths such as `./vendor/bin/codex`, and ordinary PATH-visible names such as `codex` are supported. If resolution still fails, set an absolute `CODEX_BIN_PATH`.
+`make service-install` now resolves `CODEX_BIN_PATH` without a shell. Absolute paths, repo-relative paths such as `./vendor/bin/codex`, and ordinary PATH-visible names such as `codex` are supported. If resolution still fails, set an absolute `CODEX_BIN_PATH`. On native Windows, the practical default is to leave `CODEX_BIN_PATH` empty so the runtime falls back to `codex.cmd`; if you override it, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
 
 On native Windows, run the gateway directly with:
 
@@ -155,7 +155,7 @@ scripts\windows\admin.cmd status
 scripts\windows\run.cmd
 ```
 
-That bootstrap now matches the repo as-is because `.env.example` is committed and intended for the first native Windows copy-to-`.env` flow.
+That bootstrap now matches the repo as-is because `.env.example` is committed, intended for the first native Windows copy-to-`.env` flow, and leaves `CODEX_BIN_PATH` unset so native Windows can fall through to `codex.cmd`.
 
 With Omni:
 

@@ -189,3 +189,29 @@ test("waitForListenUrl accepts app-server banner from stderr", async () => {
   stdout.end();
   stderr.end();
 });
+
+test("waitForListenUrl includes recent app-server output in timeout errors", async () => {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const stdoutReader = readline.createInterface({ input: stdout });
+  const stderrReader = readline.createInterface({ input: stderr });
+  const child = new EventEmitter();
+
+  const wait = waitForListenUrl(stdoutReader, stderrReader, child, {
+    timeoutMs: 25,
+  });
+  stdout.write("booting codex app-server\n");
+  stderr.write("warning: slow init path\n");
+
+  await assert.rejects(wait, (error) => {
+    assert.match(error.message, /Timed out waiting for Codex app-server to start/u);
+    assert.match(error.message, /\[stdout\] booting codex app-server/u);
+    assert.match(error.message, /\[stderr\] warning: slow init path/u);
+    return true;
+  });
+
+  stdoutReader.close();
+  stderrReader.close();
+  stdout.end();
+  stderr.end();
+});

@@ -3,6 +3,28 @@ import {
   safeJsonParse,
 } from "./codex-runner-common.js";
 
+const STARTUP_OUTPUT_TAIL_LINES = 20;
+
+function rememberStartupOutput(lines, streamName, line) {
+  const normalized = String(line ?? "").trimEnd();
+  if (!normalized) {
+    return;
+  }
+
+  lines.push(`[${streamName}] ${normalized}`);
+  if (lines.length > STARTUP_OUTPUT_TAIL_LINES) {
+    lines.shift();
+  }
+}
+
+function appendStartupOutput(message, lines) {
+  if (lines.length === 0) {
+    return message;
+  }
+
+  return `${message}\nRecent Codex app-server output:\n${lines.join("\n")}`;
+}
+
 export function waitForListenUrl(
   stdoutReader,
   stderrReader,
@@ -10,12 +32,21 @@ export function waitForListenUrl(
   { timeoutMs } = {},
 ) {
   return new Promise((resolve, reject) => {
+    const startupOutput = [];
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error("Timed out waiting for Codex app-server to start"));
+      reject(
+        new Error(
+          appendStartupOutput(
+            "Timed out waiting for Codex app-server to start",
+            startupOutput,
+          ),
+        ),
+      );
     }, timeoutMs);
 
-    const onLine = (line) => {
+    const onLine = (streamName, line) => {
+      rememberStartupOutput(startupOutput, streamName, line);
       const match = String(line || "").match(/listening on:\s*(\S+)/iu);
       if (!match) {
         return;
@@ -34,21 +65,31 @@ export function waitForListenUrl(
       cleanup();
       reject(
         new Error(
-          `Codex app-server exited before startup (code=${code ?? "null"}, signal=${signal ?? "null"})`,
+          appendStartupOutput(
+            `Codex app-server exited before startup (code=${code ?? "null"}, signal=${signal ?? "null"})`,
+            startupOutput,
+          ),
         ),
       );
     };
 
     const cleanup = () => {
       clearTimeout(timer);
-      stdoutReader.off("line", onLine);
-      stderrReader.off("line", onLine);
+      stdoutReader.off("line", onStdoutLine);
+      stderrReader.off("line", onStderrLine);
       child.off("error", onError);
       child.off("close", onClose);
     };
 
-    stdoutReader.on("line", onLine);
-    stderrReader.on("line", onLine);
+    const onStdoutLine = (line) => {
+      onLine("stdout", line);
+    };
+    const onStderrLine = (line) => {
+      onLine("stderr", line);
+    };
+
+    stdoutReader.on("line", onStdoutLine);
+    stderrReader.on("line", onStderrLine);
     child.on("error", onError);
     child.on("close", onClose);
   });
