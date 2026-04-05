@@ -82,6 +82,7 @@ Core capabilities:
 - `/suffix` adds persistent prompt tails per topic or globally
 - `/menu` and `/global` expose control panels instead of command memorization
 - the root `/global` menu in `General` now stacks `Bot Settings` / `Language` first, then `Guide` / `Help`, with `Wait` / `Suffix` and `Zoo` / `Clear` below
+- live Zoo menu callbacks now rebuild lost Zoo topic binding from Telegram callback context, so a missing `zoo/topic.json` no longer turns buttons into silent no-ops
 - `/compact` rebuilds concise continuity from clean state
 - `/limits` surfaces Codex limits in chat
 - session-aware `Spike` rollout avoids blind restarts by default
@@ -91,6 +92,7 @@ Core capabilities:
 | Area | What changed |
 | --- | --- |
 | Live follow-ups | Active-topic follow-up prompts now retry short transient `steer` failures before falling back to the next prompt queue. |
+| Zoo recovery | Live Zoo callbacks now reconstruct lost `zoo/topic.json` binding from Telegram callback context, so button-driven add/refresh flows recover cleanly after state corruption. |
 | Runtime shell | The Spike poll/runtime shell is split into focused slices for bootstrap, update processing, background jobs, run-once maintenance, and rollout control. |
 | Session storage | `SessionStore` now keeps a thin public facade while lifecycle, file IO, meta shaping, and raw reads stay in separate modules. |
 | Cross-platform behavior | `RUN_ONCE` / smoke paths no longer start background timers, keeping one-shot maintenance deterministic on Linux and Windows. |

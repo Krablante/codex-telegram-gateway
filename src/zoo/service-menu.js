@@ -91,6 +91,43 @@ export async function isZooTopicMessage(service, message) {
   );
 }
 
+function normalizePositiveInteger(value) {
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+export async function recoverZooTopicFromMessageContext(service, message, {
+  menuMessageId = null,
+} = {}) {
+  const chatId = String(message?.chat?.id ?? "").trim() || null;
+  const topicId = String(message?.message_thread_id ?? "").trim() || null;
+  const normalizedMenuMessageId = normalizePositiveInteger(menuMessageId);
+  let topicState = await service.zooStore.loadTopic({ force: true });
+  if (!chatId || !topicId) {
+    return topicState;
+  }
+
+  if (topicState.topic_id) {
+    if (
+      String(topicState.chat_id ?? "") === chatId
+      && String(topicState.topic_id ?? "") === topicId
+      && normalizedMenuMessageId
+      && topicState.menu_message_id !== normalizedMenuMessageId
+    ) {
+      topicState = await service.zooStore.patchTopic({
+        menu_message_id: normalizedMenuMessageId,
+      });
+    }
+    return topicState;
+  }
+
+  return service.zooStore.saveTopic({
+    ...topicState,
+    chat_id: chatId,
+    topic_id: topicId,
+    menu_message_id: normalizedMenuMessageId,
+  });
+}
+
 export async function ensureZooTopic(service, api, {
   uiLanguage = DEFAULT_UI_LANGUAGE,
 } = {}) {

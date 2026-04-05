@@ -286,7 +286,7 @@ test("ZooService auto-reconciles existing duplicate public/private pet names in 
     resolved_path: "/workspace/codex-telegram-gateway",
     repo_root: "/workspace/codex-telegram-gateway",
     cwd: "/workspace/codex-telegram-gateway",
-    cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
+    cwd_relative_to_workspace_root: "codex-telegram-gateway",
     creature_kind: "cat",
   });
   await zooStore.savePet({
@@ -329,4 +329,69 @@ test("ZooService auto-reconciles existing duplicate public/private pet names in 
     .map((button) => button.text);
   assert.ok(buttonLabels.some((label) => label.endsWith("[priv]")));
   assert.ok(buttonLabels.some((label) => label.endsWith("[pub]")));
+});
+
+test("ZooService recovers missing Zoo topic state from a live menu callback", async () => {
+  const stateRoot = await createStateRoot();
+  const api = createApiStub();
+  const service = new ZooService({
+    config: buildConfig(stateRoot),
+    sessionService: {
+      async ensureSessionForMessage() {
+        throw new Error("ordinary session routing should stay out of recovered Zoo flow");
+      },
+    },
+  });
+
+  let capturedDescription = null;
+  service.beginLookup = async ({
+    api: zooApi,
+    description,
+    message,
+  }) => {
+    capturedDescription = description;
+    await zooApi.deleteMessage({
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+    });
+  };
+
+  const callbackResult = await service.handleCallbackQuery({
+    api,
+    callbackQuery: {
+      id: "cb-recover",
+      data: "zoo:a:start",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        chat: { id: -1001234567890 },
+        message_thread_id: 700,
+        message_id: 901,
+      },
+    },
+  });
+
+  assert.equal(callbackResult.reason, "zoo-add-started");
+  const recoveredTopicState = await service.zooStore.loadTopic({ force: true });
+  assert.equal(recoveredTopicState.chat_id, "-1001234567890");
+  assert.equal(recoveredTopicState.topic_id, "700");
+  assert.equal(recoveredTopicState.menu_message_id, 901);
+  assert.equal(recoveredTopicState.pending_add?.stage, "await_description");
+  assert.equal(api.calls.createForumTopic.length, 0);
+  assert.equal(api.calls.sendMessage.length, 0);
+  assert.equal(api.calls.editMessageText.length, 1);
+
+  const replyResult = await service.maybeHandleIncomingMessage({
+    api,
+    botUsername: "gatewaybot",
+    message: {
+      text: "my private telegram to codex gateway",
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 700,
+      message_id: 5,
+    },
+  });
+
+  assert.equal(replyResult.reason, "zoo-lookup-started");
+  assert.equal(capturedDescription, "my private telegram to codex gateway");
 });

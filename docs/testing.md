@@ -42,7 +42,7 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `node --test test/worker-pool.test.js test/worker-pool-startup.test.js test/worker-pool-file-delivery.test.js test/worker-pool-delivery.test.js test/worker-pool-live-steer.test.js test/worker-pool-shutdown.test.js` — focused worker-pool ownership slices for startup, delivery, live steer, and shutdown behavior
 - `node --test test/prompt-queue.test.js` — focused `/q` queue semantics, including busy-retry after finalization and corrupt-queue quarantine
 - `node --test test/omni-coordinator.test.js test/omni-coordinator-*.test.js test/omni-decision.test.js test/omni-memory.test.js test/omni-prompt-handoff.test.js test/session-compactor.test.js` — focused Omni v2 coverage with a compact coordinator spine plus split setup/cycle/input/sleep/shutdown ownership
-- `node --test test/zoo-service.test.js test/zoo-service-menu.test.js test/zoo-service-add-flow.test.js test/zoo-service-refresh.test.js test/zoo-render.test.js test/zoo-analysis.test.js test/zoo-model-response.test.js test/zoo-store.test.js` — focused Zoo ownership slices for topic/menu, add-flow, refresh, render, and store behavior
+- `node --test test/zoo-service.test.js test/zoo-service-menu.test.js test/zoo-service-add-flow.test.js test/zoo-service-refresh.test.js test/zoo-render.test.js test/zoo-analysis.test.js test/zoo-model-response.test.js test/zoo-store.test.js` — focused Zoo ownership slices for topic/menu, missing-topic-state callback recovery, add-flow, refresh, render, and store behavior
 - `make smoke` — focused Spike smoke path
 - `make smoke-omni` — focused Omni smoke path
 - `make soak` — multi-topic concurrency validation
@@ -188,7 +188,7 @@ Native Windows:
 - keep shared Zoo helpers in `test-support/zoo-fixtures.js`
 - keep the compact Zoo integration spine in `test/zoo-service.test.js`
 - keep `src/zoo/service.js` as the thin public facade and move heavy Zoo logic into `service-menu.js`, `service-add-flow.js`, `service-refresh.js`, and `service-common.js`
-- keep Zoo topic/menu lifecycle and root/pet screen behavior in `test/zoo-service-menu.test.js`
+- keep Zoo topic/menu lifecycle, missing-topic-state callback recovery, and root/pet screen behavior in `test/zoo-service-menu.test.js`
 - keep add-project lookup, confirmation, and duplicate-name reconciliation coverage in `test/zoo-service-add-flow.test.js`
 - keep refresh cleanup and deleted-pet recovery coverage in `test/zoo-service-refresh.test.js`
 - keep `test/command-router.test.js` focused on the thin router smoke paths such as top-level short-circuits and dispatch

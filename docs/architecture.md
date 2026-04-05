@@ -84,7 +84,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - `src/omni/coordinator-common.js` keeps the small shared coordinator helpers and command/query classification helpers
 10. `src/zoo/` now follows the same shell-plus-domain split:
    - `src/zoo/service.js` is the thin public facade for `ZooService`
-   - `src/zoo/service-menu.js` owns Zoo topic provisioning, menu payload building, and menu edit/send/pin flow
+   - `src/zoo/service-menu.js` owns Zoo topic provisioning, callback-backed topic-state recovery, menu payload building, and menu edit/send/pin flow
    - `src/zoo/service-add-flow.js` owns add-project replies, workspace lookup, confirmation, and pet-display-name reconciliation
    - `src/zoo/service-refresh.js` owns callback-side refresh/remove actions, stale-pet cleanup, and animation ticker lifecycle
    - `src/zoo/service-common.js` keeps the shared Zoo text helpers, callback parsing, safe delete/pin helpers, and canonical path/name helpers

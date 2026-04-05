@@ -62,7 +62,12 @@ export async function handleCallbackQuery(service, {
 
   await answerCallbackQuerySafe(api, callbackQuery.id);
   return runSerializedZooOperation("zoo", async () => {
-    const topicState = await service.zooStore.loadTopic({ force: true });
+    const topicState = await service.recoverZooTopicFromMessageContext(
+      callbackQuery?.message,
+      {
+        menuMessageId: callbackQuery?.message?.message_id,
+      },
+    );
     const language = normalizeUiLanguage(topicState.ui_language);
     if (
       String(callbackQuery?.message?.message_thread_id ?? "") !== String(topicState.topic_id)

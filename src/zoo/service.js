@@ -17,6 +17,7 @@ import {
   isZooTopicMessage,
   maybeHandleIncomingMessage,
   pickPetIdentity,
+  recoverZooTopicFromMessageContext,
   resolveUiLanguage,
 } from "./service-menu.js";
 import {
@@ -62,6 +63,10 @@ export class ZooService {
 
   async isZooTopicMessage(message) {
     return isZooTopicMessage(this, message);
+  }
+
+  async recoverZooTopicFromMessageContext(message, options = {}) {
+    return recoverZooTopicFromMessageContext(this, message, options);
   }
 
   async ensureZooTopic(api, {
