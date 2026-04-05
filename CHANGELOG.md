@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.16] - 2026-04-05
+
+Changed:
+
+- the global `General` menu now keeps `Guide` and `Help` directly under `Bot Settings` and `Language`, so the most common reference actions stay at the top of the pinned surface
+
+Docs:
+
+- README, Telegram surface docs, and both guidebooks now describe the updated root-menu order
+
 ## [0.3.15] - 2026-04-05
 
 Changed:

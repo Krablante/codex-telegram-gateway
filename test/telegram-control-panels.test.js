@@ -69,15 +69,15 @@ test("handleIncomingMessage opens the persistent global control panel in General
   );
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[1].map((button) => button.text),
-    ["Wait", "Suffix"],
+    ["Guide", "Help"],
   );
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[2].map((button) => button.text),
-    ["Zoo", "Clear"],
+    ["Wait", "Suffix"],
   );
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[3].map((button) => button.text),
-    ["Guide", "Help"],
+    ["Zoo", "Clear"],
   );
   assert.equal(
     sent[0].reply_markup.inline_keyboard.some((row) =>
