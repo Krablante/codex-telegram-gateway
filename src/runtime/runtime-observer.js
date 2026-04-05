@@ -2,16 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
+import { writeTextAtomic } from "../state/file-utils.js";
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
-}
-
-async function writeJsonAtomic(filePath, value) {
-  const directory = path.dirname(filePath);
-  await fs.mkdir(directory, { recursive: true });
-  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  await fs.writeFile(tempPath, `${JSON.stringify(cloneJson(value), null, 2)}\n`, "utf8");
-  await fs.rename(tempPath, filePath);
 }
 
 function buildEvent(type, details = {}) {
@@ -44,6 +38,7 @@ export class RuntimeObserver {
     this.lastErrorMessage = null;
     this.heartbeatPath = path.join(logsDir, heartbeatFileName);
     this.eventsPath = path.join(logsDir, eventsFileName);
+    this.heartbeatWriteChain = Promise.resolve();
   }
 
   buildHeartbeat({ observedAt = new Date().toISOString() } = {}) {
@@ -100,10 +95,19 @@ export class RuntimeObserver {
   }
 
   async writeHeartbeat() {
-    const observedAt = new Date().toISOString();
-    const heartbeat = this.buildHeartbeat({ observedAt });
-    await writeJsonAtomic(this.heartbeatPath, heartbeat);
-    return heartbeat;
+    const writeTask = async () => {
+      const observedAt = new Date().toISOString();
+      const heartbeat = this.buildHeartbeat({ observedAt });
+      await writeTextAtomic(
+        this.heartbeatPath,
+        `${JSON.stringify(cloneJson(heartbeat), null, 2)}\n`,
+      );
+      return heartbeat;
+    };
+
+    const writePromise = this.heartbeatWriteChain.then(writeTask, writeTask);
+    this.heartbeatWriteChain = writePromise.catch(() => {});
+    return writePromise;
   }
 
   async start({ currentOffset = null }) {
