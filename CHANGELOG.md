@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.21] - 2026-04-05
+
+Fixed:
+
+- runtime heartbeat writes are now serialized, avoiding overlapping temp-file rename races during concurrent observer updates
+- startup stale-run recovery now clears dead thread/rollout resume state and emits a synthetic failed final, so `/auto` topics can recover cleanly after a Spike restart
+- buffered live steer flush now retries short transient transport recovery failures, so follow-up prompts sent during run startup are not silently stranded
+
+Tests:
+
+- added regression coverage for serialized heartbeat writes, stale-run recovery final-event emission, and transient buffered-steer flush retries
+
 ## [0.3.20] - 2026-04-05
 
 Fixed:
