@@ -44,7 +44,7 @@ Menus are the easier and safer path for things that change regularly but are not
 - opening `Guide` or `Help` straight from the global menu in `General`;
 - refreshing the current screen.
 
-The practical rule is simple: if you need to change a stable setting, start with a menu. It is faster, cleaner, and usually does not require remembering syntax. Two small layout details are worth knowing: the global menu now starts with `Bot Settings` and `Language` on the top row, bot-specific runtime controls sit behind a dedicated `Bot Settings` screen instead of living directly on the root menu, and the effective bot summary is now intentionally compact, for example `spike: gpt-5.4 (xhigh)`.
+The practical rule is simple: if you need to change a stable setting, start with a menu. It is faster, cleaner, and usually does not require remembering syntax. A few layout details are worth knowing: the global menu now starts with `Bot Settings` and `Language` on the top row, keeps `Guide` and `Help` immediately below them, leaves `Wait` / `Suffix` and `Zoo` / `Clear` lower on the root screen, and still keeps bot-specific runtime controls behind a dedicated `Bot Settings` screen instead of spreading them directly across the root menu. The effective bot summary also stays intentionally compact, for example `spike: gpt-5.4 (xhigh)`.
 
 ## What menus do not replace
 

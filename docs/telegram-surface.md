@@ -53,7 +53,7 @@ Telegram bots do not have true arbitrary text animation for editable menu panels
 
 The panel keeps the menu message alive and sends separate status/error messages into `General` after each applied action.
 
-The root screen now starts with `Bot Settings` and `Language`, then keeps one-tap `Zoo`, `Clear`, `Guide`, and `Help` shortcuts so the normal `General` flow stays menu-first.
+The root screen now starts with `Bot Settings` and `Language`, then puts `Guide` and `Help` directly beneath them before the lower `Wait` / `Suffix` and `Zoo` / `Clear` operator rows.
 
 The selected panel language also drives `General`-only replies for commands that do not have a topic session, such as `/help`, `/status`, `/wait global ...`, and other global-setting commands.
 

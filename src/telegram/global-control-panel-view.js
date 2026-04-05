@@ -302,16 +302,16 @@ function buildRootKeyboard(omniEnabled, pendingInput, language = DEFAULT_UI_LANG
       buildInlineKeyboardButton("Language", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.language}`),
     ],
     [
+      buildInlineKeyboardButton("Guide", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:g:show`),
+      buildInlineKeyboardButton("Help", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:h:show`),
+    ],
+    [
       buildInlineKeyboardButton("Wait", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.wait}`),
       buildInlineKeyboardButton("Suffix", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.suffix}`),
     ],
     [
       buildInlineKeyboardButton("Zoo", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:z:show`),
       buildInlineKeyboardButton("Clear", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:c:run`),
-    ],
-    [
-      buildInlineKeyboardButton("Guide", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:g:show`),
-      buildInlineKeyboardButton("Help", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:h:show`),
     ],
     ...(pendingInput
       ? [[buildInlineKeyboardButton("Cancel input", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:p:clear`)]]
