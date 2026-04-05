@@ -40,6 +40,12 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - `make test-live`
 - `make test`
 
+## Workflow
+
+- this repo follows a private-first workflow
+- changes should land and be validated in the private repo first, then be mirrored here once they are safe to publish
+- when a fix or UX change exists in both repos, keep tests, docs, changelog, and release state aligned with the private source of truth
+
 ## Boundaries
 
 - do not turn this into a generic multi-provider orchestration platform
