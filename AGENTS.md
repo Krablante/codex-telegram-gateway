@@ -2,6 +2,8 @@
 
 Use this repo when editing the public Codex Telegram gateway.
 
+Motto: avoid overengineering; prioritize efficient, modular systems, security, high autonomy, and ease of operation and use.
+
 ## What this repo is
 
 - public single-operator Telegram gateway for the local `codex` runtime
@@ -44,3 +46,8 @@ Use this repo when editing the public Codex Telegram gateway.
 - do not add approval-flow or sandbox policy layers in this repo
 - keep bot tokens and runtime secrets out of git
 - keep mutable logs, sessions, indexes, and artifacts under the configured state root, not in the repo
+
+## Atlas reminder
+
+- root `atlas/AGENTS.md` is the main workspace contract; keep its global rules, navigation order, and precedence in mind even when working in this scope
+- `atlas/_context/README.md` is the one-file fast-start for shared workspace context; open deeper `_context/*` modules only when the task clearly needs them
