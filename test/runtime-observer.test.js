@@ -76,3 +76,56 @@ test("RuntimeObserver writes heartbeat and lifecycle events", async () => {
   assert.equal(events[1].type, "updates.bootstrap_drop");
   assert.equal(events.at(-1).type, "service.stopped");
 });
+
+test("RuntimeObserver serializes overlapping heartbeat writes", async () => {
+  const logsDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-logs-"),
+  );
+  const serviceState = {
+    startedAt: "2026-03-22T12:00:00.000Z",
+    botId: "1",
+    botUsername: "gatewaybot",
+    handledUpdates: 0,
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    acceptedPrompts: 0,
+    pollErrors: 0,
+    knownSessions: 0,
+    activeRunCount: 0,
+    generationId: "gen-runtime",
+    isLeader: true,
+    retiring: false,
+    rolloutStatus: "idle",
+    lastUpdateId: null,
+    lastCommandName: null,
+    lastCommandAt: null,
+    lastPromptAt: null,
+    bootstrapDroppedUpdateId: null,
+  };
+  const observer = new RuntimeObserver({
+    logsDir,
+    config: {
+      envFilePath: "/state/runtime.env",
+      repoRoot: "/repo",
+      stateRoot: "/state",
+      telegramForumChatId: "-1001234567890",
+    },
+    serviceState,
+    probe: {
+      me: {
+        first_name: "SEVERUS",
+      },
+    },
+    mode: "poller",
+  });
+
+  await Promise.all(
+    Array.from({ length: 20 }, (_, index) => observer.noteOffset(index + 1)),
+  );
+
+  const heartbeat = JSON.parse(
+    await fs.readFile(path.join(logsDir, "runtime-heartbeat.json"), "utf8"),
+  );
+
+  assert.equal(heartbeat.polling.current_offset, 20);
+});

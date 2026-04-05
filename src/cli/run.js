@@ -140,6 +140,7 @@ async function main() {
   const recoveredStaleSessions = await recoverStaleRunningSessions({
     generationStore,
     sessionStore,
+    spikeFinalEventStore,
   }).catch((error) => {
     console.error(`stale run recovery failed: ${error.message}`);
     return [];

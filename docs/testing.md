@@ -145,7 +145,7 @@ Native Windows:
 - keep Codex limits parsing, cache refresh semantics, and stale-fast UI reads in `test/codex-limits.test.js`
 - keep batch-level callback early-ack behavior in `test/telegram-callback-batch-ack.test.js`
 - keep long-poll bootstrap, forwarded-vs-local update dispatch, and IPC forwarding probes in `test/run-update-processing.test.js`
-- keep stale-running startup cleanup in `test/run-stale-run-recovery.test.js`
+- keep stale-running startup cleanup, including clearing dead thread/rollout resume state and emitting an Omni-visible failed final, in `test/run-stale-run-recovery.test.js`
 - keep run-once maintenance ordering in `test/run-maintenance.test.js`
 - keep rollout request/reconcile behavior in `test/run-rollout-controller.test.js`
 - keep background timer registration and leader-gated scans in `test/run-background-jobs.test.js`

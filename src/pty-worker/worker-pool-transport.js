@@ -97,19 +97,20 @@ export async function flushPendingLiveSteer(pool, sessionKey, run) {
     return false;
   }
 
-  const result = await run.controller.steer({
+  const result = await steerRunWithRetry(pool, {
+    exchangePrompt: pending.exchangePrompt,
     input: pending.input,
+    message: Number.isInteger(pending.replyToMessageId)
+      ? { message_id: pending.replyToMessageId }
+      : null,
+    run,
+    sessionKey,
   });
-  if (result?.ok === false) {
+  if (!result?.ok) {
     return false;
   }
 
   pool.pendingLiveSteers.delete(sessionKey);
-  run.exchangePrompt = appendPromptPart(run.exchangePrompt, pending.exchangePrompt);
-  if (Number.isInteger(pending.replyToMessageId)) {
-    run.state.replyToMessageId = pending.replyToMessageId;
-  }
-
   return true;
 }
 

@@ -206,6 +206,76 @@ test("CodexWorkerPool keeps pending live steer buffered when flush fails", async
   });
 });
 
+test("CodexWorkerPool retries buffered live steer flush across a transient transport recovery", async () => {
+  const steerCalls = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore: {
+      patch(session) {
+        return Promise.resolve(session);
+      },
+    },
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+  });
+
+  workerPool.pendingLiveSteers.set("session-1", {
+    input: [{ type: "text", text: "follow-up" }],
+    exchangePrompt: "follow-up",
+    replyToMessageId: 123,
+  });
+
+  const run = {
+    controller: {
+      steer({ input }) {
+        steerCalls.push(input);
+        if (steerCalls.length === 1) {
+          return Promise.resolve({
+            ok: false,
+            reason: "transport-recovering",
+          });
+        }
+
+        return Promise.resolve({
+          ok: true,
+          reason: "steered",
+        });
+      },
+    },
+    exchangePrompt: "base",
+    state: {
+      finalizing: false,
+      replyToMessageId: null,
+    },
+  };
+  workerPool.activeRuns.set("session-1", run);
+
+  const flushed = await workerPool.flushPendingLiveSteer("session-1", run);
+
+  assert.equal(flushed, true);
+  assert.equal(steerCalls.length, 2);
+  assert.equal(workerPool.pendingLiveSteers.has("session-1"), false);
+  assert.equal(run.exchangePrompt, "base\n\nfollow-up");
+  assert.equal(run.state.replyToMessageId, 123);
+});
+
 test("CodexWorkerPool refuses to buffer live steer after the run is already finalizing", async () => {
   const workerPool = new CodexWorkerPool({
     api: {
@@ -1137,4 +1207,3 @@ test("CodexWorkerPool keeps a completed final answer even if interrupt lands lat
   assert.equal(reloaded.last_agent_reply, "Готовый финальный ответ.");
   assert.equal(sentMessages.at(-1).text, "Готовый финальный ответ.");
 });
-

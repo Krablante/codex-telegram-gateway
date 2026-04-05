@@ -21,7 +21,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - the Spike runtime now also supports session-aware generation handoff: exactly one generation owns Telegram intake, active run topics stay pinned to their current generation, and a new generation can take idle/new topics immediately during rollout by forwarding retained-topic updates over local loopback IPC
    - `src/cli/run-runtime-context.js` owns bootstrap-time runtime wiring, service construction, and store/layout setup
    - `src/cli/run-update-processing.js` owns bootstrap offset discovery, long-poll readiness cleanup, and the forwarded-vs-local Telegram update processing path
-   - `src/cli/run-stale-run-recovery.js` owns startup cleanup for stale `running` sessions whose recorded owner generation is no longer verifiably live
+   - `src/cli/run-stale-run-recovery.js` owns startup cleanup for stale `running` sessions whose recorded owner generation is no longer verifiably live, clears stale thread/rollout resume state so the next prompt starts cleanly, and emits a synthetic failed-final signal so Omni can recover `/auto` topics after a Spike restart
    - `src/cli/run-background-jobs.js` owns heartbeats, queued-prompt scans, and retention sweep timers
    - `src/cli/run-maintenance.js` owns the explicit one-shot maintenance path so `RUN_ONCE`/smoke mode does not depend on background timer races
    - `src/cli/run-rollout-controller.js` owns rollout request/reconcile/retire control flow so the composition root stays focused on lifecycle orchestration instead of rollout detail
