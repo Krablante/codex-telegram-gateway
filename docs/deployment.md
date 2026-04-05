@@ -146,7 +146,7 @@ These user-service flows are Linux-only because they target `systemd --user`.
 On native Windows, run the gateway directly with:
 
 ```powershell
-cd O:\workspace\codex-telegram-gateway
+cd C:\path\to\codex-telegram-gateway
 copy .env.example .env
 scripts\windows\install.cmd
 scripts\windows\install-codex.cmd
