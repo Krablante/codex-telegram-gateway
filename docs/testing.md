@@ -188,7 +188,7 @@ Native Windows:
 - keep shared Zoo helpers in `test-support/zoo-fixtures.js`
 - keep the compact Zoo integration spine in `test/zoo-service.test.js`
 - keep `src/zoo/service.js` as the thin public facade and move heavy Zoo logic into `service-menu.js`, `service-add-flow.js`, `service-refresh.js`, and `service-common.js`
-- keep Zoo topic/menu lifecycle, missing-topic-state callback recovery, and root/pet screen behavior in `test/zoo-service-menu.test.js`
+- keep Zoo topic/menu lifecycle, missing-topic-state callback recovery, stale-menu callback safety, and root/pet screen behavior in `test/zoo-service-menu.test.js`
 - keep add-project lookup, confirmation, and duplicate-name reconciliation coverage in `test/zoo-service-add-flow.test.js`
 - keep refresh cleanup and deleted-pet recovery coverage in `test/zoo-service-refresh.test.js`
 - keep `test/command-router.test.js` focused on the thin router smoke paths such as top-level short-circuits and dispatch

@@ -101,31 +101,36 @@ export async function recoverZooTopicFromMessageContext(service, message, {
   const chatId = String(message?.chat?.id ?? "").trim() || null;
   const topicId = String(message?.message_thread_id ?? "").trim() || null;
   const normalizedMenuMessageId = normalizePositiveInteger(menuMessageId);
-  let topicState = await service.zooStore.loadTopic({ force: true });
+  const topicState = await service.zooStore.loadTopic({ force: true });
   if (!chatId || !topicId) {
     return topicState;
   }
 
-  if (topicState.topic_id) {
-    if (
-      String(topicState.chat_id ?? "") === chatId
-      && String(topicState.topic_id ?? "") === topicId
-      && normalizedMenuMessageId
-      && topicState.menu_message_id !== normalizedMenuMessageId
-    ) {
-      topicState = await service.zooStore.patchTopic({
-        menu_message_id: normalizedMenuMessageId,
-      });
-    }
+  const storedChatId = String(topicState.chat_id ?? "").trim() || null;
+  const storedTopicId = String(topicState.topic_id ?? "").trim() || null;
+  const patch = {};
+
+  if (!storedTopicId) {
+    patch.chat_id = chatId;
+    patch.topic_id = topicId;
+  } else if (storedTopicId === topicId && storedChatId !== chatId) {
+    patch.chat_id = chatId;
+  } else if (storedTopicId !== topicId) {
     return topicState;
   }
 
-  return service.zooStore.saveTopic({
-    ...topicState,
-    chat_id: chatId,
-    topic_id: topicId,
-    menu_message_id: normalizedMenuMessageId,
-  });
+  if (
+    normalizedMenuMessageId
+    && normalizePositiveInteger(topicState.menu_message_id) === null
+  ) {
+    patch.menu_message_id = normalizedMenuMessageId;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return topicState;
+  }
+
+  return service.zooStore.patchTopic(patch);
 }
 
 export async function ensureZooTopic(service, api, {

@@ -395,3 +395,41 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
   assert.equal(replyResult.reason, "zoo-lookup-started");
   assert.equal(capturedDescription, "my private telegram to codex gateway");
 });
+
+test("ZooService does not let a stale Zoo callback replace the active menu message id", async () => {
+  const stateRoot = await createStateRoot();
+  const api = createApiStub();
+  const zooStore = new ZooStore(stateRoot);
+  await zooStore.patchTopic({
+    chat_id: "-1001234567890",
+    topic_id: "700",
+    topic_name: "Zoo",
+    ui_language: "rus",
+    menu_message_id: 901,
+    active_screen: "root",
+  });
+  const service = new ZooService({
+    config: buildConfig(stateRoot),
+    sessionService: {},
+    zooStore,
+  });
+
+  const result = await service.handleCallbackQuery({
+    api,
+    callbackQuery: {
+      id: "cb-stale-root",
+      data: "zoo:n:root",
+      from: { id: 1234567890, is_bot: false },
+      message: {
+        chat: { id: -1001234567890 },
+        message_thread_id: 700,
+        message_id: 777,
+      },
+    },
+  });
+
+  assert.equal(result.reason, "zoo-root-opened");
+  const topicState = await zooStore.loadTopic({ force: true });
+  assert.equal(topicState.menu_message_id, 901);
+  assert.equal(api.calls.editMessageText.at(-1).message_id, 901);
+});
