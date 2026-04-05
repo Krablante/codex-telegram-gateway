@@ -10,11 +10,13 @@ import {
   getRetryDelayMs,
   isEnglish,
   isMissingReplyTargetError,
+  isTransientTransportError,
   sleep,
   stringifyMessageId,
 } from "./worker-pool-common.js";
 
 const FINAL_REPLY_MAX_ATTEMPTS = 3;
+const FINAL_REPLY_TRANSIENT_RETRY_DELAYS_MS = [500, 1500];
 
 function formatOutgoingDocumentLabel(document) {
   if (typeof document?.fileName === "string" && document.fileName.trim()) {
@@ -109,6 +111,19 @@ function buildReplyParams(session, text, replyToMessageId = null) {
   }
 
   return params;
+}
+
+function getTransientFinalReplyRetryDelayMs(error, attempt) {
+  const retryDelayMs = getRetryDelayMs(error);
+  if (retryDelayMs !== null) {
+    return retryDelayMs;
+  }
+
+  if (!isTransientTransportError(error)) {
+    return null;
+  }
+
+  return FINAL_REPLY_TRANSIENT_RETRY_DELAYS_MS[attempt - 1] ?? null;
 }
 
 export async function deliverRunDocuments(pool, session, documents = []) {
@@ -289,7 +304,7 @@ export async function deliverRunReply(
   pool,
   session,
   text,
-  { replyToMessageId = null } = {},
+  { replyToMessageId = null, progress = null } = {},
 ) {
   const chunks = splitTelegramReply(text);
   const messageIds = [];
@@ -331,12 +346,29 @@ export async function deliverRunReply(
           }
         }
 
-        const retryDelayMs = getRetryDelayMs(error);
-        if (retryDelayMs === null || attempt === FINAL_REPLY_MAX_ATTEMPTS) {
-          throw error;
+        const retryDelayMs = getTransientFinalReplyRetryDelayMs(error, attempt);
+        if (retryDelayMs !== null && attempt < FINAL_REPLY_MAX_ATTEMPTS) {
+          await sleep(retryDelayMs);
+          continue;
         }
 
-        await sleep(retryDelayMs);
+        if (
+          messageIds.length === 0 &&
+          progress?.messageId !== null &&
+          isTransientTransportError(error)
+        ) {
+          await progress.finalize(text);
+          return {
+            delivered: true,
+            fallback: "progress",
+            messageIds: [stringifyMessageId(progress.messageId)].filter(Boolean),
+          };
+        }
+
+        if (messageIds.length > 0) {
+          error.partialTelegramMessageIds = Array.from(messageIds);
+        }
+        throw error;
       }
     }
   }

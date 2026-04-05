@@ -1,219 +1,114 @@
-<p align="center">
-  <img src="./assets/readme/codex-telegram-gateway-banner.svg" alt="codex-telegram-gateway banner">
-</p>
+# codex-telegram-gateway
 
-<h1 align="center">codex-telegram-gateway</h1>
+Personal Telegram gateway for the real local `codex` runtime.
 
-<p align="center">
-  <strong>Turn a Telegram forum into a durable control surface for the real Codex CLI on your own machine.</strong>
-</p>
+This repo keeps the surface small:
 
-<p align="center">
-  One topic = one session. <code>Spike</code> does the live work. <code>Omni</code> optionally supervises <code>/auto</code>. <code>Zoo</code> adds an experimental project-card lane.
-</p>
+- one Telegram topic = one session
+- `Spike` is the main worker bot
+- optional `Omni` is the second bot for `/auto`
+- `Zoo` is a dedicated control-only topic for per-project tamagotchi snapshots
+- state lives under `atlas/state/...`, not in the repo
+- code shape is modular-first: thin routers, domain handlers, focused test ownership
 
-<p align="center">
-  <a href="https://github.com/Krablante/codex-telegram-gateway/releases">
-    <img src="https://img.shields.io/github/v/release/Krablante/codex-telegram-gateway?style=for-the-badge" alt="GitHub release">
-  </a>
-  <a href="https://github.com/Krablante/codex-telegram-gateway/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/Krablante/codex-telegram-gateway/ci.yml?branch=main&style=for-the-badge" alt="CI status">
-  </a>
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License">
-  </a>
-  <img src="https://img.shields.io/badge/Node-20%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node 20+">
-  <img src="https://img.shields.io/badge/Telegram-Forum%20Topics-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram forum topics">
-</p>
+## Code Direction
 
-<p align="center">
-  <a href="./docs/setup.md">Setup</a>
-  ·
-  <a href="./docs/index.md">Docs</a>
-  ·
-  <a href="./docs/telegram-surface.md">Telegram Surface</a>
-  ·
-  <a href="./docs/omni-auto.md">Auto Mode</a>
-  ·
-  <a href="./docs/runbook.md">Runbook</a>
-  ·
-  <a href="./CHANGELOG.md">Changelog</a>
-</p>
+The repo has now moved to an explicit modular handler system and should stay that way.
 
-`codex-telegram-gateway` is a practical bridge between Telegram forum topics and a machine where `codex` is already installed, authenticated, and allowed to touch real repos, files, and tools.
+- keep central shells such as `command-router.js` thin
+- add new Telegram behavior in domain handlers under `src/telegram/command-handlers/`
+- split tests by the same ownership instead of regrowing giant central suites
+- prefer small shared helper modules only when multiple handlers truly share one contract
 
-This repo is for people who want something direct:
+## Canonical paths
 
-- one work topic maps to one durable local session
-- the real Codex CLI does the work, not a hosted proxy
-- follow-up prompts can steer into a still-running task
-- progress stays readable instead of turning chat into tool spam
-- recovery, compaction, queues, waits, and suffixes are built in
-- Linux and native Windows are both first-class paths
+- repo root: `/path/to/codex-telegram-gateway`
+- state root: `/home/example/.local/state/codex-telegram-gateway`
+- runtime env: `/home/example/.config/codex-telegram-gateway/runtime.env`
 
-## Why this exists
+## Read This Next
 
-Telegram is already open all day. A forum topic is a natural task lane. Codex already lives on the operator machine. The missing piece is a small, durable gateway that turns those three facts into one usable system.
+- [docs/index.md](./docs/index.md) — doc map
+- [docs/architecture.md](./docs/architecture.md) — runtime shape and flow
+- [docs/telegram-surface.md](./docs/telegram-surface.md) — commands, waits, suffixes, rendering, file delivery
+- [docs/omni-auto.md](./docs/omni-auto.md) — `/auto`, `Omni`, phases, sleep, blockers
+- [docs/deployment.md](./docs/deployment.md) — env, services, Spike-only vs Spike+Omni deployment
+- [docs/testing.md](./docs/testing.md) — doctor, smoke, soak, live-user testing
+- [docs/runbook.md](./docs/runbook.md) and [docs/runbook-rus.md](./docs/runbook-rus.md) — operator troubleshooting and recovery
+- [docs/state-contract.md](./docs/state-contract.md) — mutable state surfaces
 
-This project deliberately stays focused:
+## Quick Start
 
-- it is not a hosted Codex wrapper
-- it is not a generic Telegram bot framework
-- it is not a multi-tenant orchestration platform
-- it is a tight operator-facing bridge for personal or small-team use
-
-## What you get
-
-| Piece | Role |
-| --- | --- |
-| `General` topic | global controls, `/help`, `/guide`, `/global`, `/clear`, and new-topic creation |
-| work topic | the actual task lane |
-| `Spike` | the main worker bot that reads code, edits files, runs commands, and streams progress |
-| `Omni` | optional second bot for goal-locked `/auto` supervision |
-| `Zoo` | optional menu-only topic with experimental project cards |
-| local state root | durable sessions, briefs, exchange logs, artifacts, queue state, and rollout metadata |
-
-Core capabilities:
-
-- plain prompts start durable local sessions
-- live follow-ups steer into active runs, with a short retry before queue fallback
-- `/q` queues prompts when you want batching instead of interruption
-- `/wait` buffers fragmented Telegram input into one prompt
-- `/suffix` adds persistent prompt tails per topic or globally
-- `/menu` and `/global` expose control panels instead of command memorization
-- the root `/global` menu in `General` now stacks `Bot Settings` / `Language` first, then `Guide` / `Help`, with `Wait` / `Suffix` and `Zoo` / `Clear` below
-- live Zoo menu callbacks now rebuild lost or incomplete Zoo topic binding from Telegram callback context, so a broken `zoo/topic.json` no longer turns buttons into silent no-ops
-- `/compact` rebuilds concise continuity from clean state
-- `/limits` surfaces Codex limits in chat
-- session-aware `Spike` rollout avoids blind restarts by default
-
-## Recent public wave
-
-| Area | What changed |
-| --- | --- |
-| Live follow-ups | Active-topic follow-up prompts now retry short transient `steer` failures before falling back to the next prompt queue. |
-| Zoo recovery | Live Zoo callbacks now reconstruct lost `zoo/topic.json` binding from Telegram callback context, so button-driven add/refresh flows recover cleanly after state corruption. |
-| Runtime shell | The Spike poll/runtime shell is split into focused slices for bootstrap, update processing, background jobs, run-once maintenance, and rollout control. |
-| Session storage | `SessionStore` now keeps a thin public facade while lifecycle, file IO, meta shaping, and raw reads stay in separate modules. |
-| Cross-platform behavior | `RUN_ONCE` / smoke paths no longer start background timers, keeping one-shot maintenance deterministic on Linux and Windows. |
-| Public parity | The public tree stays aligned with the current private implementation wave while preserving public-safe paths, docs, and GitHub release metadata. |
-
-## How it works
-
-```text
-Telegram forum
-├─ General
-│  ├─ /help
-│  ├─ /guide
-│  ├─ /global
-│  └─ /clear
-├─ Zoo
-│  └─ menu-only project cards
-└─ Work topics
-   ├─ plain prompts -> Spike
-   ├─ /q, /wait, /suffix, /compact, /purge
-   └─ /auto -> Omni supervises, Spike still does the heavy work
-
-Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
-```
-
-The important mental model is simple: Telegram is only the surface. The actual work happens locally, against your real filesystem, your real repos, and your real `codex` runtime.
-
-## Quick start
-
-Requirements:
-
-- Node.js 20+
-- local `codex` CLI installed and already authenticated
-- one Telegram supergroup with topics enabled
-- one Telegram account that will operate the bot
-
-Fast path:
+Atlas/Linux:
 
 ```bash
-git clone https://github.com/Krablante/codex-telegram-gateway.git
-cd codex-telegram-gateway
-
-npm install
-cp .env.example .env
+cd /path/to/codex-telegram-gateway
+make config
+make doctor
+make run
 ```
 
-Fill at least:
+First-time minimum in the runtime env:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
 - `TELEGRAM_FORUM_CHAT_ID`
 - `WORKSPACE_ROOT`
-- optional: `DEFAULT_SESSION_BINDING_PATH`
+- optional `DEFAULT_SESSION_BINDING_PATH`
+- optional `CODEX_LIMITS_COMMAND` or `CODEX_LIMITS_SESSIONS_ROOT` when limits should come from another Codex host
 
-Then run:
+`DEFAULT_SESSION_BINDING_PATH` only changes where plain `/new Topic Name` starts when no explicit `cwd=...` is provided. If it is unset, ordinary `/new` falls back to `WORKSPACE_ROOT`.
+If the explicit binding path contains spaces, quote it, for example `/new cwd="C:/Users/Example/Source Repos" Audit topic`.
 
-```bash
-make doctor
-make test
-make run
-```
+`/limits` is available as a direct command, is folded into `/status`, and is shown on the root `/global` and `/menu` panels. Capped accounts show the current `5h` and `7d` windows; unlimited accounts are rendered explicitly as unlimited.
+`CODEX_LIMITS_COMMAND` now runs without an implicit shell. Prefer a JSON argv array such as `["python3","/opt/read-limits.py"]`; simple argv-only strings like `python3 /opt/read-limits.py` still work for compatibility. If you need pipes, redirection, or inline env assignments, use a wrapper script or make the shell explicit in argv.
+When `CODEX_LIMITS_COMMAND` is used, set the optional JSON `source` field to the short label you want surfaced in Telegram; otherwise the bot falls back to the generic `command` label instead of echoing the raw shell command.
 
-Make the bot an admin in the forum chat. The smooth path is with rights to post, edit, delete, pin, and manage topics.
+The bot should be an admin in the forum chat. Topic creation and cleanup flows work best when it can post, edit, delete, pin, and manage topics.
 
-In Telegram:
+`/menu` also accepts the Telegram-style `/<command>@YourBot` form, shows an in-menu `Status` screen, and recreates the pinned topic panel cleanly when you reopen it so old menu messages and transient pin notices do not pile up.
+If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one".
 
-1. Open `General`.
-2. Send `/help`.
-3. Create a work topic with `/new Backend Cleanup`.
-4. Enter that topic and send a plain text prompt.
-5. Optionally open `/zoo` or enable `Omni` later.
-
-If you want the exact first-time setup path, start with [docs/setup.md](./docs/setup.md).
-
-## Deployment lanes
-
-### Spike-only
-
-The recommended default.
-
-Leave `OMNI_BOT_TOKEN` and `OMNI_BOT_ID` unset, or set `OMNI_ENABLED=false`.
-
-Use this if:
-
-- you want the smallest possible setup
-- you mainly want direct interactive work
-- you do not want `/auto` consuming extra tokens
-
-### Spike + Omni
-
-Add `OMNI_BOT_TOKEN` and `OMNI_BOT_ID` to enable `/auto`.
-
-In this mode:
-
-- `Spike` still does the heavy live work
-- `Omni` evaluates finished cycles and decides whether to continue, sleep, pivot, block, or finish
-- direct human prompts stop going to `Spike` while `/auto` owns that topic
-
-### Native Windows
-
-Native Windows is supported directly.
+Native Windows:
 
 ```powershell
+cd O:\workspace\codex-telegram-gateway
 copy .env.example .env
 scripts\windows\install.cmd
 scripts\windows\install-codex.cmd
 scripts\windows\doctor.cmd
-scripts\windows\test.cmd
 scripts\windows\run.cmd
 ```
 
-If `Omni` is enabled, run `scripts\windows\run-omni.cmd` in a second shell.
+Use `WORKSPACE_ROOT` and `DEFAULT_SESSION_BINDING_PATH` with Windows paths such as `O:/workspace`.
 
-Notes:
+On native Windows, when `ENV_FILE` is unset the repo first uses `%LOCALAPPDATA%\codex-telegram-gateway\runtime.env` if it already exists, then falls back to repo-local `.env`, and otherwise uses that default state path. Runtime state lives under `%LOCALAPPDATA%\codex-telegram-gateway` by default. The `scripts\windows\*.cmd` wrappers avoid the common PowerShell `npm.ps1` execution-policy trap and keep installs on the reproducible `npm ci --ignore-scripts` path.
+The repo now ships a real `.env.example`, so the `copy .env.example .env` bootstrap path is not a doc-only placeholder anymore. `CODEX_BIN_PATH` is intentionally left empty there so native Windows can fall through to `codex.cmd`; if you override it manually, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
 
-- Windows wrappers call `npm.cmd` directly and avoid common PowerShell execution-policy traps
-- repo-local `.env` works out of the box; leave `CODEX_BIN_PATH` empty to use `codex` on Linux and `codex.cmd` on native Windows
-- if you override `CODEX_BIN_PATH` on Windows, prefer `codex.cmd` or an absolute `...\codex.cmd` path
-- runtime state defaults to `%LOCALAPPDATA%\codex-telegram-gateway`
-- Linux-only `systemd --user` service install is intentionally replaced with Windows-native wrapper scripts
+Install the Codex CLI once before the first run:
 
-## Operator commands
+```powershell
+scripts\windows\install-codex.cmd
+```
+
+`make`, `systemd`, and `service-install` remain Linux-only.
+
+With Omni enabled on Linux/operator path:
+
+```bash
+cd /path/to/codex-telegram-gateway
+make run
+make run-omni
+```
+
+With Omni enabled on native Windows:
+
+```powershell
+scripts\windows\run.cmd
+scripts\windows\run-omni.cmd
+```
+
+## Baseline Commands
 
 Linux/operator path:
 
@@ -224,6 +119,8 @@ make run
 make run-omni
 make service-install
 make service-install-omni
+make service-status
+make service-status-omni
 make service-rollout
 make service-restart
 make service-hard-restart
@@ -241,45 +138,35 @@ scripts\windows\run-omni.cmd
 scripts\windows\admin.cmd status
 ```
 
-Operational notes:
+Live user-account bootstrap:
 
-- `make service-rollout` and `make service-restart` are the soft default path for `Spike`
-- `make service-hard-restart` is the explicit blind restart path
-- `make service-restart-omni` is the direct restart path for `Omni`
-- `service-install` is Linux-only because it targets `systemd --user`
+```bash
+make user-login
+make user-status
+```
 
-## Good fit if...
+Windows-native equivalent:
 
-- you already use Telegram as your lightweight operator console
-- you want one topic per task instead of one giant agent thread
-- you care about readable progress, durable state, and clean restart behavior
-- you want the real Codex CLI working against local repos, not a separate hosted abstraction
+```powershell
+scripts\windows\user-login.cmd
+scripts\windows\user-status.cmd
+scripts\windows\user-e2e.cmd
+```
 
-## Docs map
+## Notes
 
-| Doc | Why you care |
-| --- | --- |
-| [docs/setup.md](./docs/setup.md) | first-time installation and onboarding |
-| [docs/index.md](./docs/index.md) | full doc map |
-| [docs/architecture.md](./docs/architecture.md) | runtime shape, module boundaries, and flow |
-| [docs/telegram-surface.md](./docs/telegram-surface.md) | commands, waits, suffixes, menus, rendering, file delivery |
-| [docs/omni-auto.md](./docs/omni-auto.md) | `/auto`, `Omni`, phases, sleep, blockers, direct questions |
-| [docs/deployment.md](./docs/deployment.md) | env model, services, Spike-only vs Spike+Omni deployment |
-| [docs/testing.md](./docs/testing.md) | automated, smoke, and live-user validation |
-| [docs/runbook.md](./docs/runbook.md) | operator troubleshooting and recovery |
-| [docs/runbook-rus.md](./docs/runbook-rus.md) | Russian runbook |
-| [docs/state-contract.md](./docs/state-contract.md) | mutable state surfaces under the configured state root |
-
-## Validation
-
-The public repo is validated with:
-
-- `npm test`
-- guidebook PDF smoke build
-- runbook PDF smoke build
-- GitHub Actions on `ubuntu-latest`
-- GitHub Actions on `windows-latest`
-
-## License
-
-MIT. See [LICENSE](./LICENSE).
+- `Spike` stays the only heavy live worker; `Omni` uses short one-shot `codex exec` passes
+- if `OMNI_ENABLED=false`, the gateway behaves like a clean single-bot deployment
+- native Windows now supports direct `.env`-based startup without atlas paths or WSL-only assumptions; `WORKSPACE_ROOT` is preferred, `ATLAS_WORKSPACE_ROOT` stays as a compatibility alias
+- Windows wrappers intentionally use `npm ci --ignore-scripts`; this repo does not need package install scripts, and skipping them avoids flaky transitive `postinstall` failures on some Windows setups
+- `make user-login` and `scripts\windows\user-login.cmd` now use a small built-in Node terminal prompt layer; the old `input`/`inquirer`/`lodash` stack is no longer in the production dependency graph
+- `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`
+- on Linux, `make service-rollout` and `make service-restart` are the soft rollout path for Spike: the command waits until the replacement generation has actually taken leader traffic, while already active run topics keep finishing on the retiring generation; use `make service-hard-restart` only when you really want a blind restart
+- Windows process-tree shutdown now uses `taskkill /t` fallback instead of assuming POSIX-only negative-pid signaling, so interrupted Codex runs are less likely to leave orphaned child processes behind
+- Telegram replies are rendered through a Telegram-safe HTML normalizer; headings, standard and expandable quotes, code, links, and readable nested lists are preserved
+- final Spike replies now retry transient Telegram/network send failures beyond plain `retry after`, and if the final send still never comes back the gateway keeps the answer visible in the existing progress bubble instead of dropping it completely
+- local file refs stay human-readable in chat instead of leaking long host paths
+- `General` now has `/clear`, which is bot-triggered and bot-tracked: it preserves the active global menu and removes the tracked General clutter without needing a user-session backend
+- the root `/global` menu in `General` now stacks `Bot Settings` / `Language` first, then `Guide` / `Help`, with `Wait` / `Suffix` and `Zoo` / `Clear` below
+- Zoo is menu-only in normal operation, keeps buttons in English, localizes the card text to the topic language, assigns each new pet a stable random identity from the unused creature and temperament pools when possible, shows a creature-role header above the card, keeps the pet card gently animating while that pet screen stays open, paginates the root list, shifts refresh text from a generic first-frame status into temperament-driven ASCII pose swaps, shows previous-vs-current trend arrows in the stat block, keeps lower detail text inside an expandable quote, and normalizes duplicate repo names to path-derived labels with `[priv]` or `[pub]` suffixes when private/public twins exist
+- if `zoo/topic.json` is lost, incomplete, or quarantined, the next live Zoo menu callback now rebuilds the stored chat/topic/menu binding instead of degrading into silent `zoo:` button no-ops

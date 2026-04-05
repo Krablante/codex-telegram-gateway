@@ -34,7 +34,7 @@ make run-omni
 Native Windows:
 
 ```powershell
-cd C:\path\to\codex-telegram-gateway
+cd O:\workspace\codex-telegram-gateway
 copy .env.example .env
 scripts\windows\install.cmd
 scripts\windows\install-codex.cmd
@@ -48,9 +48,9 @@ On native Windows, use the wrapper scripts instead of bare `npm` inside PowerShe
 
 ## Runtime Visibility
 
-- heartbeat: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-heartbeat.json`
-- events: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-events.ndjson`
-- doctor snapshot: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/doctor-last-run.json`
+- heartbeat: `/home/example/.local/state/codex-telegram-gateway/logs/runtime-heartbeat.json`
+- events: `/home/example/.local/state/codex-telegram-gateway/logs/runtime-events.ndjson`
+- doctor snapshot: `/home/example/.local/state/codex-telegram-gateway/logs/doctor-last-run.json`
 - per-session exchange log: `.../sessions/<chat-id>/<topic-id>/exchange-log.jsonl`
 - per-session brief: `.../sessions/<chat-id>/<topic-id>/active-brief.md`
 
@@ -69,11 +69,11 @@ Use the repo-local admin CLI when a topic is already parked/deleted and Telegram
 cd /path/to/codex-telegram-gateway
 make admin ARGS='status'
 make admin ARGS='sessions --state parked'
-make admin ARGS='show <chat-id> <topic-id>'
-make admin ARGS='pin <chat-id> <topic-id>'
-make admin ARGS='unpin <chat-id> <topic-id>'
-make admin ARGS='reactivate <chat-id> <topic-id>'
-make admin ARGS='purge <chat-id> <topic-id>'
+make admin ARGS='show -1001234567890 12345'
+make admin ARGS='pin -1001234567890 12345'
+make admin ARGS='unpin -1001234567890 12345'
+make admin ARGS='reactivate -1001234567890 12345'
+make admin ARGS='purge -1001234567890 12345'
 ```
 
 Native Windows equivalent:
@@ -81,11 +81,11 @@ Native Windows equivalent:
 ```powershell
 scripts\windows\admin.cmd status
 scripts\windows\admin.cmd sessions --state parked
-scripts\windows\admin.cmd show <chat-id> <topic-id>
-scripts\windows\admin.cmd pin <chat-id> <topic-id>
-scripts\windows\admin.cmd unpin <chat-id> <topic-id>
-scripts\windows\admin.cmd reactivate <chat-id> <topic-id>
-scripts\windows\admin.cmd purge <chat-id> <topic-id>
+scripts\windows\admin.cmd show -1001234567890 12345
+scripts\windows\admin.cmd pin -1001234567890 12345
+scripts\windows\admin.cmd unpin -1001234567890 12345
+scripts\windows\admin.cmd reactivate -1001234567890 12345
+scripts\windows\admin.cmd purge -1001234567890 12345
 ```
 
 ## Services
@@ -132,5 +132,7 @@ make service-restart-omni
 - if `zoo/topic.json` is missing, incomplete, or quarantined, a live Zoo menu callback now rebuilds the stored chat/topic/menu binding; before this fix the symptom was silent Zoo button no-ops or the Zoo topic falling back into ordinary session routing
 - if Telegram reports a topic as unavailable, the session may move into `parked`
 - if Telegram loses the original reply target for a topic message, topic delivery falls back to a plain send in the same topic
+- if the final Spike reply hits a transient Telegram/network send failure, the gateway now retries that final delivery; if the send still never comes back, it keeps the final answer visible in the existing progress bubble instead of silently dropping the run result
+- if a long final reply already delivered some chunks before a later chunk failed, Spike final-event metadata now keeps the delivered Telegram message ids instead of pretending that nothing reached Telegram
 - expired parked sessions may be auto-purged by retention sweep
 - the heartbeat now also exposes generation id, leader/retiring state, and rollout status for service-level handoff visibility

@@ -2,7 +2,7 @@
 
 ## Canonical state root
 
-`${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
+`/home/example/.local/state/codex-telegram-gateway`
 
 ## Mutable surfaces
 
@@ -53,6 +53,7 @@ Current slices guarantee:
 - malformed file-backed queue, handoff, panel, Omni memory, or Zoo state may be quarantined and rebuilt empty instead of being silently reused
 - if `zoo/topic.json` is missing or incomplete, the next live Zoo menu callback may rebuild the stored chat/topic/menu binding from Telegram callback context
 - transport may switch from message edits to append-only status messages when edit delivery degrades
+- final reply delivery may retry transient Telegram/network send failures and, when the send never recovers, keep the final answer visible in the already-open progress bubble
 - transport may strip fenced `telegram-file` control blocks with `action: send` from the final visible reply and use them to send local files into the current Telegram topic
 - outgoing file delivery is scoped to safe local roots such as the active worktree, the per-session state dir, and the system temp dir
 - when topic `auto_mode` is active, Spike may ignore direct human prompt messages in that topic and accept prompt-starts there only from trusted Omni bot principals
@@ -63,17 +64,18 @@ Current slices guarantee:
 - if a stored `codex_thread_id` no longer resumes cleanly after the controlled retry, the next run may clear it, regenerate `active-brief.md` from `exchange-log.jsonl`, and continue from that brief
 - active follow-up user input may be buffered briefly and then live-steered into the same current Codex turn instead of starting a second run
 - if the live websocket transport drops mid-run, completion may continue via rollout-file recovery instead of failing immediately
+- if a long final reply partially reaches Telegram before a later chunk fails, Spike final-event metadata may still record the already-delivered Telegram message ids
 - during service rollout, the leader generation may forward raw Telegram updates for a still-running foreign-owned topic to the retiring generation over local loopback IPC
 - operator private-chat prompts may bypass topic routing entirely and execute through the isolated emergency `codex exec` path
 - external `forum_topic_closed` / `forum_topic_reopened` service messages may move sessions between `active` and `parked`
 - transport failures like unavailable/deleted topic may also move a session into `parked`
 - expired parked sessions may be auto-purged during periodic retention sweep
-- new topic creation may resolve explicit workspace binding from `/new cwd=...` against the configured workspace root
+- new topic creation may resolve explicit workspace binding from `/new cwd=...` against the atlas workspace root
 - `/purge` removes compact memory files and artifacts, then leaves only a tiny `meta.json` purged stub until the topic is reused
 
 ## Rules
 
-- state lives under `the configured state root`, never inside the source repo
+- state lives under `atlas/state/...`, never inside the source repo
 - bot tokens and runtime credentials stay only here
 - later session artifacts inherit the `chat_id/topic_id` geography from the plan
 - the gateway does not keep tool chatter or full PTY transcripts as canonical memory; the clean exchange log is the durable raw surface, and the compact brief is a derived recovery surface

@@ -266,14 +266,18 @@ export async function startPromptRun(
         if (!documentDelivery.parked) {
           replyDelivery = await pool.deliverRunReply(run.session, finalReplyDeliveryText, {
             replyToMessageId: state.replyToMessageId,
+            progress,
           });
         }
+        run.session = replyDelivery.session || run.session;
         await pool.emitSpikeFinalEvent(run, {
           finishedAt,
           deliveryResult: replyDelivery,
         });
         spikeFinalEventEmitted = true;
-        await progress.dismiss();
+        if (replyDelivery.fallback !== "progress") {
+          await progress.dismiss();
+        }
       })
       .catch(async (error) => {
         state.finalizing = true;
@@ -285,7 +289,9 @@ export async function startPromptRun(
                 run.session?.last_run_finished_at || new Date().toISOString(),
               deliveryResult: {
                 delivered: false,
-                messageIds: [],
+                messageIds: Array.isArray(error?.partialTelegramMessageIds)
+                  ? error.partialTelegramMessageIds
+                  : [],
               },
             }).catch(() => null);
           }
@@ -325,14 +331,18 @@ export async function startPromptRun(
           failureText,
           {
             replyToMessageId: state.replyToMessageId,
+            progress,
           },
         );
+        run.session = replyDelivery.session || run.session;
         await pool.emitSpikeFinalEvent(run, {
           finishedAt,
           deliveryResult: replyDelivery,
         });
         spikeFinalEventEmitted = true;
-        await progress.dismiss();
+        if (replyDelivery.fallback !== "progress") {
+          await progress.dismiss();
+        }
       })
       .finally(async () => {
         pool.stopProgressLoop(run);

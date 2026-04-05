@@ -3,6 +3,18 @@ import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import { signalChildProcessTree } from "../runtime/process-tree.js";
 
 const PROGRESS_PENDING_MARKER = "...";
+const TRANSIENT_TRANSPORT_ERROR_CODES = new Set([
+  "ABORT_ERR",
+  "ECONNABORTED",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "ETIMEDOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
 
 export function excerpt(text, limit = 280) {
   if (!text) {
@@ -52,13 +64,32 @@ export function isTransientTransportError(error) {
     return true;
   }
 
-  const message = String(error?.message || "").toLowerCase();
-  return (
-    message.includes("fetch failed") ||
-    message.includes("network error") ||
-    message.includes("socket hang up") ||
-    message.includes("timeout")
-  );
+  const messages = [
+    error?.message,
+    error?.cause?.message,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .filter(Boolean);
+  if (
+    messages.some((message) =>
+      message.includes("fetch failed") ||
+      message.includes("network error") ||
+      message.includes("socket hang up") ||
+      message.includes("connection reset") ||
+      message.includes("timed out") ||
+      message.includes("timeout"),
+    )
+  ) {
+    return true;
+  }
+
+  const codes = [
+    error?.code,
+    error?.cause?.code,
+  ]
+    .map((value) => String(value || "").toUpperCase())
+    .filter(Boolean);
+  return codes.some((code) => TRANSIENT_TRANSPORT_ERROR_CODES.has(code));
 }
 
 export function isMissingReplyTargetError(error) {
