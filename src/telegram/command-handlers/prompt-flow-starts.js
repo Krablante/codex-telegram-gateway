@@ -24,6 +24,7 @@ import {
 const STEER_QUEUE_FALLBACK_REASONS = new Set([
   "idle",
   "finalizing",
+  "steer-failed",
   "transport-recovering",
 ]);
 

@@ -476,6 +476,63 @@ test("handleIncomingMessage queues a follow-up when live steer is temporarily un
   assert.match(sent[0].text, /следующим prompt/u);
 });
 
+test("handleIncomingMessage queues a follow-up instead of sending the generic busy reply after steer-failed", async () => {
+  const sent = [];
+  const queuedPayloads = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "докинь несмотря на временный steer fail",
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 782,
+      message_thread_id: 93,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:93",
+          chat_id: "-1001234567890",
+          topic_id: "93",
+          ui_language: "rus",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async enqueuePromptQueue(_session, payload) {
+        queuedPayloads.push(payload);
+        return { position: 1 };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        return { ok: false, reason: "busy" };
+      },
+      async steerActiveRun() {
+        return { ok: false, reason: "steer-failed" };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "steer-deferred");
+  assert.equal(queuedPayloads.length, 1);
+  assert.doesNotMatch(sent[0].text, /Я ещё работаю/u);
+  assert.match(sent[0].text, /live steer недоступен/u);
+});
+
 test("handleIncomingMessage immediately starts the queued follow-up when the busy run already cleared", async () => {
   const drainCalls = [];
 

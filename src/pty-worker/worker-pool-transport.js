@@ -8,6 +8,88 @@ import {
 } from "./worker-pool-common.js";
 
 const TYPING_ACTION_INTERVAL_MS = 4000;
+const LIVE_STEER_RETRY_DELAYS_MS = [150, 350, 750];
+const LIVE_STEER_RETRY_REASONS = new Set([
+  "steer-failed",
+  "transport-recovering",
+]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRunStillSteerable(pool, sessionKey, run) {
+  return pool.activeRuns.get(sessionKey) === run && !run?.state?.finalizing;
+}
+
+function applyAcceptedSteer({
+  exchangePrompt,
+  message,
+  run,
+}) {
+  run.exchangePrompt = appendPromptPart(run.exchangePrompt, exchangePrompt);
+  const replyTargetMessageId = resolveReplyToMessageId(message);
+  if (Number.isInteger(replyTargetMessageId)) {
+    run.state.replyToMessageId = replyTargetMessageId;
+  }
+}
+
+async function steerRunWithRetry(
+  pool,
+  {
+    exchangePrompt,
+    input,
+    message,
+    run,
+    sessionKey,
+  },
+) {
+  let result = null;
+  let error = null;
+
+  for (let attempt = 0; attempt <= LIVE_STEER_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (!isRunStillSteerable(pool, sessionKey, run)) {
+      return { ok: false, reason: "finalizing" };
+    }
+
+    try {
+      result = await run.controller.steer({ input });
+      error = null;
+    } catch (nextError) {
+      result = null;
+      error = nextError;
+    }
+
+    if (result?.ok) {
+      applyAcceptedSteer({
+        exchangePrompt,
+        message,
+        run,
+      });
+      return result;
+    }
+
+    const failureReason = result?.reason || "steer-failed";
+    if (
+      attempt >= LIVE_STEER_RETRY_DELAYS_MS.length
+      || !LIVE_STEER_RETRY_REASONS.has(failureReason)
+    ) {
+      return result || {
+        ok: false,
+        reason: "steer-failed",
+        error,
+      };
+    }
+
+    await sleep(LIVE_STEER_RETRY_DELAYS_MS[attempt]);
+  }
+
+  return result || {
+    ok: false,
+    reason: "steer-failed",
+    error,
+  };
+}
 
 export async function flushPendingLiveSteer(pool, sessionKey, run) {
   const pending = pool.pendingLiveSteers.get(sessionKey);
@@ -77,23 +159,13 @@ export function steerActiveRun(
   }
 
   if (run?.controller && typeof run.controller.steer === "function") {
-    return run.controller.steer({ input })
-      .then((result) => {
-        if (result?.ok) {
-          run.exchangePrompt = appendPromptPart(run.exchangePrompt, exchangePrompt);
-          const replyTargetMessageId = resolveReplyToMessageId(message);
-          if (Number.isInteger(replyTargetMessageId)) {
-            run.state.replyToMessageId = replyTargetMessageId;
-          }
-        }
-
-        return result;
-      })
-      .catch((error) => ({
-        ok: false,
-        reason: "steer-failed",
-        error,
-      }));
+    return steerRunWithRetry(pool, {
+      exchangePrompt,
+      input,
+      message,
+      run,
+      sessionKey,
+    });
   }
 
   const pending = pool.pendingLiveSteers.get(sessionKey) || {

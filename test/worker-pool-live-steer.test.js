@@ -258,6 +258,77 @@ test("CodexWorkerPool refuses to buffer live steer after the run is already fina
   assert.equal(workerPool.pendingLiveSteers.has("session-2"), false);
 });
 
+test("CodexWorkerPool retries transient live steer failures while the run is still active", async () => {
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore: {
+      patch(session) {
+        return Promise.resolve(session);
+      },
+    },
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+  });
+
+  const session = {
+    session_key: "session-3",
+    ui_language: "rus",
+  };
+  const steerCalls = [];
+  const run = {
+    exchangePrompt: "base",
+    controller: {
+      async steer({ input }) {
+        steerCalls.push(input);
+        if (steerCalls.length < 3) {
+          return { ok: false, reason: "steer-failed" };
+        }
+        return {
+          ok: true,
+          reason: "steered",
+          inputCount: input.length,
+        };
+      },
+    },
+    state: {
+      finalizing: false,
+      replyToMessageId: null,
+    },
+  };
+  workerPool.activeRuns.set(session.session_key, run);
+
+  const steered = await workerPool.steerActiveRun({
+    session,
+    rawPrompt: "Повтори steer после временного сбоя.",
+    message: {
+      message_id: 321,
+    },
+  });
+
+  assert.equal(steered.ok, true);
+  assert.equal(steered.reason, "steered");
+  assert.equal(steerCalls.length, 3);
+  assert.match(run.exchangePrompt, /Повтори steer после временного сбоя\./u);
+  assert.equal(run.state.replyToMessageId, 321);
+});
+
 test("CodexWorkerPool keeps root thread state when foreign subagent events arrive", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -1066,5 +1137,4 @@ test("CodexWorkerPool keeps a completed final answer even if interrupt lands lat
   assert.equal(reloaded.last_agent_reply, "Готовый финальный ответ.");
   assert.equal(sentMessages.at(-1).text, "Готовый финальный ответ.");
 });
-
 
