@@ -57,8 +57,8 @@ test("signalGenerationRollout targets the leader pid with SIGUSR2", () => {
 test("waitForLiveLeaderGeneration waits until the expected leader appears", async () => {
   let calls = 0;
   const leader = await waitForLiveLeaderGeneration({
-    timeoutMs: 50,
-    pollIntervalMs: 1,
+    timeoutMs: 250,
+    pollIntervalMs: 5,
     generationStore: {
       async loadLeaderLease() {
         calls += 1;
