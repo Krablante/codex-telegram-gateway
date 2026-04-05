@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.26] - 2026-04-05
+
+Fixed:
+
+- `UpdateForwardingServer` now updates its public `endpoint` after a loopback bind retry, so forwarded updates stop targeting the stale blocked port on Windows
+
+Docs:
+
+- testing docs now call out rebound-endpoint sync coverage inside the loopback forwarding slice
+
+Tests:
+
+- added a deterministic regression that forces a retry bind and verifies the public forwarding endpoint follows the rebound port
+
 ## [0.3.25] - 2026-04-05
 
 Fixed:
