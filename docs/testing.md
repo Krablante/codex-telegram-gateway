@@ -29,7 +29,6 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `make doctor` — env, Telegram auth, webhook state, basic runtime checks
 - `make test` — full automated suite
 - `npm run guidebook:build -- --language rus --output /tmp/guidebook-rus.pdf` — manual PDF build for the beginner guidebook
-- `npm run runbook:build -- --language eng --output /tmp/runbook-eng.pdf` — manual PDF build for the operator runbook
 - `node --test test/telegram-command-parsing.test.js test/telegram-status-view.test.js` — fast pure-surface checks for command parsing and status rendering ownership
 - `node --test test/codex-limits.test.js` — focused Codex limits parsing/cache behavior, including stale-fast UI reads with background refresh
 - `node --test test/telegram-callback-batch-ack.test.js` — focused callback fast-path coverage so batch-level early acks stay best-effort and non-breaking
@@ -37,6 +36,7 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `node --test test/control-panel-store.test.js test/telegram-file-directive.test.js test/telegram-reply-normalizer.test.js` — focused control-panel store serialization and Telegram transport normalization regressions, including CRLF input paths
 - `node --test test/telegram-control-surface.test.js test/telegram-session-ops.test.js` — focused `/clear`, `/new`, `/diff`, `/compact`, and `/purge` ownership slices
 - `node --test test/command-router.test.js test/telegram-surface-settings.test.js test/telegram-surface-reference.test.js test/telegram-prompt-flow.test.js test/telegram-prompt-auto.test.js test/telegram-prompt-starts.test.js test/telegram-prompt-queue.test.js test/telegram-prompt-buffering.test.js test/telegram-prompt-attachments.test.js test/telegram-prompt-wait.test.js` — router spine, command-surface ownership, and split prompt-ingress coverage
+- `node --test test/run-update-processing.test.js test/run-maintenance.test.js test/run-rollout-controller.test.js test/run-background-jobs.test.js` — focused poll bootstrap, run-once maintenance, rollout control, background timer ownership, offset persistence, and forwarded-vs-local update processing coverage for the Spike runtime shell
 - `node --test test/codex-runner.test.js test/codex-runner-common.test.js test/codex-runner-lifecycle.test.js test/codex-runner-recovery.test.js` — focused codex-runner ownership slices for helper exports, live turn lifecycle, and rollout recovery
 - `node --test test/service-generation-store.test.js test/service-rollout.test.js test/service-rollout-command.test.js test/update-forwarding-ipc.test.js test/spike-update-routing.test.js` — focused session-aware rollout slices for leader lease, retiring-session ownership, repo-local operator rollout handoff, local IPC forwarding, and topic route resolution
 - `node --test test/worker-pool.test.js test/worker-pool-startup.test.js test/worker-pool-file-delivery.test.js test/worker-pool-delivery.test.js test/worker-pool-live-steer.test.js test/worker-pool-shutdown.test.js` — focused worker-pool ownership slices for startup, delivery, live steer, and shutdown behavior
@@ -68,9 +68,9 @@ The built-in `user-login` flow now uses the repo's own Node prompt helper for ph
 
 That flow stores the real Telegram user session under:
 
-- `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/live-user-testing/telegram-user.env`
-- `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/live-user-testing/telegram-user-session.txt`
-- `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/live-user-testing/telegram-user-account.json`
+- `state/.../live-user-testing/telegram-user.env`
+- `state/.../live-user-testing/telegram-user-session.txt`
+- `state/.../live-user-testing/telegram-user-account.json`
 
 ## Zoo Manual Sanity
 
@@ -144,6 +144,10 @@ Native Windows:
 - keep `/status`, `/limits`, `/language`, `/wait`, `/suffix`, and runtime-setting command behavior in `test/telegram-surface-settings.test.js`
 - keep Codex limits parsing, cache refresh semantics, and stale-fast UI reads in `test/codex-limits.test.js`
 - keep batch-level callback early-ack behavior in `test/telegram-callback-batch-ack.test.js`
+- keep long-poll bootstrap, forwarded-vs-local update dispatch, and IPC forwarding probes in `test/run-update-processing.test.js`
+- keep run-once maintenance ordering in `test/run-maintenance.test.js`
+- keep rollout request/reconcile behavior in `test/run-rollout-controller.test.js`
+- keep background timer registration and leader-gated scans in `test/run-background-jobs.test.js`
 - keep shared prompt-flow helpers in `test-support/prompt-flow-fixtures.js`
 - keep the compact prompt ingress spine in `test/telegram-prompt-flow.test.js`
 - keep `src/telegram/command-handlers/prompt-flow.js` as the thin public facade and move heavy prompt logic into `prompt-flow-common.js`, `prompt-flow-starts.js`, `prompt-flow-queue.js`, and `prompt-flow-routing.js`

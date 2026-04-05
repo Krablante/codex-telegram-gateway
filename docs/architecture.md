@@ -19,6 +19,10 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
 1. `src/cli/run.js` polls Telegram updates and writes runtime heartbeat/events.
    - the main poller now keeps button/callback responsiveness ahead of background maintenance: prompt-handoff scans stay on timers, retention sweep runs on its own timer, Codex limits are warmed once at startup instead of first being fetched on a button press, and callback batches are acknowledged immediately before the heavier serialized update handling continues
    - the Spike runtime now also supports session-aware generation handoff: exactly one generation owns Telegram intake, active run topics stay pinned to their current generation, and a new generation can take idle/new topics immediately during rollout by forwarding retained-topic updates over local loopback IPC
+   - `src/cli/run-runtime-context.js` owns bootstrap-time runtime wiring, service construction, and store/layout setup
+   - `src/cli/run-update-processing.js` owns bootstrap offset discovery, long-poll readiness cleanup, and the forwarded-vs-local Telegram update processing path
+   - `src/cli/run-background-jobs.js` owns heartbeats, queued-prompt scans, and retention sweep timers
+   - `src/cli/run-rollout-controller.js` owns rollout request/reconcile/retire control flow so the composition root stays focused on lifecycle orchestration instead of rollout detail
 2. The poll loop gives operator private-chat messages first chance to enter `src/emergency/`, which bypasses topic/session state and can launch one isolated `codex exec` repair run.
 3. `src/telegram/command-router.js` is the thin Telegram shell: it authenticates the configured operator, classifies message type, applies high-level policy, and dispatches into domain handlers.
 4. `src/telegram/command-handlers/` keeps the heavier command domains split by responsibility:
@@ -94,9 +98,11 @@ This repo now explicitly follows a modular-first handler model.
 
 ## Current watchlist
 
-- `src/cli/run.js` is still the composition root, not a business-logic home. Keep new polling, rollout, and maintenance behavior moving outward into dedicated runtime modules instead of thickening the bootstrap loop.
-- the session-store boundary is healthier now, but keep new persistence logic split between `session-store-lifecycle.js` and `session-store-files.js` instead of letting the facade or one helper file become the next storage monolith.
+- `src/cli/run.js` is now a lighter composition root, but keep signal handling, abort ownership, and shutdown sequencing there instead of smearing that lifecycle across helpers.
+- keep `src/cli/run-background-jobs.js` and `src/cli/run-rollout-controller.js` narrow; they should stay as small closure-based runtime slices, not turn into second-stage monoliths.
+- the session-store boundary is healthier now, but keep new persistence logic split between `session-store-lifecycle.js`, `session-store-files.js`, `session-store-meta.js`, and `session-store-io.js` instead of letting one helper file regrow into the next storage monolith.
 - `src/pty-worker/worker-pool-lifecycle.js` is intentionally the run-lifecycle owner, but new steer or delivery behavior should stay in `worker-pool-transport.js` and `worker-pool-delivery.js` unless it truly belongs to lifecycle coordination.
+- `src/telegram/global-control-panel-view.js` and `src/telegram/topic-control-panel-view.js` are still the heaviest view modules; keep new callback/input/lifecycle behavior in their existing sibling modules so the views stay render-focused.
 
 ## Transport behavior
 
