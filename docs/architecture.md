@@ -71,7 +71,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - `src/pty-worker/worker-pool-lifecycle.js` owns run startup, resume fallback, lifecycle persistence, interrupts, and shutdown coordination
    - `src/pty-worker/worker-pool-common.js` keeps the shared worker contracts and pure helpers that really cross those slices
 8. The `codex-runner` layer now follows the same shell-plus-domain split:
-   - `src/pty-worker/codex-runner.js` is the thin public facade for `runCodexTask`: child lifecycle wiring, turn orchestration, steer buffering, and finish/fail coordination
+   - `src/pty-worker/codex-runner.js` is the thin public facade for `runCodexTask`: child lifecycle wiring, turn orchestration, steer buffering, short late-final grace after `turn/completed`, and finish/fail coordination
    - `src/pty-worker/codex-runner-common.js` keeps shared runner helpers such as warning filtering, child-exit checks, and event summarization
    - `src/pty-worker/codex-runner-transport.js` owns app-server startup wait, websocket connect, and JSON-RPC transport behavior
    - `src/pty-worker/codex-runner-recovery.js` owns rollout replay parsing, summary dedupe tracking, and post-disconnect fallback recovery

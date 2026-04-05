@@ -134,5 +134,6 @@ make service-restart-omni
 - если Telegram потерял исходный reply target для сообщения в теме, доставка в тему откатится к обычному send в ту же тему
 - если финальный ответ Spike упёрся во временный Telegram/network send failure, gateway теперь ретраит именно финальную доставку; если send так и не вернулся, итоговый ответ остаётся видимым в уже существующем progress bubble вместо полного пропадания результата
 - если длинный финальный ответ успел отправить часть chunk'ов, а потом сорвался на следующем, Spike final-event metadata теперь сохраняет уже доставленные Telegram message id вместо вида «не дошло ничего»
+- если `turn/completed` пришёл раньше реального финального `agentMessage`, runner теперь держит короткое grace-window для этого позднего primary final answer, прежде чем скатиться к generic `Done.` / `Готово.`
 - просроченные parked sessions могут быть auto-purged retention sweep'ом
 - heartbeat теперь также показывает generation id, leader/retiring состояние и rollout status для service-level handoff

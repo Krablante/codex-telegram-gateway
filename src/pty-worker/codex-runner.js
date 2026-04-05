@@ -28,6 +28,7 @@ const APP_SERVER_SHUTDOWN_GRACE_MS = 5000;
 const ROLLOUT_DISCOVERY_TIMEOUT_MS = 5000;
 const ROLLOUT_POLL_INTERVAL_MS = 1000;
 const ROLLOUT_STALL_AFTER_CHILD_EXIT_MS = 5000;
+const TURN_COMPLETION_FINAL_MESSAGE_GRACE_MS = 200;
 const CODEX_SESSIONS_ROOT = path.join(os.homedir(), ".codex", "sessions");
 
 export { hasChildExited, summarizeCodexEvent } from "./codex-runner-common.js";
@@ -122,6 +123,9 @@ export function runCodexTask({
   let flushChain = Promise.resolve();
   let notificationChain = Promise.resolve();
   const pendingSteerInputs = [];
+  let sawPrimaryFinalAnswer = false;
+  let pendingTurnCompletion = false;
+  let pendingTurnCompletionTimer = null;
   let finishedResolve = () => {};
   let finishedReject = () => {};
   const summaryTracker = createSummaryTracker();
@@ -173,6 +177,46 @@ export function runCodexTask({
       rpc?.close();
     } catch {}
     stopChild();
+  };
+
+  const clearPendingTurnCompletion = () => {
+    pendingTurnCompletion = false;
+    if (!pendingTurnCompletionTimer) {
+      return;
+    }
+
+    clearTimeout(pendingTurnCompletionTimer);
+    pendingTurnCompletionTimer = null;
+  };
+
+  const finishCompletedTurn = () => {
+    clearPendingTurnCompletion();
+    shutdownTransport();
+    finish({
+      exitCode: 0,
+      signal: null,
+      threadId: latestThreadId,
+      warnings,
+      resumeReplacement: null,
+    });
+  };
+
+  const scheduleCompletedTurnFinish = () => {
+    if (sawPrimaryFinalAnswer) {
+      finishCompletedTurn();
+      return;
+    }
+
+    pendingTurnCompletion = true;
+    if (pendingTurnCompletionTimer) {
+      return;
+    }
+
+    pendingTurnCompletionTimer = setTimeout(() => {
+      pendingTurnCompletionTimer = null;
+      finishCompletedTurn();
+    }, TURN_COMPLETION_FINAL_MESSAGE_GRACE_MS);
+    pendingTurnCompletionTimer.unref?.();
   };
 
   const isPrimaryThreadEvent = (threadId) => {
@@ -311,13 +355,21 @@ export function runCodexTask({
       return;
     }
 
-    finish({
-      exitCode: code ?? 1,
-      signal,
-      threadId: latestThreadId,
-      warnings,
-      resumeReplacement: null,
-    });
+    notificationChain = notificationChain
+      .catch(() => {})
+      .then(() => {
+        if (settled || shuttingDown || pendingTurnCompletion) {
+          return;
+        }
+
+        finish({
+          exitCode: code ?? 1,
+          signal,
+          threadId: latestThreadId,
+          warnings,
+          resumeReplacement: null,
+        });
+      });
   });
 
   const startup = (async () => {
@@ -337,6 +389,13 @@ export function runCodexTask({
       if (summary?.threadId && primaryEvent) {
         latestThreadId = summary.threadId;
       }
+      if (
+        summary?.kind === "agent_message" &&
+        summary?.messagePhase === "final_answer" &&
+        primaryEvent
+      ) {
+        sawPrimaryFinalAnswer = true;
+      }
       if (summary?.eventType === "turn.started" && summary.turnId && primaryEvent) {
         activeTurnId = summary.turnId;
         flushChain = flushChain
@@ -353,15 +412,18 @@ export function runCodexTask({
         } catch {}
       }
 
+      if (
+        pendingTurnCompletion &&
+        summary?.kind === "agent_message" &&
+        summary?.messagePhase === "final_answer" &&
+        primaryEvent
+      ) {
+        finishCompletedTurn();
+        return;
+      }
+
       if (event.method === "turn/completed" && primaryEvent) {
-        shutdownTransport();
-        finish({
-          exitCode: 0,
-          signal: null,
-          threadId: latestThreadId,
-          warnings,
-          resumeReplacement: null,
-        });
+        scheduleCompletedTurnFinish();
       }
     };
     rpc = createJsonRpcClient(ws, {
@@ -371,7 +433,12 @@ export function runCodexTask({
           .then(() => handleNotification(event));
       },
       onDisconnect: (error) => {
-        if (shuttingDown || settled || recoveringFromDisconnect) {
+        if (
+          shuttingDown ||
+          settled ||
+          recoveringFromDisconnect ||
+          pendingTurnCompletion
+        ) {
           return;
         }
 

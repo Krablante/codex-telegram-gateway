@@ -65,6 +65,7 @@ Current slices guarantee:
 - active follow-up user input may be buffered briefly and then live-steered into the same current Codex turn instead of starting a second run
 - if the live websocket transport drops mid-run, completion may continue via rollout-file recovery instead of failing immediately
 - if a long final reply partially reaches Telegram before a later chunk fails, Spike final-event metadata may still record the already-delivered Telegram message ids
+- run completion may hold a short grace window after primary `turn/completed` so a slightly late primary final answer still lands before the worker falls back to a generic success reply
 - during service rollout, the leader generation may forward raw Telegram updates for a still-running foreign-owned topic to the retiring generation over local loopback IPC
 - operator private-chat prompts may bypass topic routing entirely and execute through the isolated emergency `codex exec` path
 - external `forum_topic_closed` / `forum_topic_reopened` service messages may move sessions between `active` and `parked`
