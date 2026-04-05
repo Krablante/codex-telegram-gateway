@@ -22,7 +22,7 @@ function getHostExecutableFileName(baseName = "codex") {
 
 function getHostExecutableEnv() {
   return HOST_EXECUTABLE_TEST_PLATFORM === "win32"
-    ? { PATHEXT: ".CMD" }
+    ? { PATHEXT: ".cmd" }
     : undefined;
 }
 
