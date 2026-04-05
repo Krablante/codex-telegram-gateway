@@ -306,6 +306,10 @@ function buildRootKeyboard(omniEnabled, pendingInput, language = DEFAULT_UI_LANG
       buildInlineKeyboardButton("Language", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.language}`),
     ],
     [
+      buildInlineKeyboardButton("Zoo", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:z:show`),
+      buildInlineKeyboardButton("Clear", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:c:run`),
+    ],
+    [
       buildInlineKeyboardButton("Guide", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:g:show`),
       buildInlineKeyboardButton("Help", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:h:show`),
     ],
@@ -772,6 +776,14 @@ export function parseGlobalControlCallbackData(data) {
 
   if (group === "g" && rest[0] === "show") {
     return { kind: "guide_show" };
+  }
+
+  if (group === "z" && rest[0] === "show") {
+    return { kind: "zoo_show" };
+  }
+
+  if (group === "c" && rest[0] === "run") {
+    return { kind: "clear_run" };
   }
 
   return null;

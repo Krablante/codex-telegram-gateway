@@ -65,6 +65,10 @@ test("handleIncomingMessage opens the persistent global control panel in General
   assert.equal(Array.isArray(sent[0].reply_markup.inline_keyboard), true);
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[2].map((button) => button.text),
+    ["Zoo", "Clear"],
+  );
+  assert.deepEqual(
+    sent[0].reply_markup.inline_keyboard[3].map((button) => button.text),
     ["Guide", "Help"],
   );
   assert.equal(
@@ -543,4 +547,100 @@ test("handleIncomingCallbackQuery sends the guidebook in the selected global pan
   assert.equal(answered.length, 1);
   assert.equal(documents.length, 1);
   assert.equal(documents[0].document.fileName, "codex-telegram-guidebook-eng.pdf");
+});
+
+test("handleGlobalControlCallbackQuery dispatches /zoo from the global root menu", async () => {
+  const answered = [];
+  const dispatched = [];
+  const chat = { id: Number(config.telegramForumChatId) };
+
+  const result = await handleGlobalControlCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText() {
+        throw new Error("Zoo shortcut should not edit the global menu directly");
+      },
+      async sendMessage() {
+        throw new Error("Zoo shortcut should route through dispatchCommand");
+      },
+    },
+    callbackQuery: {
+      id: "cbq-zoo-shortcut",
+      data: "gcfg:z:show",
+      from: { id: 5825672398, is_bot: false },
+      message: {
+        message_id: 901,
+        chat,
+      },
+    },
+    config,
+    dispatchCommand: async (payload) => {
+      dispatched.push(payload);
+      return { handled: true, command: "zoo", reason: "zoo-topic-opened" };
+    },
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      active_screen: "root",
+    }),
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    sessionService: createGlobalControlSessionService(),
+  });
+
+  assert.equal(result.reason, "global-control-zoo-opened");
+  assert.equal(answered.length, 1);
+  assert.deepEqual(dispatched, [{
+    actor: { id: 5825672398, is_bot: false },
+    chat,
+    commandText: "/zoo",
+  }]);
+});
+
+test("handleGlobalControlCallbackQuery dispatches /clear from the global root menu", async () => {
+  const answered = [];
+  const dispatched = [];
+  const chat = { id: Number(config.telegramForumChatId) };
+
+  const result = await handleGlobalControlCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText() {
+        throw new Error("Clear shortcut should route through the General cleanup flow");
+      },
+      async sendMessage() {
+        throw new Error("Clear shortcut should not send a side message here");
+      },
+    },
+    callbackQuery: {
+      id: "cbq-clear-shortcut",
+      data: "gcfg:c:run",
+      from: { id: 5825672398, is_bot: false },
+      message: {
+        message_id: 901,
+        chat,
+      },
+    },
+    config,
+    dispatchCommand: async (payload) => {
+      dispatched.push(payload);
+      return { handled: true, command: "clear", reason: "clear-complete" };
+    },
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      active_screen: "root",
+    }),
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    sessionService: createGlobalControlSessionService(),
+  });
+
+  assert.equal(result.reason, "global-control-clear-run");
+  assert.equal(answered.length, 1);
+  assert.deepEqual(dispatched, [{
+    actor: { id: 5825672398, is_bot: false },
+    chat,
+    commandText: "/clear",
+  }]);
 });
