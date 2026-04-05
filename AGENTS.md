@@ -46,6 +46,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - do not add approval-flow or sandbox policy layers in this repo
 - keep bot tokens and runtime secrets out of git
 - keep mutable logs, sessions, indexes, and artifacts under the configured state root, not in the repo
+- if operating this repo from Atlas, check ignored local `AGENTS.local.md` first for host-specific GitHub admin/API notes before browser login flows
 
 ## Atlas reminder
 

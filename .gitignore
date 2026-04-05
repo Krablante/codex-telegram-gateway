@@ -2,6 +2,7 @@
 .env
 *.env
 .local/
+AGENTS.local.md
 
 # Node
 node_modules/
