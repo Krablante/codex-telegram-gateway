@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.25] - 2026-04-05
+
+Fixed:
+
+- the late-final grace window no longer uses an unref'ed timer, so completion can finish cleanly under CI and other short-lived process exits instead of leaving `run.finished` pending
+- local loopback forwarding now retries blocked or reserved loopback ports such as Windows `EACCES` / `EPERM` bind failures instead of failing the forwarding server on the first attempt
+
+Docs:
+
+- README, runbook, state-contract, and testing docs now call out the blocked-port loopback retry path and the completion-timing coverage behind it
+
+Tests:
+
+- added regression coverage for blocked-port loopback retry and tightened the codex-runner test description around late-final completion timing
+
 ## [0.3.24] - 2026-04-05
 
 Fixed:
