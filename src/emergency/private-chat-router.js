@@ -10,6 +10,7 @@ import {
   buildReplyMessageParams,
   extractBotCommand,
 } from "../telegram/command-parsing.js";
+import { signalChildProcessTree } from "../runtime/process-tree.js";
 import { startEmergencyExecRun } from "./exec-runner.js";
 
 const PENDING_ATTACHMENT_TTL_MS = 15 * 60 * 1000;
@@ -29,24 +30,21 @@ async function waitForDoneOrTimeout(donePromise, timeoutMs) {
   ]);
 }
 
-function signalChildProcessGroup(child, signal) {
-  if (!child) {
+function isAllowedOperatorId(config, userId) {
+  const normalized = String(userId ?? "").trim();
+  if (!normalized) {
     return false;
   }
 
-  if (Number.isInteger(child.pid)) {
-    try {
-      process.kill(-child.pid, signal);
-      return true;
-    } catch {}
-  }
-
-  try {
-    child.kill(signal);
-    return true;
-  } catch {
-    return false;
-  }
+  return (
+    String(config.telegramAllowedUserId ?? "").trim() === normalized
+    || (
+      Array.isArray(config.telegramAllowedUserIds)
+      && config.telegramAllowedUserIds.some(
+        (entry) => String(entry ?? "").trim() === normalized,
+      )
+    )
+  );
 }
 
 function isAllowedPrivateChatMessage(message, config) {
@@ -56,7 +54,7 @@ function isAllowedPrivateChatMessage(message, config) {
 
   return (
     message.chat?.type === "private" &&
-    String(message.from.id) === config.telegramAllowedUserId
+    isAllowedOperatorId(config, message.from.id)
   );
 }
 
@@ -328,7 +326,7 @@ export class EmergencyPrivateChatRouter {
     }
 
     const isOperatorForumMessage =
-      String(message.from.id) === this.config.telegramAllowedUserId &&
+      isAllowedOperatorId(this.config, message.from.id) &&
       String(message.chat?.id) === this.config.telegramForumChatId;
     if (!isOperatorForumMessage) {
       return { handled: false, reason: "not-emergency-competing-message" };
@@ -499,11 +497,11 @@ export class EmergencyPrivateChatRouter {
       return false;
     }
 
-    signalChildProcessGroup(child, "SIGTERM");
+    signalChildProcessTree(child, "SIGTERM");
     const activeRun = this.activeRun;
     setTimeout(() => {
       if (this.activeRun === activeRun) {
-        signalChildProcessGroup(child, "SIGKILL");
+        signalChildProcessTree(child, "SIGKILL");
       }
     }, EMERGENCY_INTERRUPT_GRACE_MS).unref();
     return true;
@@ -526,7 +524,7 @@ export class EmergencyPrivateChatRouter {
     }
 
     if (this.activeRun === activeRun) {
-      signalChildProcessGroup(activeRun.child, "SIGKILL");
+      signalChildProcessTree(activeRun.child, "SIGKILL");
       const finishedAfterKill = await waitForDoneOrTimeout(
         activeRun.done,
         EMERGENCY_INTERRUPT_GRACE_MS,

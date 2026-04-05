@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import process from "node:process";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
@@ -13,17 +14,15 @@ import { GeneralMessageLedgerStore } from "../session-manager/general-message-le
 import { GlobalPromptSuffixStore } from "../session-manager/global-prompt-suffix-store.js";
 import { SessionLifecycleManager } from "../session-manager/session-lifecycle-manager.js";
 import { SpikePromptQueueStore } from "../session-manager/prompt-queue.js";
+import { RolloutCoordinationStore } from "../session-manager/rollout-coordination-store.js";
 import { SessionService } from "../session-manager/session-service.js";
 import { SessionStore } from "../session-manager/session-store.js";
 import { TopicControlPanelStore } from "../session-manager/topic-control-panel-store.js";
 import { UpdateOffsetStore } from "../session-manager/update-offset-store.js";
 import { ensureStateLayout } from "../state/layout.js";
 import { TelegramBotApiClient } from "../telegram/bot-api-client.js";
+import { ackBatchCallbackQueriesBestEffort } from "../telegram/callback-batch-ack.js";
 import { syncTelegramCommandCatalog } from "../telegram/command-catalog.js";
-import {
-  handleIncomingCallbackQuery,
-  handleIncomingMessage,
-} from "../telegram/command-router.js";
 import { createTrackedGeneralApi } from "../telegram/general-message-cleanup.js";
 import { PromptFragmentAssembler } from "../telegram/prompt-fragment-assembler.js";
 import { runTelegramProbe } from "../telegram/probe.js";
@@ -31,12 +30,39 @@ import { EmergencyPrivateChatRouter } from "../emergency/private-chat-router.js"
 import { OmniPromptHandoffStore, drainPendingOmniPrompts } from "../omni/prompt-handoff.js";
 import { disableOmniStateAcrossSessions } from "../omni/disabled-state.js";
 import { ZooService } from "../zoo/service.js";
+import { ServiceGenerationStore } from "../runtime/service-generation-store.js";
+import {
+  buildForwardingEndpoint,
+  forwardUpdate,
+  UpdateForwardingServer,
+} from "../runtime/update-forwarding-ipc.js";
+import {
+  collectOwnedSessionKeys,
+  markOwnedSessionsRetiring,
+  spawnReplacementGeneration,
+  waitForGenerationReady,
+} from "../runtime/service-rollout.js";
+import { handleSpikeUpdate } from "../telegram/spike-update-dispatch.js";
+import { resolveSpikeUpdateRoute } from "../telegram/spike-update-routing.js";
 
 const TELEGRAM_ALLOWED_UPDATES = ["message", "callback_query"];
+const MESSAGE_UPDATES_ONLY = ["message"];
 const RUN_ONCE = process.env.RUN_ONCE === "1";
+const LEADER_WAIT_MS = 1000;
+const GENERATION_HEARTBEAT_MS = 3000;
+const ROLLOUT_READY_TIMEOUT_MS = 15000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createGenerationId() {
+  const explicit = String(process.env.SERVICE_GENERATION_ID ?? "").trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  return `spike-${process.pid}-${crypto.randomUUID()}`;
 }
 
 async function ensureLongPollingReady(api, webhookInfo) {
@@ -87,6 +113,7 @@ async function processUpdates({
   queuePromptAssembler,
   runtimeObserver,
   offsetStore,
+  sessionStore,
   sessionService,
   globalControlPanelStore,
   generalMessageLedgerStore,
@@ -94,83 +121,52 @@ async function processUpdates({
   zooService,
   workerPool,
   serviceState,
+  generationId,
+  generationStore,
   updates,
 }) {
   let nextOffset = null;
+  await ackBatchCallbackQueriesBestEffort(api, updates);
 
   for (const update of updates) {
     const updateId = update.update_id;
     markUpdateSeen(serviceState, updateId);
     nextOffset = updateId + 1;
 
-    try {
-      if (update.callback_query) {
-        await handleIncomingCallbackQuery({
-          api,
-          botUsername,
-          config,
-          callbackQuery: update.callback_query,
-          lifecycleManager,
-          promptStartGuard: emergencyRouter,
-          promptFragmentAssembler,
-          queuePromptAssembler,
-          serviceState,
-          sessionService,
-          globalControlPanelStore,
-          generalMessageLedgerStore,
-          topicControlPanelStore,
-          zooService,
-          workerPool,
-        });
-      } else if (update.message) {
-        const emergencyResult = await emergencyRouter?.handleMessage(update.message);
-        if (emergencyResult?.handled) {
-          await offsetStore.save(nextOffset);
-          await noteOffsetSafe(runtimeObserver, nextOffset);
-          continue;
-        }
+    const route = await resolveSpikeUpdateRoute({
+      update,
+      generationId,
+      generationStore,
+      sessionStore,
+    });
 
-        const emergencyTopicLockResult =
-          await emergencyRouter?.handleCompetingTopicMessage(update.message);
-        if (emergencyTopicLockResult?.handled) {
-          await offsetStore.save(nextOffset);
-          await noteOffsetSafe(runtimeObserver, nextOffset);
-          continue;
-        }
-
-        const lifecycleResult = await lifecycleManager.handleServiceMessage(
-          update.message,
-        );
-        if (lifecycleResult.handled) {
-          await offsetStore.save(nextOffset);
-          await noteOffsetSafe(runtimeObserver, nextOffset);
-          continue;
-        }
-
-        await handleIncomingMessage({
-          api,
-          botUsername,
-          config,
-          lifecycleManager,
-          message: update.message,
-          promptStartGuard: emergencyRouter,
-          promptFragmentAssembler,
-          queuePromptAssembler,
-          serviceState,
-          sessionService,
-          globalControlPanelStore,
-          generalMessageLedgerStore,
-          topicControlPanelStore,
-          zooService,
-          workerPool,
-        });
-      } else {
-        serviceState.ignoredUpdates += 1;
-      }
-    } catch (error) {
-      console.error(`update ${updateId} failed: ${error.message}`);
-      await runtimeObserver?.noteUpdateFailure(updateId, error);
-      throw error;
+    if (route.type === "forward") {
+      await forwardUpdate({
+        endpoint: route.ownerGeneration.ipc_endpoint,
+        payload: {
+          type: "spike-update",
+          update,
+        },
+      });
+    } else {
+      await handleSpikeUpdate({
+        api,
+        botUsername,
+        config,
+        emergencyRouter,
+        lifecycleManager,
+        promptFragmentAssembler,
+        queuePromptAssembler,
+        runtimeObserver,
+        sessionService,
+        globalControlPanelStore,
+        generalMessageLedgerStore,
+        topicControlPanelStore,
+        zooService,
+        workerPool,
+        serviceState,
+        update,
+      });
     }
 
     await offsetStore.save(nextOffset);
@@ -189,6 +185,9 @@ async function main() {
   });
   const probe = await runTelegramProbe(config, api);
   const serviceState = createServiceState(config, probe);
+  serviceState.generationId = createGenerationId();
+  serviceState.isLeader = false;
+  serviceState.retiring = false;
   const runtimeObserver = new RuntimeObserver({
     logsDir: layout.logs,
     config,
@@ -213,6 +212,20 @@ async function main() {
     generalMessageLedgerStore,
   );
   const sessionStore = new SessionStore(layout.sessions);
+  const generationStore = new ServiceGenerationStore({
+    indexesRoot: layout.indexes,
+    tmpRoot: layout.tmp,
+    serviceKind: "spike",
+    generationId: serviceState.generationId,
+  });
+  const rolloutCoordinationStore = new RolloutCoordinationStore(layout.settings);
+  const forwardingEndpoint = buildForwardingEndpoint({
+    stateRoot: config.stateRoot,
+    serviceKind: "spike",
+    generationId: serviceState.generationId,
+  });
+  const getForwardingEndpoint = () =>
+    forwardingServer?.endpoint || forwardingEndpoint;
   const promptQueueStore = new SpikePromptQueueStore(sessionStore);
   const topicControlPanelStore = new TopicControlPanelStore(sessionStore);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
@@ -234,18 +247,29 @@ async function main() {
     promptQueueStore,
     codexLimitsService,
   });
+  void sessionService.getCodexLimitsSummary({ force: true }).catch((error) => {
+    console.warn(`Codex limits warmup failed: ${error.message}`);
+  });
   const zooService = new ZooService({
     config,
     sessionService,
     globalControlPanelStore,
   });
+  let forwardingServer = null;
   let workerPool = null;
   const handleRunTerminated = async ({ session }) => {
     if (!session) {
       return;
     }
 
-    await sessionService.drainPromptQueue(workerPool, { session });
+    if (serviceState.retiring) {
+      return;
+    }
+
+    await sessionService.drainPromptQueue(workerPool, {
+      session,
+      currentGenerationId: serviceState.generationId,
+    });
   };
   workerPool = new CodexWorkerPool({
     api: trackedApi,
@@ -256,6 +280,7 @@ async function main() {
     sessionLifecycleManager,
     spikeFinalEventStore,
     globalCodexSettingsStore,
+    serviceGenerationId: serviceState.generationId,
     onRunTerminated: handleRunTerminated,
   });
   const promptFragmentAssembler = new PromptFragmentAssembler();
@@ -270,6 +295,49 @@ async function main() {
     },
   });
   sessionLifecycleManager.workerPool = workerPool;
+  forwardingServer = new UpdateForwardingServer({
+    endpoint: forwardingEndpoint,
+    onRequest: async (payload) => {
+      if (payload?.type === "generation-probe") {
+        return {
+          generation_id: serviceState.generationId,
+          instance_token: generationStore.instanceToken,
+        };
+      }
+
+      if (payload?.type !== "spike-update" || !payload?.update) {
+        throw new Error("Unsupported forwarded spike request");
+      }
+
+      await handleSpikeUpdate({
+        api: trackedApi,
+        botUsername: serviceState.botUsername,
+        config,
+        emergencyRouter,
+        lifecycleManager: sessionLifecycleManager,
+        promptFragmentAssembler,
+        queuePromptAssembler,
+        runtimeObserver,
+        sessionService,
+        globalControlPanelStore,
+        generalMessageLedgerStore,
+        topicControlPanelStore,
+        zooService,
+        workerPool,
+        serviceState,
+        update: payload.update,
+      });
+
+      return { handled: true };
+    },
+  });
+  await forwardingServer.start();
+  await generationStore.pruneStaleGenerations().catch(() => {});
+  await generationStore.heartbeat({
+    mode: "standby",
+    ipcEndpoint: getForwardingEndpoint(),
+  });
+  serviceState.rolloutStatus = (await rolloutCoordinationStore.load()).status;
 
   if (config.omniEnabled === false) {
     const disabledSummary = await disableOmniStateAcrossSessions({
@@ -283,33 +351,75 @@ async function main() {
     }
   }
 
-  await ensureLongPollingReady(api, probe.webhookInfo);
-  try {
-    await syncTelegramCommandCatalog(api, "spike", config.telegramForumChatId, {
-      omniEnabled: config.omniEnabled,
-    });
-  } catch (error) {
-    console.warn(`Telegram command sync failed for Spike: ${error.message}`);
-  }
-  let currentOffset = await bootstrapOffset({ api, offsetStore, serviceState });
+  let currentOffset = null;
   await runtimeObserver.start({ currentOffset });
-  if (serviceState.bootstrapDroppedUpdateId !== null) {
-    await runtimeObserver.noteBootstrapDrop(serviceState.bootstrapDroppedUpdateId);
-  }
   let lastRetentionSweepAt = 0;
-  const abortController = new AbortController();
+  let pollAbortController = null;
   let shutdownPromise = null;
+  let stopRequested = false;
+  let rolloutRequested = false;
+  let rolloutPromise = null;
+  const scriptPath = process.argv[1];
   const heartbeatTimer = setInterval(() => {
     void runtimeObserver.writeHeartbeat().catch(() => {});
   }, 15000);
   heartbeatTimer.unref();
+  const reconcileRolloutState = async () => {
+    const currentState = await rolloutCoordinationStore.load({ force: true });
+    if (
+      currentState.status === "in_progress"
+      && currentState.target_generation_id === serviceState.generationId
+    ) {
+      const retiringGeneration =
+        currentState.retiring_generation_id
+          ? await generationStore.loadGeneration(currentState.retiring_generation_id)
+          : null;
+      if (
+        !currentState.retiring_generation_id
+        || !await generationStore.isGenerationRecordVerifiablyLive(retiringGeneration)
+      ) {
+        const completed = await rolloutCoordinationStore.completeRollout({
+          currentGenerationId: serviceState.generationId,
+        });
+        serviceState.rolloutStatus = completed.status;
+        return completed;
+      }
+    }
+
+    serviceState.rolloutStatus = currentState.status;
+    return currentState;
+  };
+  const generationHeartbeatTimer = setInterval(() => {
+    const mode = serviceState.retiring
+      ? "retiring"
+      : serviceState.isLeader
+        ? "leader"
+        : "standby";
+    void generationStore.heartbeat({
+      mode,
+      ipcEndpoint: getForwardingEndpoint(),
+    }).catch(() => {});
+    if (serviceState.isLeader) {
+      void reconcileRolloutState().catch(() => {});
+      void generationStore.renewLeadership()
+        .then((renewed) => {
+          if (!renewed && !serviceState.retiring && !stopRequested) {
+            serviceState.isLeader = false;
+            pollAbortController?.abort();
+          }
+        })
+        .catch(() => {});
+    }
+  }, GENERATION_HEARTBEAT_MS);
+  generationHeartbeatTimer.unref();
+  let retentionSweepInFlight = false;
   let promptHandoffScanInFlight = false;
   let promptQueueScanInFlight = false;
   const scanPendingOmniPrompts = async () => {
     if (config.omniEnabled === false) {
       return;
     }
-    if (promptHandoffScanInFlight || abortController.signal.aborted) {
+    if (promptHandoffScanInFlight || !serviceState.isLeader || serviceState.retiring) {
       return;
     }
 
@@ -323,6 +433,7 @@ async function main() {
       serviceState,
       sessionService,
       sessionStore,
+      currentGenerationId: serviceState.generationId,
       workerPool,
       promptHandoffStore,
     })
@@ -334,12 +445,14 @@ async function main() {
       });
   };
   const scanPendingSpikeQueue = async () => {
-    if (promptQueueScanInFlight || abortController.signal.aborted) {
+    if (promptQueueScanInFlight || !serviceState.isLeader || serviceState.retiring) {
       return;
     }
 
     promptQueueScanInFlight = true;
-    await sessionService.drainPromptQueue(workerPool)
+    await sessionService.drainPromptQueue(workerPool, {
+      currentGenerationId: serviceState.generationId,
+    })
       .catch((error) => {
         console.error(`spike prompt queue scan failed: ${error.message}`);
       })
@@ -351,12 +464,35 @@ async function main() {
     void scanPendingOmniPrompts().then(() => scanPendingSpikeQueue());
   }, 1000);
   promptHandoffTimer.unref();
+  const retentionSweepTimer = setInterval(() => {
+    if (retentionSweepInFlight || !serviceState.isLeader || serviceState.retiring) {
+      return;
+    }
+
+    retentionSweepInFlight = true;
+    void sessionLifecycleManager.sweepExpiredParkedSessions()
+      .then(async () => {
+        lastRetentionSweepAt = Date.now();
+        await runtimeObserver.noteRetentionSweep(
+          new Date(lastRetentionSweepAt).toISOString(),
+        );
+      })
+      .catch((error) => {
+        console.error(`retention sweep failed: ${error.message}`);
+      })
+      .finally(() => {
+        retentionSweepInFlight = false;
+      });
+  }, config.retentionSweepIntervalSecs * 1000);
+  retentionSweepTimer.unref();
 
   console.log(
-    `poller starting for @${serviceState.botUsername || "no-username"} in chat ${config.telegramForumChatId}`,
+    `poller starting for @${serviceState.botUsername || "no-username"} in chat ${config.telegramForumChatId} [generation=${serviceState.generationId}]`,
   );
 
   const stop = () => {
+    stopRequested = true;
+    serviceState.isLeader = false;
     const canceled = promptFragmentAssembler.cancelAll();
     if (canceled.canceledEntries > 0) {
       console.warn(
@@ -369,10 +505,13 @@ async function main() {
         `discarded ${canceledQueued.canceledMessages} buffered queue fragment(s) across ${canceledQueued.canceledEntries} prompt(s) during shutdown`,
       );
     }
-    abortController.abort();
+    pollAbortController?.abort();
     shutdownPromise ??= Promise.allSettled([
       workerPool.shutdown(),
       emergencyRouter.shutdown(),
+      generationStore.releaseLeadership(),
+      generationStore.clearHeartbeat(),
+      forwardingServer.stop(),
     ]).then((results) => {
       for (const result of results) {
         if (result.status === "rejected") {
@@ -381,11 +520,155 @@ async function main() {
       }
     });
   };
+  const retire = () => {
+    if (serviceState.retiring || stopRequested) {
+      return;
+    }
+
+    serviceState.retiring = true;
+    serviceState.isLeader = false;
+    pollAbortController?.abort();
+    void generationStore.releaseLeadership().catch((error) => {
+      console.warn(`failed to release leader lease during retire: ${error.message}`);
+    });
+  };
+  const maybeStartRollout = async () => {
+    if (
+      rolloutPromise
+      || stopRequested
+      || serviceState.retiring
+      || !serviceState.isLeader
+    ) {
+      return;
+    }
+
+    rolloutPromise = (async () => {
+      const targetGenerationId = createGenerationId();
+      const retainedSessionKeys = collectOwnedSessionKeys(workerPool);
+      let replacement = null;
+
+      try {
+        await rolloutCoordinationStore.requestRollout({
+          currentGenerationId: serviceState.generationId,
+          targetGenerationId,
+          requestedBy: "signal:SIGUSR2",
+        });
+        serviceState.rolloutStatus = "requested";
+
+        replacement = spawnReplacementGeneration({
+          config,
+          generationId: targetGenerationId,
+          parentGenerationId: serviceState.generationId,
+          scriptPath,
+        });
+        replacement.unref();
+
+        const readyGeneration = await waitForGenerationReady({
+          generationStore,
+          generationId: targetGenerationId,
+          timeoutMs: ROLLOUT_READY_TIMEOUT_MS,
+        });
+        if (!readyGeneration) {
+          throw new Error(
+            `replacement generation ${targetGenerationId} did not become ready`,
+          );
+        }
+
+        await markOwnedSessionsRetiring({
+          workerPool,
+          sessionStore,
+          generationId: serviceState.generationId,
+        });
+        await rolloutCoordinationStore.startRollout({
+          currentGenerationId: targetGenerationId,
+          targetGenerationId,
+          retiringGenerationId: serviceState.generationId,
+          retainedSessionKeys,
+        });
+        serviceState.rolloutStatus = "in_progress";
+        retire();
+      } catch (error) {
+        if (replacement && !replacement.killed) {
+          replacement.kill("SIGINT");
+        }
+        serviceState.rolloutStatus = "failed";
+        await rolloutCoordinationStore.failRollout(error.message, {
+          currentGenerationId: serviceState.generationId,
+          targetGenerationId,
+          retiringGenerationId: serviceState.generationId,
+        });
+        console.error(`rollout request failed: ${error.message}`);
+      } finally {
+        rolloutRequested = false;
+        rolloutPromise = null;
+      }
+    })();
+
+    await rolloutPromise;
+  };
+  const requestRollout = () => {
+    if (rolloutRequested || stopRequested) {
+      return;
+    }
+
+    rolloutRequested = true;
+    void maybeStartRollout();
+  };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  if (process.platform !== "win32") {
+    process.on("SIGUSR2", requestRollout);
+  }
 
   try {
-    while (!abortController.signal.aborted) {
+    while (!stopRequested) {
+      if (serviceState.retiring) {
+        if (!workerPool.hasActiveOrStartingRuns()) {
+          break;
+        }
+
+        await sleep(250);
+        continue;
+      }
+
+      if (!serviceState.isLeader) {
+        const acquiredLeadership = await generationStore.acquireLeadership()
+          .catch((error) => {
+            console.error(`leader acquisition failed: ${error.message}`);
+            return false;
+          });
+
+        if (!acquiredLeadership) {
+          await sleep(LEADER_WAIT_MS);
+          continue;
+        }
+
+        serviceState.isLeader = true;
+        await generationStore.heartbeat({
+          mode: "leader",
+          ipcEndpoint: getForwardingEndpoint(),
+        });
+        await ensureLongPollingReady(api, probe.webhookInfo);
+        try {
+          await syncTelegramCommandCatalog(api, "spike", config.telegramForumChatId, {
+            omniEnabled: config.omniEnabled,
+          });
+        } catch (error) {
+          console.warn(`Telegram command sync failed for Spike: ${error.message}`);
+        }
+        await reconcileRolloutState().catch(() => {});
+        currentOffset = await bootstrapOffset({ api, offsetStore, serviceState });
+        await noteOffsetSafe(runtimeObserver, currentOffset);
+        if (serviceState.bootstrapDroppedUpdateId !== null) {
+          await runtimeObserver.noteBootstrapDrop(serviceState.bootstrapDroppedUpdateId);
+        }
+        if (rolloutRequested) {
+          void maybeStartRollout();
+        }
+        continue;
+      }
+
+      pollAbortController = new AbortController();
       try {
         const updates = await api.getUpdates(
           {
@@ -394,25 +677,18 @@ async function main() {
             timeout: config.telegramPollTimeoutSecs,
             allowed_updates: TELEGRAM_ALLOWED_UPDATES,
           },
-          { signal: abortController.signal },
+          { signal: pollAbortController.signal },
         );
 
         if (updates.length === 0) {
-          await scanPendingOmniPrompts();
-          await scanPendingSpikeQueue();
-          const now = Date.now();
-          if (
-            now - lastRetentionSweepAt >=
-            config.retentionSweepIntervalSecs * 1000
-          ) {
+          if (RUN_ONCE) {
+            await scanPendingOmniPrompts();
+            await scanPendingSpikeQueue();
             await sessionLifecycleManager.sweepExpiredParkedSessions();
-            lastRetentionSweepAt = now;
+            lastRetentionSweepAt = Date.now();
             await runtimeObserver.noteRetentionSweep(
               new Date(lastRetentionSweepAt).toISOString(),
             );
-          }
-
-          if (RUN_ONCE) {
             await promptFragmentAssembler.flushAll();
             await queuePromptAssembler.flushAll();
             break;
@@ -431,6 +707,7 @@ async function main() {
           queuePromptAssembler,
           runtimeObserver,
           offsetStore,
+          sessionStore,
           sessionService,
           globalControlPanelStore,
           generalMessageLedgerStore,
@@ -438,42 +715,58 @@ async function main() {
           zooService,
           workerPool,
           serviceState,
+          generationId: serviceState.generationId,
+          generationStore,
           updates,
         });
-        await scanPendingOmniPrompts();
-        const now = Date.now();
-        if (
-          now - lastRetentionSweepAt >=
-          config.retentionSweepIntervalSecs * 1000
-        ) {
+        if (RUN_ONCE) {
+          await scanPendingOmniPrompts();
+          await scanPendingSpikeQueue();
           await sessionLifecycleManager.sweepExpiredParkedSessions();
-          lastRetentionSweepAt = now;
+          lastRetentionSweepAt = Date.now();
           await runtimeObserver.noteRetentionSweep(
             new Date(lastRetentionSweepAt).toISOString(),
           );
-        }
-
-        if (RUN_ONCE) {
           await promptFragmentAssembler.flushAll();
           await queuePromptAssembler.flushAll();
           break;
         }
       } catch (error) {
-        if (abortController.signal.aborted) {
-          break;
+        if (pollAbortController.signal.aborted) {
+          continue;
         }
 
         markPollError(serviceState);
         console.error(`poll cycle failed: ${error.message}`);
         await runtimeObserver.notePollError(error);
         await sleep(2000);
+      } finally {
+        pollAbortController = null;
       }
     }
   } finally {
     clearInterval(heartbeatTimer);
+    clearInterval(generationHeartbeatTimer);
     clearInterval(promptHandoffTimer);
+    clearInterval(retentionSweepTimer);
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
+    if (process.platform !== "win32") {
+      process.off("SIGUSR2", requestRollout);
+    }
+    shutdownPromise ??= Promise.allSettled([
+      workerPool.shutdown(),
+      emergencyRouter.shutdown(),
+      generationStore.releaseLeadership(),
+      generationStore.clearHeartbeat(),
+      forwardingServer.stop(),
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+      }
+    });
     if (shutdownPromise) {
       await shutdownPromise.catch((error) => {
         console.error(`worker shutdown failed: ${error.message}`);

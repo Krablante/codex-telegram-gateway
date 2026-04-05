@@ -22,24 +22,24 @@ test("SessionStore creates and updates session meta", async () => {
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 55,
     topicName: "Slice 3 test",
     createdVia: "command/new",
     workspaceBinding: buildBinding(),
   });
 
-  assert.equal(created.session_key, "-1003577434463:55");
+  assert.equal(created.session_key, "-1001234567890:55");
   assert.equal(created.topic_name, "Slice 3 test");
   assert.equal(created.ui_language, "rus");
   assert.equal(created.auto_mode.enabled, false);
   assert.equal(created.auto_mode.phase, "off");
 
-  const loaded = await store.load("-1003577434463", "55");
-  assert.equal(loaded.session_key, "-1003577434463:55");
+  const loaded = await store.load("-1001234567890", "55");
+  assert.equal(loaded.session_key, "-1001234567890:55");
   assert.equal(loaded.auto_mode.enabled, false);
   const topicContextText = await fs.readFile(
-    store.getTopicContextPath("-1003577434463", "55"),
+    store.getTopicContextPath("-1001234567890", "55"),
     "utf8",
   );
   assert.match(topicContextText, /topic_id: 55/u);
@@ -61,7 +61,7 @@ test("SessionStore tracks exchange log, artifacts, purge stubs, and reactivation
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 77,
     topicName: "Slice 5 test",
     createdVia: "command/new",
@@ -106,7 +106,7 @@ test("SessionStore tracks exchange log, artifacts, purge stubs, and reactivation
   );
 
   const reactivated = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 77,
     createdVia: "topic/reactivate",
     workspaceBinding: buildBinding(),
@@ -128,7 +128,7 @@ test("SessionStore loads compact state from active brief and exchange log", asyn
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 88,
     topicName: "Compact state test",
     createdVia: "command/new",
@@ -160,7 +160,7 @@ test("SessionStore preserves cache-only model overrides across reload", async ()
   const store = new SessionStore(sessionsRoot);
 
   let session = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 90,
     topicName: "Model persistence",
     createdVia: "command/new",
@@ -176,6 +176,67 @@ test("SessionStore preserves cache-only model overrides across reload", async ()
   assert.equal(reloaded.omni_model_override, "gpt-5.9-preview");
 });
 
+test("SessionStore mirrors legacy spike run ownership into normalized session owner fields", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const store = new SessionStore(sessionsRoot);
+
+  let session = await store.ensure({
+    chatId: -1001234567890,
+    topicId: 91,
+    topicName: "Ownership normalization",
+    createdVia: "command/new",
+    workspaceBinding: buildBinding(),
+  });
+
+  session = await store.patch(session, {
+    last_run_status: "running",
+    spike_run_owner_generation_id: " gen-old ",
+  });
+
+  assert.equal(session.session_owner_generation_id, "gen-old");
+  assert.equal(session.session_owner_mode, "active");
+  assert.ok(session.session_owner_claimed_at);
+  assert.equal(session.spike_run_owner_generation_id, "gen-old");
+
+  const reloaded = await store.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.session_owner_generation_id, "gen-old");
+  assert.equal(reloaded.session_owner_mode, "active");
+  assert.equal(reloaded.spike_run_owner_generation_id, "gen-old");
+});
+
+test("SessionStore supports explicit session owner claims and clears mirrored ownership fields", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const store = new SessionStore(sessionsRoot);
+
+  let session = await store.ensure({
+    chatId: -1001234567890,
+    topicId: 92,
+    topicName: "Ownership claim API",
+    createdVia: "command/new",
+    workspaceBinding: buildBinding(),
+  });
+
+  session = await store.claimSessionOwner(session, {
+    generationId: " gen-next ",
+    mode: "RETIRING",
+    claimedAt: "2026-04-05T00:00:00.000Z",
+  });
+  assert.equal(session.session_owner_generation_id, "gen-next");
+  assert.equal(session.session_owner_mode, "retiring");
+  assert.equal(session.session_owner_claimed_at, "2026-04-05T00:00:00.000Z");
+  assert.equal(session.spike_run_owner_generation_id, "gen-next");
+
+  session = await store.clearSessionOwner(session);
+  assert.equal(session.session_owner_generation_id, null);
+  assert.equal(session.session_owner_mode, null);
+  assert.equal(session.session_owner_claimed_at, null);
+  assert.equal(session.spike_run_owner_generation_id, null);
+});
+
 test("SessionStore strips legacy memory files on request", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -183,7 +244,7 @@ test("SessionStore strips legacy memory files on request", async () => {
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 89,
     topicName: "Legacy cleanup",
     createdVia: "command/new",
@@ -224,18 +285,18 @@ test("SessionStore skips malformed meta files and quarantines them", async () =>
   const store = new SessionStore(sessionsRoot);
 
   const valid = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 99,
     topicName: "Valid session",
     createdVia: "command/new",
     workspaceBinding: buildBinding(),
   });
 
-  const corruptDir = store.getSessionDir("-1003577434463", "100");
+  const corruptDir = store.getSessionDir("-1001234567890", "100");
   await fs.mkdir(corruptDir, { recursive: true });
   await fs.writeFile(path.join(corruptDir, "meta.json"), "{", "utf8");
 
-  assert.equal(await store.load("-1003577434463", "100"), null);
+  assert.equal(await store.load("-1001234567890", "100"), null);
   const quarantined = await fs.readdir(corruptDir);
   assert.equal(
     quarantined.some((entry) => entry.startsWith("meta.json.corrupt-")),
@@ -254,7 +315,7 @@ test("SessionStore quarantines malformed exchange logs instead of treating them 
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 111,
     topicName: "Corrupt exchange log",
     createdVia: "command/new",
@@ -286,7 +347,7 @@ test("SessionStore serializes concurrent meta patches across writers", async () 
   const storeB = new SessionStore(sessionsRoot);
 
   const created = await storeA.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 120,
     topicName: "Concurrent patch test",
     createdVia: "command/new",
@@ -333,4 +394,147 @@ test("SessionStore serializes concurrent meta patches across writers", async () 
   );
   assert.equal(loaded.prompt_suffix_enabled, true);
   assert.equal(loaded.prompt_suffix_text, "suffix-locked");
+});
+
+test("SessionStore patchWithCurrent computes each patch from the latest locked state", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const storeA = new SessionStore(sessionsRoot);
+  const storeB = new SessionStore(sessionsRoot);
+
+  let session = await storeA.ensure({
+    chatId: -1001234567890,
+    topicId: 121,
+    topicName: "Current patch test",
+    createdVia: "command/new",
+    workspaceBinding: buildBinding(),
+  });
+  session = await storeA.patch(session, {
+    auto_mode: {
+      enabled: true,
+      phase: "running",
+      continuation_count: 0,
+    },
+  });
+
+  let releaseFirstPatch;
+  let firstPatchEntered;
+  const firstPatchEnteredPromise = new Promise((resolve) => {
+    firstPatchEntered = resolve;
+  });
+  const releaseFirstPatchPromise = new Promise((resolve) => {
+    releaseFirstPatch = resolve;
+  });
+
+  const firstPatch = storeA.patchWithCurrent(session, async (current) => {
+    firstPatchEntered();
+    await releaseFirstPatchPromise;
+    return {
+      auto_mode: {
+        ...current.auto_mode,
+        continuation_count: current.auto_mode.continuation_count + 1,
+        pending_user_input: "Upload the latest logs.",
+      },
+    };
+  });
+
+  await firstPatchEnteredPromise;
+  let secondFinished = false;
+  const secondPatch = storeB.patchWithCurrent(session, (current) => ({
+    auto_mode: {
+      ...current.auto_mode,
+      continuation_count: current.auto_mode.continuation_count + 1,
+      blocked_reason: "Need fresh logs",
+    },
+  })).then(() => {
+    secondFinished = true;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(
+    secondFinished,
+    false,
+    "second patchWithCurrent should wait for the existing meta lock",
+  );
+
+  releaseFirstPatch();
+  await Promise.all([firstPatch, secondPatch]);
+
+  const loaded = await storeA.load(session.chat_id, session.topic_id);
+  assert.equal(loaded.auto_mode.continuation_count, 2);
+  assert.equal(loaded.auto_mode.pending_user_input, "Upload the latest logs.");
+  assert.equal(loaded.auto_mode.blocked_reason, "Need fresh logs");
+});
+
+test("SessionStore writeArtifact preserves artifact_count across concurrent writers", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-artifact-race-"),
+  );
+  const storeA = new SessionStore(sessionsRoot);
+  const storeB = new SessionStore(sessionsRoot);
+
+  const session = await storeA.ensure({
+    chatId: -1001234567890,
+    topicId: 122,
+    topicName: "Artifact race test",
+    createdVia: "command/new",
+    workspaceBinding: buildBinding(),
+  });
+
+  const originalPatchWithCurrent = storeA.patchWithCurrent.bind(storeA);
+  let firstPatchHeld = false;
+  let enteredFirstPatch;
+  const firstPatchEnteredPromise = new Promise((resolve) => {
+    enteredFirstPatch = resolve;
+  });
+  let releaseFirstPatch;
+  const releaseFirstPatchPromise = new Promise((resolve) => {
+    releaseFirstPatch = resolve;
+  });
+
+  storeA.patchWithCurrent = async (meta, patch) => {
+    if (firstPatchHeld) {
+      return originalPatchWithCurrent(meta, patch);
+    }
+
+    firstPatchHeld = true;
+    return originalPatchWithCurrent(meta, async (current) => {
+      enteredFirstPatch();
+      await releaseFirstPatchPromise;
+      return typeof patch === "function"
+        ? patch(current)
+        : patch;
+    });
+  };
+
+  try {
+    const firstWrite = storeA.writeArtifact(session, {
+      kind: "diff",
+      content: "diff-a",
+    });
+    await firstPatchEnteredPromise;
+
+    const secondWrite = storeB.writeArtifact(session, {
+      kind: "summary",
+      content: "summary-b",
+    });
+
+    releaseFirstPatch();
+    const [firstArtifact, secondArtifact] = await Promise.all([
+      firstWrite,
+      secondWrite,
+    ]);
+
+    const loaded = await storeA.load(session.chat_id, session.topic_id);
+    assert.equal(loaded.artifact_count, 2);
+    assert.match(
+      loaded.last_artifact.kind,
+      /^(diff|summary)$/u,
+    );
+    await fs.access(firstArtifact.filePath);
+    await fs.access(secondArtifact.filePath);
+  } finally {
+    storeA.patchWithCurrent = originalPatchWithCurrent;
+  }
 });

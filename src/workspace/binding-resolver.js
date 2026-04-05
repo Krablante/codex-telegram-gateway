@@ -24,27 +24,27 @@ async function readGitOutput(args, cwd) {
 }
 
 export async function resolveWorkspaceBinding({
-  workspaceRoot,
+  atlasWorkspaceRoot,
   requestedPath,
 }) {
-  const resolvedWorkspaceRoot = await fs.realpath(workspaceRoot);
+  const resolvedAtlasRoot = await fs.realpath(atlasWorkspaceRoot);
   const requestedAbsolutePath = requestedPath
     ? path.isAbsolute(requestedPath)
       ? requestedPath
-      : path.resolve(resolvedWorkspaceRoot, requestedPath)
-    : resolvedWorkspaceRoot;
+      : path.resolve(resolvedAtlasRoot, requestedPath)
+    : resolvedAtlasRoot;
   const cwd = await fs.realpath(requestedAbsolutePath);
   const cwdStat = await fs.stat(cwd);
   if (!cwdStat.isDirectory()) {
     throw new Error(`Requested path is not a directory: ${cwd}`);
   }
-  if (!isSameOrDescendantPath(resolvedWorkspaceRoot, cwd)) {
+  if (!isSameOrDescendantPath(resolvedAtlasRoot, cwd)) {
     throw new Error(`Requested path escapes workspace root: ${cwd}`);
   }
 
   const repoRoot =
     (await readGitOutput(["rev-parse", "--show-toplevel"], cwd)) || cwd;
-  if (!isSameOrDescendantPath(resolvedWorkspaceRoot, repoRoot)) {
+  if (!isSameOrDescendantPath(resolvedAtlasRoot, repoRoot)) {
     throw new Error(`Resolved repo root escapes workspace root: ${repoRoot}`);
   }
   const branch =
@@ -52,12 +52,12 @@ export async function resolveWorkspaceBinding({
     (await readGitOutput(["rev-parse", "--short", "HEAD"], cwd));
 
   return {
-    workspace_root: resolvedWorkspaceRoot,
+    atlas_workspace_root: resolvedAtlasRoot,
     repo_root: repoRoot,
     cwd,
     branch: branch || null,
     worktree_path: repoRoot,
     cwd_relative_to_workspace_root:
-      path.relative(resolvedWorkspaceRoot, cwd) || ".",
+      path.relative(resolvedAtlasRoot, cwd) || ".",
   };
 }

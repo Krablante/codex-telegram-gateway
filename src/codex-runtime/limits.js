@@ -1,12 +1,27 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { signalChildProcessTree } from "../runtime/process-tree.js";
+import { spawnRuntimeCommand } from "../runtime/spawn-command.js";
 
 const DEFAULT_CACHE_TTL_MS = 30 * 1000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 1000;
 const MAX_CANDIDATE_FILES = 200;
+const UNSUPPORTED_SHELL_OPERATOR_TOKENS = new Set([
+  "|",
+  "||",
+  "&&",
+  ";",
+  "<",
+  ">",
+  ">>",
+  "1>",
+  "1>>",
+  "2>",
+  "2>>",
+  "&",
+]);
 
 function coerceFiniteNumber(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -540,10 +555,119 @@ async function readSnapshotFromSessionsRoot(sessionsRoot) {
   };
 }
 
+function normalizeCommandArgv(rawArgv) {
+  if (!Array.isArray(rawArgv) || rawArgv.length === 0) {
+    throw new Error("Codex limits command must be a non-empty JSON array of strings");
+  }
+
+  if (rawArgv.some((value) => typeof value !== "string")) {
+    throw new Error("Codex limits command JSON array must contain only strings");
+  }
+
+  if (!normalizeText(rawArgv[0])) {
+    throw new Error("Codex limits command executable must be a non-empty string");
+  }
+
+  return rawArgv;
+}
+
+function tokenizeLegacyCommand(commandText) {
+  const tokens = [];
+  let current = "";
+  let quote = null;
+  let tokenStarted = false;
+
+  for (const char of commandText) {
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+        continue;
+      }
+      current += char;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (char === "'" || char === "\"") {
+      quote = char;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (/\s/u.test(char)) {
+      if (tokenStarted) {
+        tokens.push(current);
+        current = "";
+        tokenStarted = false;
+      }
+      continue;
+    }
+
+    current += char;
+    tokenStarted = true;
+  }
+
+  if (quote) {
+    throw new Error(
+      "Codex limits command contains an unterminated quote; prefer JSON array syntax",
+    );
+  }
+
+  if (tokenStarted) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function usesInlineEnvAssignments(tokens) {
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    const token = tokens[index];
+    if (/^[A-Za-z_][A-Za-z0-9_]*=.*/u.test(token)) {
+      return true;
+    }
+    break;
+  }
+
+  return false;
+}
+
+function parseCommandArgv(command) {
+  const commandText = normalizeText(command);
+  if (!commandText) {
+    throw new Error("Codex limits command is empty");
+  }
+
+  const argv = commandText.startsWith("[")
+    ? normalizeCommandArgv(JSON.parse(commandText))
+    : tokenizeLegacyCommand(commandText);
+
+  if (argv.length === 0 || !normalizeText(argv[0])) {
+    throw new Error("Codex limits command executable is missing");
+  }
+
+  if (usesInlineEnvAssignments(argv)) {
+    throw new Error(
+      "Codex limits command no longer supports inline env assignments; use a wrapper script or JSON array argv",
+    );
+  }
+
+  if (argv.some((token) => UNSUPPORTED_SHELL_OPERATOR_TOKENS.has(token))) {
+    throw new Error(
+      "Codex limits command no longer supports implicit shell operators; use a wrapper script or explicit shell argv",
+    );
+  }
+
+  return {
+    file: argv[0],
+    args: argv.slice(1),
+  };
+}
+
 async function runCommand(command, timeoutMs) {
+  const { file, args } = parseCommandArgv(command);
   return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      shell: true,
+    const child = spawnRuntimeCommand(file, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -554,7 +678,7 @@ async function runCommand(command, timeoutMs) {
         return;
       }
       settled = true;
-      child.kill("SIGTERM");
+      signalChildProcessTree(child, "SIGTERM");
       reject(new Error(`Codex limits command timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
@@ -667,21 +791,29 @@ export class CodexLimitsService {
     this.inFlightPromise = null;
   }
 
-  async getSummary({ force = false } = {}) {
-    const record = await this.getSnapshotRecord({ force });
+  async getSummary({ force = false, allowStale = false } = {}) {
+    const record = await this.getSnapshotRecord({ force, allowStale });
     return buildCodexLimitsSummary(record?.snapshot ?? null, {
       capturedAt: record?.capturedAt ?? null,
       source: record?.source ?? null,
     });
   }
 
-  async getSnapshotRecord({ force = false } = {}) {
+  async getSnapshotRecord({ force = false, allowStale = false } = {}) {
     if (!force && this.cachedRecord && this.isCacheFresh(this.cachedRecord)) {
       return this.cachedRecord.value;
     }
 
     if (!force && this.inFlightPromise) {
+      if (allowStale && this.cachedRecord?.value) {
+        return this.cachedRecord.value;
+      }
       return this.inFlightPromise;
+    }
+
+    if (!force && allowStale && this.cachedRecord?.value) {
+      this.refreshInBackground();
+      return this.cachedRecord.value;
     }
 
     this.inFlightPromise = this.refresh();
@@ -690,6 +822,19 @@ export class CodexLimitsService {
     } finally {
       this.inFlightPromise = null;
     }
+  }
+
+  refreshInBackground() {
+    if (this.inFlightPromise) {
+      return this.inFlightPromise;
+    }
+
+    this.inFlightPromise = this.refresh()
+      .catch(() => this.cachedRecord?.value ?? null)
+      .finally(() => {
+        this.inFlightPromise = null;
+      });
+    return this.inFlightPromise;
   }
 
   isCacheFresh(record) {

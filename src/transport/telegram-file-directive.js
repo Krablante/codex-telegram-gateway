@@ -19,7 +19,7 @@ function parseDirectiveBody(body, language = "rus") {
   };
   const warnings = [];
   const lines = String(body || "")
-    .split("\n")
+    .split(/\r?\n/gu)
     .map((line) => line.trim())
     .filter(Boolean);
 
@@ -112,7 +112,7 @@ export function buildTelegramFileDirectiveInstructions() {
 export function extractTelegramFileDirectives(text, { language = "rus" } = {}) {
   const source = String(text || "");
   const pattern = new RegExp(
-    `\`\`\`${TELEGRAM_FILE_DIRECTIVE_FENCE}[ \\t]*\\n([\\s\\S]*?)\`\`\``,
+    `\`\`\`${TELEGRAM_FILE_DIRECTIVE_FENCE}[ \\t]*\\r?\\n([\\s\\S]*?)\`\`\``,
     "giu",
   );
   const documents = [];
@@ -133,6 +133,9 @@ export function extractTelegramFileDirectives(text, { language = "rus" } = {}) {
   return {
     documents,
     warnings,
-    text: visibleText.replace(/\n{3,}/gu, "\n\n").trim(),
+    text: visibleText
+      .replace(/\r\n/gu, "\n")
+      .replace(/\n{3,}/gu, "\n\n")
+      .trim(),
   };
 }

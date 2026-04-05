@@ -13,16 +13,16 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/workspace",
+    cwd: "/workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/workspace",
   };
 }
 
 async function ensureSession(sessionStore, topicId = 991) {
   return sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId,
     topicName: "Prompt queue test",
     createdVia: "test",
@@ -167,4 +167,65 @@ test("drainPendingSpikePromptQueue keeps the head queued when the worker is stil
 
   const queuedAfterRetry = await promptQueueStore.load(session);
   assert.equal(queuedAfterRetry.length, 0);
+});
+
+test("drainPendingSpikePromptQueue skips prompts for a running session owned by another generation", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-prompt-queue-foreign-owner-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const promptQueueStore = new SpikePromptQueueStore(sessionStore);
+  let session = await ensureSession(sessionStore, 995);
+  session = await sessionStore.claimSessionOwner(session, {
+    generationId: "gen-old",
+    mode: "retiring",
+  });
+  session = await sessionStore.patch(session, {
+    last_run_status: "running",
+  });
+
+  await promptQueueStore.enqueue(session, {
+    rawPrompt: "queued behind foreign run",
+    prompt: "queued behind foreign run",
+  });
+
+  let startCalls = 0;
+  const results = await drainPendingSpikePromptQueue({
+    session,
+    sessionStore,
+    promptQueueStore,
+    currentGenerationId: "gen-new",
+    workerPool: {
+      async startPromptRun() {
+        startCalls += 1;
+        return { ok: true };
+      },
+    },
+  });
+
+  assert.equal(results.length, 0);
+  assert.equal(startCalls, 0);
+  assert.equal((await promptQueueStore.load(session)).length, 1);
+});
+
+test("SpikePromptQueueStore quarantines malformed queue files instead of silently keeping them", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-prompt-queue-corrupt-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const promptQueueStore = new SpikePromptQueueStore(sessionStore);
+  const session = await ensureSession(sessionStore, 994);
+  const queuePath = promptQueueStore.getPath(session);
+
+  await fs.mkdir(path.dirname(queuePath), { recursive: true });
+  await fs.writeFile(queuePath, "{not-json", "utf8");
+
+  const loaded = await promptQueueStore.load(session);
+  const entries = await fs.readdir(path.dirname(queuePath));
+
+  assert.deepEqual(loaded, []);
+  assert.equal(entries.includes("spike-prompt-queue.json"), false);
+  assert.ok(
+    entries.some((entry) => entry.startsWith("spike-prompt-queue.json.corrupt-")),
+  );
 });

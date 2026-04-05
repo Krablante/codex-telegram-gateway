@@ -10,10 +10,12 @@ Use this repo when editing the public Codex Telegram gateway.
 
 ## Architecture
 
-- `transport/` stays Telegram-specific
-- `session-manager/` owns routing, lifecycle, persistence, and recovery state
-- `pty-worker/` owns `codex app-server`, live steer, rollout recovery, and worker lifecycle
+- `transport/` responsibility stays Telegram-specific
+- `session-manager/` owns routing, lifecycle, and persistence
+- `pty-worker/` owns the Codex `app-server` transport, live steer, rollout recovery, and worker lifecycle
+- `telegram/command-handlers/` owns domain-specific command behavior; keep central routers thin
 - `emergency/` owns the operator-only private-chat fallback built on isolated `codex exec`
+- `rollout/` owns session-aware Spike handoff checks for soft service restarts
 
 ## Default paths
 
@@ -32,6 +34,7 @@ Use this repo when editing the public Codex Telegram gateway.
 - `make smoke`
 - `make soak`
 - `make service-install`
+- `make service-rollout`
 - `make test-live`
 - `make test`
 

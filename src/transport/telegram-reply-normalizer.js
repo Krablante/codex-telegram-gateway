@@ -11,6 +11,10 @@ const PLACEHOLDER_PREFIX = "\u0000TG";
 const PLACEHOLDER_SUFFIX = "\u0000";
 const UNORDERED_LIST_MARKERS = ["•", "◦", "▪"];
 
+function normalizeLineEndings(text) {
+  return String(text || "").replace(/\r\n/gu, "\n");
+}
+
 function isSupportedLinkTarget(target) {
   return SUPPORTED_URL_PATTERN.test(String(target || "").trim());
 }
@@ -90,7 +94,7 @@ function normalizePlainTextSegment(text) {
 }
 
 function normalizeTelegramRichSource(text) {
-  const source = String(text || "");
+  const source = normalizeLineEndings(text);
   const chunks = [];
   let lastIndex = 0;
 
@@ -600,7 +604,7 @@ function renderBlocksToChunks(blocks, limit = TELEGRAM_TEXT_LIMIT) {
 }
 
 export function normalizeTelegramReply(text) {
-  const source = String(text || "");
+  const source = normalizeLineEndings(text);
   const chunks = [];
   let lastIndex = 0;
 

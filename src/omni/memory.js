@@ -181,19 +181,33 @@ export class OmniMemoryStore {
   }
 
   async patch(session, patch = {}) {
-    const current = await this.load(session);
-    const next = normalizeOmniMemory({
-      ...current,
-      ...patch,
-      created_at: current.created_at,
-      updated_at: new Date().toISOString(),
-    });
-    await this.sessionStore.writeSessionJson(
-      session,
-      OMNI_MEMORY_FILE_NAME,
-      next,
+    return this.sessionStore.withMetaLock(
+      session.chat_id,
+      session.topic_id,
+      async () => {
+        const current = await this.load(session);
+        const resolvedPatch =
+          typeof patch === "function"
+            ? await patch(current)
+            : patch;
+        if (resolvedPatch === null || resolvedPatch === undefined) {
+          return current;
+        }
+
+        const next = normalizeOmniMemory({
+          ...current,
+          ...resolvedPatch,
+          created_at: current.created_at,
+          updated_at: new Date().toISOString(),
+        });
+        await this.sessionStore.writeSessionJson(
+          session,
+          OMNI_MEMORY_FILE_NAME,
+          next,
+        );
+        return next;
+      },
     );
-    return next;
   }
 
   async clear(session) {

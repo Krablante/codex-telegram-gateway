@@ -57,7 +57,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
               "# Active brief",
               "",
               "updated_from_reason: command/compact",
-              "session_key: -1003577434463:101",
+              "session_key: -1001234567890:101",
               "cwd: /workspace",
               "",
               "## User preferences",
@@ -85,7 +85,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 101,
     topicName: "Compact test",
     createdVia: "test",
@@ -95,7 +95,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   const withRun = await sessionStore.patch(session, {
     codex_thread_id: "thread-before-compact",
     codex_rollout_path:
-      "/home/operator/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
+      "/home/testuser/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
     last_user_prompt: "Inspect compact state",
     last_agent_reply: "Workspace is clean and ready.",
     last_run_status: "completed",
@@ -119,7 +119,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
         total_tokens: 120450,
       },
       rollout_path:
-        "/home/operator/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
+        "/home/testuser/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
     },
     parked_reason: "telegram/forum-topic-closed",
     lifecycle_state: "parked",
@@ -214,7 +214,7 @@ test("SessionCompactor writes a stub brief when exchange log is empty", async ()
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 103,
     topicName: "Empty compact test",
     createdVia: "test",
@@ -255,7 +255,7 @@ test("SessionCompactor resets Omni auto-compact counters but preserves active au
             "# Active brief",
             "",
             "updated_from_reason: auto-compact:omni-cycle-boundary",
-            "session_key: -1003577434463:105",
+            "session_key: -1001234567890:105",
             "cwd: /workspace",
             "",
             "## Open work",
@@ -273,7 +273,7 @@ test("SessionCompactor resets Omni auto-compact counters but preserves active au
     }),
   });
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 105,
     topicName: "Auto compact state test",
     createdVia: "test",
@@ -342,7 +342,7 @@ test("SessionCompactor retries the temporary Codex summarizer once before failin
               "# Active brief",
               "",
               "updated_from_reason: resume-fallback:stale-thread",
-              "session_key: -1003577434463:104",
+              "session_key: -1001234567890:104",
               "cwd: /workspace",
               "",
               "## User preferences",
@@ -370,7 +370,7 @@ test("SessionCompactor retries the temporary Codex summarizer once before failin
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 104,
     topicName: "Retry compact test",
     createdVia: "test",
@@ -406,7 +406,7 @@ test("SessionCompactor skips purged sessions", async () => {
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 102,
     topicName: "Purged compact test",
     createdVia: "test",
@@ -439,7 +439,7 @@ test("SessionCompactor fails loudly on malformed exchange logs instead of compac
     },
   });
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 105,
     topicName: "Corrupt compact test",
     createdVia: "test",

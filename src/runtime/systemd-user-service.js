@@ -2,11 +2,39 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
+import { formatOperatorCommandHints } from "./operator-command-hints.js";
+
 export const SYSTEMD_USER_SERVICE_NAME = "codex-telegram-gateway.service";
 export const SYSTEMD_USER_OMNI_SERVICE_NAME = "codex-telegram-gateway-omni.service";
+export const MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION = 250;
 
 export function isSystemdUserSupported(platform = process.platform) {
   return platform === "linux";
+}
+
+export function buildUnsupportedSystemdUserMessage({
+  omniVariant = false,
+} = {}) {
+  const windowsHints = formatOperatorCommandHints(
+    [
+      "install",
+      "install-codex",
+      "doctor",
+      omniVariant ? "run-omni" : "run",
+    ],
+    { platform: "win32" },
+  );
+
+  return `systemd user services are Linux-only here; on Windows use ${windowsHints} instead.`;
+}
+
+export function parseSystemdVersion(text) {
+  const match = String(text ?? "").match(/\bsystemd\s+(\d+)\b/iu);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+export function supportsExitTypeCgroup(version) {
+  return Number.isInteger(version) && version >= MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION;
 }
 
 function quoteEnvironment(name, value) {
@@ -14,6 +42,32 @@ function quoteEnvironment(name, value) {
     .replace(/\\/gu, "\\\\")
     .replace(/"/gu, '\\"');
   return `Environment="${name}=${escaped}"`;
+}
+
+function quoteUnitValue(value) {
+  const escaped = String(value)
+    .replace(/\\/gu, "\\\\")
+    .replace(/"/gu, '\\"');
+  return `"${escaped}"`;
+}
+
+export function buildServicePathEntries({
+  nodePath,
+  currentPath = process.env.PATH || process.env.Path || "",
+} = {}) {
+  return [
+    path.dirname(String(nodePath ?? "")),
+    ...String(currentPath)
+      .split(path.delimiter)
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    "/usr/local/sbin",
+    "/usr/local/bin",
+    "/usr/sbin",
+    "/usr/bin",
+    "/sbin",
+    "/bin",
+  ].filter((entry, index, array) => Boolean(entry) && array.indexOf(entry) === index);
 }
 
 export function getUserServiceUnitPath(
@@ -37,8 +91,10 @@ export function buildUserServiceUnit({
   pathEntries = [],
   description = "Codex Telegram Gateway",
   scriptPath = "src/cli/run.js",
+  exitType = null,
 }) {
   const pathValue = [...new Set(pathEntries.filter(Boolean))].join(":");
+  const scriptAbsolutePath = path.resolve(repoRoot, scriptPath);
 
   return [
     "[Unit]",
@@ -48,12 +104,13 @@ export function buildUserServiceUnit({
     "",
     "[Service]",
     "Type=simple",
-    `WorkingDirectory=${repoRoot}`,
+    ...(exitType ? [`ExitType=${exitType}`] : []),
+    `WorkingDirectory=${quoteUnitValue(repoRoot)}`,
     quoteEnvironment("ENV_FILE", envFilePath),
     quoteEnvironment("NODE", nodePath),
     quoteEnvironment("CODEX_BIN_PATH", codexBinPath),
     quoteEnvironment("PATH", pathValue),
-    `ExecStart=${nodePath} ${scriptPath}`,
+    `ExecStart=${quoteUnitValue(nodePath)} ${quoteUnitValue(scriptAbsolutePath)}`,
     "Restart=always",
     "RestartSec=5",
     "KillMode=control-group",

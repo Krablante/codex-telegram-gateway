@@ -61,12 +61,10 @@ Current panel coverage:
 
 - `/wait global ...`
 - `/suffix global ...`
-- `/model global ...`
-- `/reasoning global ...`
-- `/omni_model global ...`
-- `/omni_reasoning global ...`
+- `Bot Settings` submenu for Spike and Omni model/reasoning screens
 - live limits summary on the root screen
 - interface language switch for the `General` control panel
+- `Guide` button that sends the same `/guide` beginner PDF from `General`
 - `/help` card delivery from the same menu
 
 Stable values are handled directly by buttons. Free-form values such as the global suffix text or a custom global wait value are entered by replying to the pinned menu message.
@@ -74,6 +72,7 @@ Stable values are handled directly by buttons. Free-form values such as the glob
 `/menu` works only inside a topic. It opens or recreates one persistent topic-local control panel there, repins it, removes the replaced menu, and cleans up the transient Telegram pin notices. Telegram-style command suggestions such as `/menu@YourBot` are accepted too.
 
 New topics created via `/new` now get that local menu automatically right after the bootstrap message.
+Explicit `/new cwd=...` bindings also accept quoted paths, so Windows paths with spaces work too, for example `/new cwd="C:/Users/Example User/Source Repos" Audit topic`.
 
 Current local panel coverage:
 
@@ -81,13 +80,10 @@ Current local panel coverage:
 - `/wait ...` for the current topic
 - `/suffix ...` for the current topic
 - `/suffix topic on|off`
-- `/model ...`
-- `/reasoning ...`
-- `/omni_model ...`
-- `/omni_reasoning ...`
+- `Bot Settings` submenu for topic-local Spike and Omni model/reasoning screens
+- compact effective bot summaries on the root screen, rendered like `spike: gpt-5.4 (xhigh)`
+- topic command buttons for `/compact`, `/interrupt`, and `/purge`
 - live limits summary on the root screen
-- interface language switch for the topic
-- `/help` card delivery from the same menu
 
 Spike + Omni mode adds:
 

@@ -26,7 +26,7 @@ test("TelegramProgressMessage falls back to append-only updates after a non-edit
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
   });
 
@@ -64,7 +64,7 @@ test("TelegramProgressMessage retries the same bubble after a transient edit fai
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
   });
 
@@ -103,7 +103,7 @@ test("TelegramProgressMessage avoids append-only fallback when lifecycle handler
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
     onDeliveryError: async (error) => {
       reportedErrors.push(error.message);
@@ -138,7 +138,7 @@ test("TelegramProgressMessage can dismiss the current progress bubble", async ()
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
   });
 

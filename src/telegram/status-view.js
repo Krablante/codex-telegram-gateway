@@ -247,7 +247,7 @@ export async function resolveStatusView({
       : null;
   const limitsSummary =
     typeof sessionService.getCodexLimitsSummary === "function"
-      ? await sessionService.getCodexLimitsSummary()
+      ? await sessionService.getCodexLimitsSummary({ allowStale: true })
       : null;
   const runtimeProfiles = {
     spike: spikeRuntimeProfile,

@@ -22,7 +22,7 @@ function buildBinding() {
 
 async function ensureSession(sessionStore) {
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 991,
     topicName: "Omni handoff test",
     createdVia: "test",
@@ -62,7 +62,7 @@ test("OmniPromptHandoffStore queues and clears pending prompts", async () => {
 test("buildSyntheticOmniPromptMessage emits a bot-authored forum topic message", () => {
   const message = buildSyntheticOmniPromptMessage(
     {
-      chat_id: "-1003577434463",
+      chat_id: "-1001234567890",
       topic_id: "991",
       topic_name: "Omni handoff test",
     },
@@ -252,4 +252,77 @@ test("drainPendingOmniPrompts preserves parked-session queue until the topic is 
 
   assert.equal(results.length, 0);
   assert.equal((await handoffStore.load(session))?.prompt, "queued prompt");
+});
+
+test("drainPendingOmniPrompts skips a running session owned by another generation", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-handoff-foreign-owner-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const handoffStore = new OmniPromptHandoffStore(sessionStore);
+  let session = await ensureSession(sessionStore);
+  session = await sessionStore.claimSessionOwner(session, {
+    generationId: "gen-old",
+    mode: "retiring",
+  });
+  session = await sessionStore.patch(session, {
+    last_run_status: "running",
+  });
+  await handoffStore.queue(session, {
+    mode: "continuation",
+    prompt: "queued prompt",
+  });
+
+  let startCalls = 0;
+  const results = await drainPendingOmniPrompts({
+    api: {},
+    botUsername: "spikebot",
+    config: {},
+    currentGenerationId: "gen-new",
+    lifecycleManager: null,
+    promptFragmentAssembler: null,
+    serviceState: {},
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return session;
+      },
+    },
+    sessionStore,
+    workerPool: {
+      canStart() {
+        return { ok: true };
+      },
+      async startPromptRun() {
+        startCalls += 1;
+        return { ok: true };
+      },
+    },
+    promptHandoffStore: handoffStore,
+  });
+
+  assert.equal(results.length, 0);
+  assert.equal(startCalls, 0);
+  assert.equal((await handoffStore.load(session))?.prompt, "queued prompt");
+});
+
+test("OmniPromptHandoffStore quarantines malformed handoff files", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-handoff-corrupt-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const handoffStore = new OmniPromptHandoffStore(sessionStore);
+  const session = await ensureSession(sessionStore);
+  const handoffPath = handoffStore.getPath(session);
+
+  await fs.mkdir(path.dirname(handoffPath), { recursive: true });
+  await fs.writeFile(handoffPath, "{\"mode\":\"continuation\"}", "utf8");
+
+  const loaded = await handoffStore.load(session);
+  const entries = await fs.readdir(path.dirname(handoffPath));
+
+  assert.equal(loaded, null);
+  assert.equal(entries.includes("omni-pending-prompt.json"), false);
+  assert.ok(
+    entries.some((entry) => entry.startsWith("omni-pending-prompt.json.corrupt-")),
+  );
 });

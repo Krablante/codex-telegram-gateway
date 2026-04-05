@@ -13,6 +13,8 @@ __pycache__/
 
 # Local outputs
 coverage/
+guidebook-*.pdf
+runbook-*.pdf
 
 # OS
 .DS_Store

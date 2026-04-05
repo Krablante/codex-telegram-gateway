@@ -60,15 +60,15 @@ function buildMockApi(sentMessages) {
 
 async function createSession(sessionStore, topicId, topicName) {
   return sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId,
     topicName,
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/workspace",
+      cwd: "/workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/workspace",
     },
   });
 }

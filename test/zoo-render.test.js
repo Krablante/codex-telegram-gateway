@@ -22,7 +22,7 @@ test("buildZooPetText renders pose and stats as fenced code blocks and hides fin
       display_name: "gateway",
       creature_kind: "cat",
       temperament_id: "paladin",
-      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+      cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     },
     snapshot: {
       mood: "спокойный",
@@ -71,7 +71,7 @@ test("buildZooPetText renders pose and stats as fenced code blocks and hides fin
   );
   assert.match(text, />> проект: gateway/u);
   assert.ok(text.indexOf(">> проект: gateway") > text.indexOf(">> следующий фокус: Разгрузить самый крупный роутер."));
-  assert.ok(text.indexOf(">> проект: gateway") < text.indexOf(">> репо: projects/codex-telegram-gateway"));
+  assert.ok(text.indexOf(">> проект: gateway") < text.indexOf(">> репо: homelab/infra/automation/codex-telegram-gateway"));
   assert.doesNotMatch(text, /"Тихо шуршу/u);
   assert.doesNotMatch(text, new RegExp(`^${pickZooCharacterName("pet-1")}$`, "mu"));
 
@@ -195,7 +195,7 @@ test("buildZooPetText does not suggest refresh while the first refresh is alread
       pet_id: "pet-1",
       display_name: "gateway",
       creature_kind: "cat",
-      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+      cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     },
     snapshot: null,
     state: {
@@ -219,7 +219,7 @@ test("buildZooPetText switches from generic start text to temperament voice on l
       pet_id: "pet-1",
       display_name: "gateway",
       creature_kind: "cat",
-      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+      cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     },
     snapshot: null,
     state: {
@@ -242,7 +242,7 @@ test("buildZooPetText keeps placeholder stats in the unified card before the fir
       pet_id: "pet-new",
       display_name: "gateway",
       creature_kind: "cat",
-      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+      cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     },
     snapshot: null,
     state: {
@@ -266,7 +266,7 @@ test("buildZooPetText renders arrows for changed stats and keeps equals for unch
       pet_id: "pet-trends",
       display_name: "gateway",
       creature_kind: "cat",
-      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+      cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     },
     snapshot: {
       mood: "боевой",
@@ -313,7 +313,7 @@ test("buildZooPetText uses temperament-stable refresh voice for different pets",
       pet_id: "pet-1",
       display_name: "gateway",
       creature_kind: "cat",
-      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+      cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     },
     snapshot: null,
     state: {
@@ -329,7 +329,7 @@ test("buildZooPetText uses temperament-stable refresh voice for different pets",
       pet_id: "pet-6",
       display_name: "gateway",
       creature_kind: "cat",
-      cwd_relative_to_workspace_root: "projects/codex-telegram-gateway",
+      cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     },
     snapshot: null,
     state: {
