@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.23] - 2026-04-05
+
+Fixed:
+
+- stale callbacks from an older Zoo menu message no longer replace the active stored `menu_message_id`, so recovery and respawn flows keep editing the real current menu
+
+Tests:
+
+- added regression coverage for stale Zoo callbacks so old buttons cannot steal the active menu binding during normal callback handling
+
 ## [0.3.22] - 2026-04-05
 
 Fixed:
