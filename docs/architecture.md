@@ -59,7 +59,9 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - `src/session-manager/session-store.js` is the thin public facade for the file-backed session store
    - `src/session-manager/session-store-lifecycle.js` owns lock-aware meta mutations, save semantics, reactivation, parking, and purge flows
    - `src/session-manager/session-store-files.js` owns exchange-log IO, artifact writes, compact-state reads, and generic session file helpers
-   - `src/session-manager/session-store-common.js` keeps normalization, ownership shaping, exchange-log normalization, and meta-lock constants
+   - `src/session-manager/session-store-meta.js` owns meta normalization, ownership shaping, runtime defaults, and purge-stub shaping
+   - `src/session-manager/session-store-io.js` owns meta/text reads, exchange-log normalization, and artifact file naming
+   - `src/session-manager/session-store-common.js` is now the thin shared facade for meta-lock constants and session-store helper re-exports
 7. The worker layer now follows the same shell-plus-domain split:
    - `src/pty-worker/worker-pool.js` is the thin public shell that keeps the exported `CodexWorkerPool` surface stable
    - `src/pty-worker/worker-pool-transport.js` owns progress bubbles, typing heartbeats, and live steer buffering/flush behavior, including the short retry window before follow-up fallback
