@@ -13,7 +13,6 @@ import {
 
 const DEFAULT_TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 const DEFAULT_TELEGRAM_POLL_TIMEOUT_SECS = 30;
-const DEFAULT_CODEX_BIN_PATH = "codex";
 const DEFAULT_MAX_PARALLEL_SESSIONS = 10;
 const DEFAULT_PARKED_SESSION_RETENTION_HOURS = 168;
 const DEFAULT_RETENTION_SWEEP_INTERVAL_SECS = 60;
@@ -135,6 +134,10 @@ export function parseCodexConfigProfile(text, configPath = DEFAULT_CODEX_CONFIG_
   };
 }
 
+export function getDefaultCodexBinPath(platform = process.platform) {
+  return platform === "win32" ? "codex.cmd" : "codex";
+}
+
 async function loadCodexConfigProfile(configPath) {
   try {
     const text = await fs.readFile(configPath, "utf8");
@@ -170,7 +173,7 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
   const defaultSessionBindingPath =
     rawEnv.DEFAULT_SESSION_BINDING_PATH?.trim() || atlasWorkspaceRoot;
   const codexBinPath =
-    rawEnv.CODEX_BIN_PATH?.trim() || DEFAULT_CODEX_BIN_PATH;
+    rawEnv.CODEX_BIN_PATH?.trim() || getDefaultCodexBinPath();
   const codexConfigPath =
     rawEnv.CODEX_CONFIG_PATH?.trim() ||
     codexProfile.configPath ||

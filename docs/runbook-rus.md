@@ -100,7 +100,7 @@ make service-restart
 make service-hard-restart
 ```
 
-Если `service-install` не может определить `CODEX_BIN_PATH`, задай абсолютный путь к бинарнику и повтори установку.
+Если `service-install` не может определить `CODEX_BIN_PATH`, задай абсолютный путь к бинарнику и повтори установку. На native Windows практичный дефолт такой: оставь `CODEX_BIN_PATH` пустым, чтобы runtime взял `codex.cmd`; если задаёшь вручную, предпочитай `codex.cmd` или абсолютный путь до `...\codex.cmd`.
 
 `make service-rollout` и `make service-restart` для `Spike` теперь идут через session-aware soft rollout: repo-local rollout-команда ждёт, пока новый generation реально возьмёт leader traffic, а уже активные run topics добегают на retiring generation. `make service-hard-restart` оставлен как слепой жёсткий рестарт. Для `service-install` у Spike теперь нужен `systemd >= 250`, потому что unit опирается на `ExitType=cgroup`.
 

@@ -276,7 +276,11 @@ test("CodexWorkerPool sends telegram-file directives from a symlinked worktree p
   const realWorkspaceRoot = path.join(workspaceParent, "real-worktree");
   const linkedWorkspaceRoot = path.join(workspaceParent, "linked-worktree");
   await fs.mkdir(realWorkspaceRoot, { recursive: true });
-  await fs.symlink(realWorkspaceRoot, linkedWorkspaceRoot, "dir");
+  await fs.symlink(
+    realWorkspaceRoot,
+    linkedWorkspaceRoot,
+    process.platform === "win32" ? "junction" : "dir",
+  );
   const filePath = path.join(linkedWorkspaceRoot, "report.txt");
   await fs.writeFile(filePath, "report\n", "utf8");
 
@@ -580,5 +584,4 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
     /вне разрешённых зон доставки/u,
   );
 });
-
 

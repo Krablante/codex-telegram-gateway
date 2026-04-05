@@ -162,6 +162,8 @@ WORKSPACE_ROOT=C:/Users/you/work
 DEFAULT_SESSION_BINDING_PATH=C:/Users/you/work/main-repo
 ```
 
+Leave `CODEX_BIN_PATH` empty unless you really need an override. The runtime defaults to `codex` on Linux and `codex.cmd` on native Windows. If you set it explicitly on Windows, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
+
 What that means in practice:
 
 - `/new Backend Cleanup` starts in `/home/you/work/main-repo`

@@ -32,3 +32,24 @@ test("runCodexTask initializes completion handlers before child lifecycle starts
   const finished = await run.finished;
   assert.equal(finished.exitCode, 0);
 });
+
+test("runCodexTask disables detached app-server launches on Windows", () => {
+  let spawnOptions = null;
+
+  assert.throws(
+    () =>
+      runCodexTask({
+        codexBinPath: "codex.cmd",
+        cwd: process.cwd(),
+        prompt: "Проверка Windows app-server spawn.",
+        platform: "win32",
+        spawnImpl(_command, _args, options) {
+          spawnOptions = options;
+          throw new Error("spawn blocked");
+        },
+      }),
+    /spawn blocked/u,
+  );
+
+  assert.equal(spawnOptions?.detached, false);
+});

@@ -22,6 +22,8 @@ scripts\windows\admin.cmd status
 scripts\windows\test.cmd
 ```
 
+On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim path. The runtime now falls back to `codex.cmd` by default, and the symlinked-worktree coverage uses directory junctions so Developer Mode is not required for that test slice.
+
 ## Repo-Level Validation
 
 - `make doctor` — env, Telegram auth, webhook state, basic runtime checks

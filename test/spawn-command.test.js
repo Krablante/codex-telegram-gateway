@@ -21,12 +21,13 @@ test("buildSpawnCommand keeps direct spawning on non-Windows platforms", () => {
   assert.deepEqual(launch.spawnOptions, {});
 });
 
-test("buildSpawnCommand routes Windows .cmd shims through the shell", async () => {
+test("buildSpawnCommand routes Windows .cmd shims through cmd.exe", async () => {
   const tempRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-spawn-command-win-"),
   );
   const binDir = path.join(tempRoot, "npm");
   const commandPath = path.join(binDir, "codex.cmd");
+  const commandShellPath = "C:\\Windows\\System32\\cmd.exe";
 
   await writeWindowsCommandShim(commandPath);
 
@@ -39,6 +40,7 @@ test("buildSpawnCommand routes Windows .cmd shims through the shell", async () =
         env: {
           PATH: binDir,
           PATHEXT: ".EXE;.CMD",
+          ComSpec: commandShellPath,
         },
         platform: "win32",
       },
@@ -46,10 +48,15 @@ test("buildSpawnCommand routes Windows .cmd shims through the shell", async () =
 
     assert.equal(
       path.win32.normalize(launch.command),
-      path.win32.normalize(commandPath),
+      path.win32.normalize(commandShellPath),
     );
-    assert.deepEqual(launch.args, ["app-server", "--listen", "ws://127.0.0.1:0"]);
-    assert.equal(launch.spawnOptions.shell, true);
+    assert.deepEqual(launch.args, [
+      "/d",
+      "/s",
+      "/c",
+      `${commandPath} app-server --listen ws://127.0.0.1:0`,
+    ]);
+    assert.equal(launch.spawnOptions.shell, undefined);
     assert.equal(launch.spawnOptions.windowsHide, true);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -62,6 +69,7 @@ test("buildSpawnCommand resolves Windows .cmd shims from a mixed-case Path entry
   );
   const binDir = path.join(tempRoot, "npm");
   const commandPath = path.join(binDir, "codex.cmd");
+  const commandShellPath = "C:\\Windows\\System32\\cmd.exe";
 
   await writeWindowsCommandShim(commandPath);
 
@@ -71,15 +79,22 @@ test("buildSpawnCommand resolves Windows .cmd shims from a mixed-case Path entry
       env: {
         Path: binDir,
         PATHEXT: ".cmd",
+        ComSpec: commandShellPath,
       },
       platform: "win32",
     });
 
     assert.equal(
       path.win32.normalize(launch.command),
-      path.win32.normalize(commandPath),
+      path.win32.normalize(commandShellPath),
     );
-    assert.equal(launch.spawnOptions.shell, true);
+    assert.deepEqual(launch.args, [
+      "/d",
+      "/s",
+      "/c",
+      `${path.win32.normalize(commandPath)} exec`,
+    ]);
+    assert.equal(launch.spawnOptions.shell, undefined);
     assert.equal(launch.spawnOptions.windowsHide, true);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -92,6 +107,7 @@ test("buildSpawnCommand quotes Windows shim paths that contain spaces", async ()
   );
   const binDir = path.join(tempRoot, "npm bins");
   const commandPath = path.join(binDir, "codex.cmd");
+  const commandShellPath = "C:\\Windows\\System32\\cmd.exe";
 
   await writeWindowsCommandShim(commandPath);
 
@@ -101,12 +117,14 @@ test("buildSpawnCommand quotes Windows shim paths that contain spaces", async ()
       env: {
         PATH: binDir,
         PATHEXT: ".CMD",
+        ComSpec: commandShellPath,
       },
       platform: "win32",
     });
 
-    assert.equal(launch.command, `"${commandPath}"`);
-    assert.equal(launch.spawnOptions.shell, true);
+    assert.equal(launch.command, commandShellPath);
+    assert.deepEqual(launch.args, ["/d", "/s", "/c", `"${commandPath}" exec`]);
+    assert.equal(launch.spawnOptions.shell, undefined);
     assert.equal(launch.spawnOptions.windowsHide, true);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -119,6 +137,7 @@ test("buildSpawnCommand quotes Windows shell args that contain spaces", async ()
   );
   const binDir = path.join(tempRoot, "npm");
   const commandPath = path.join(binDir, "codex.cmd");
+  const commandShellPath = "C:\\Windows\\System32\\cmd.exe";
 
   await writeWindowsCommandShim(commandPath);
 
@@ -133,17 +152,18 @@ test("buildSpawnCommand quotes Windows shell args that contain spaces", async ()
       env: {
         PATH: binDir,
         PATHEXT: ".CMD",
+        ComSpec: commandShellPath,
       },
       platform: "win32",
     });
 
     assert.deepEqual(launch.args, [
-      "-C",
-      "\"O:/Users/Example User/Source Repos/gateway\"",
-      "--flag",
-      "plain",
+      "/d",
+      "/s",
+      "/c",
+      `${commandPath} -C "O:/Users/Example User/Source Repos/gateway" --flag plain`,
     ]);
-    assert.equal(launch.spawnOptions.shell, true);
+    assert.equal(launch.spawnOptions.shell, undefined);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

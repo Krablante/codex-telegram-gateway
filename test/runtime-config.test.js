@@ -13,6 +13,7 @@ import {
 } from "../src/config/default-paths.js";
 import {
   buildRuntimeConfig,
+  getDefaultCodexBinPath,
   loadRuntimeConfig,
   parseCodexConfigProfile,
 } from "../src/config/runtime-config.js";
@@ -49,6 +50,11 @@ test("parseEnvText strips a leading UTF-8 BOM so Windows-edited env files still 
 
   assert.equal(env.TELEGRAM_BOT_TOKEN, "secret-token");
   assert.equal(env.TELEGRAM_ALLOWED_USER_ID, "1234567890");
+});
+
+test("getDefaultCodexBinPath prefers codex.cmd on Windows", () => {
+  assert.equal(getDefaultCodexBinPath("linux"), "codex");
+  assert.equal(getDefaultCodexBinPath("win32"), "codex.cmd");
 });
 
 test("buildRuntimeConfig validates ids and splits expected topics", () => {

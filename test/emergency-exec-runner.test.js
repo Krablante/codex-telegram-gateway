@@ -81,6 +81,28 @@ test("startEmergencyExecRun launches codex exec in a detached process group", ()
   assert.equal(spawnOptions?.detached, true);
 });
 
+test("startEmergencyExecRun disables detached mode on Windows", () => {
+  let spawnOptions = null;
+
+  assert.throws(
+    () =>
+      startEmergencyExecRun({
+        codexBinPath: "codex.cmd",
+        repoRoot: "/repo",
+        stateRoot: "/tmp/state-root",
+        prompt: "repair it",
+        platform: "win32",
+        spawnProcess(_bin, _args, options) {
+          spawnOptions = options;
+          throw new Error("spawn blocked");
+        },
+      }),
+    /spawn blocked/u,
+  );
+
+  assert.equal(spawnOptions?.detached, false);
+});
+
 test("startEmergencyExecRun treats shell interrupt exit codes as interrupted", async () => {
   const tempRoot = fs.mkdtempSync(
     path.join(os.tmpdir(), "emergency-exec-runner-interrupt-"),
