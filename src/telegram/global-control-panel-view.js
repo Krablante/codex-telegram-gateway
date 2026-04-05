@@ -298,12 +298,12 @@ function buildGlobalControlPanelText({
 function buildRootKeyboard(omniEnabled, pendingInput, language = DEFAULT_UI_LANGUAGE) {
   return [
     [
-      buildInlineKeyboardButton("Wait", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.wait}`),
-      buildInlineKeyboardButton("Suffix", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.suffix}`),
-    ],
-    [
       buildInlineKeyboardButton("Bot Settings", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.bot_settings}`),
       buildInlineKeyboardButton("Language", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.language}`),
+    ],
+    [
+      buildInlineKeyboardButton("Wait", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.wait}`),
+      buildInlineKeyboardButton("Suffix", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.suffix}`),
     ],
     [
       buildInlineKeyboardButton("Zoo", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:z:show`),

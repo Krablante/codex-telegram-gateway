@@ -81,7 +81,7 @@ Core capabilities:
 - `/wait` buffers fragmented Telegram input into one prompt
 - `/suffix` adds persistent prompt tails per topic or globally
 - `/menu` and `/global` expose control panels instead of command memorization
-- the root `/global` menu in `General` includes one-tap `Zoo`, `Clear`, `Guide`, and `Help` shortcuts
+- the root `/global` menu in `General` starts with `Bot Settings` and `Language`, then includes one-tap `Zoo`, `Clear`, `Guide`, and `Help` shortcuts
 - `/compact` rebuilds concise continuity from clean state
 - `/limits` surfaces Codex limits in chat
 - session-aware `Spike` rollout avoids blind restarts by default

@@ -64,6 +64,14 @@ test("handleIncomingMessage opens the persistent global control panel in General
   assert.doesNotMatch(sent[0].text, /spike reasoning:/u);
   assert.equal(Array.isArray(sent[0].reply_markup.inline_keyboard), true);
   assert.deepEqual(
+    sent[0].reply_markup.inline_keyboard[0].map((button) => button.text),
+    ["Bot Settings", "Language"],
+  );
+  assert.deepEqual(
+    sent[0].reply_markup.inline_keyboard[1].map((button) => button.text),
+    ["Wait", "Suffix"],
+  );
+  assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[2].map((button) => button.text),
     ["Zoo", "Clear"],
   );
