@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.24] - 2026-04-05
+
+Fixed:
+
+- final Spike replies now retry transient Telegram and network send failures instead of dropping the run result after a successful completion
+- when that transient final send still never comes back, the final answer now stays visible in the existing progress bubble instead of disappearing
+- long final replies now preserve already-delivered Telegram `message_id` metadata even if a later chunk fails
+- the runner now waits briefly for a late primary final answer after `turn/completed`, avoiding spurious generic `Done.` / `Готово.` fallbacks
+
+Docs:
+
+- README, architecture, runbook, state-contract, and testing docs now describe the final-reply recovery path and the short late-final grace window
+
+Tests:
+
+- added regression coverage for transient final-reply recovery, progress-bubble fallback, partial-delivery metadata, parked final-send handling, and late final-answer ordering after `turn/completed`
+
 ## [0.3.23] - 2026-04-05
 
 Fixed:
