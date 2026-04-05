@@ -30,7 +30,7 @@ export function buildForwardingEndpoint({
 }
 
 export class UpdateForwardingServer {
-  constructor({ endpoint, onRequest }) {
+  constructor({ endpoint, onRequest, serverFactory }) {
     this.endpoint = endpoint;
     this.onRequest = onRequest;
     this.server = new LoopbackJsonServer({
@@ -39,11 +39,13 @@ export class UpdateForwardingServer {
         ok: true,
         result: await this.onRequest(payload),
       }),
+      serverFactory,
     });
   }
 
   async start() {
     await this.server.start();
+    this.endpoint = this.server.endpoint;
   }
 
   async stop() {
