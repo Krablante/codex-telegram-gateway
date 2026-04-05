@@ -416,4 +416,128 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
   );
 });
 
+test("handleIncomingMessage queues a follow-up when live steer is temporarily unavailable", async () => {
+  const sent = [];
+  const queuedPayloads = [];
 
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "докинь это в текущий run",
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 780,
+      message_thread_id: 91,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:91",
+          chat_id: "-1001234567890",
+          topic_id: "91",
+          ui_language: "rus",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async enqueuePromptQueue(_session, payload) {
+        queuedPayloads.push(payload);
+        return { position: 1 };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        return { ok: false, reason: "busy" };
+      },
+      async steerActiveRun() {
+        return { ok: false, reason: "transport-recovering" };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "steer-deferred");
+  assert.equal(queuedPayloads.length, 1);
+  assert.equal(queuedPayloads[0].rawPrompt, "докинь это в текущий run");
+  assert.equal(queuedPayloads[0].prompt, "докинь это в текущий run");
+  assert.equal(queuedPayloads[0].replyToMessageId, 780);
+  assert.match(sent[0].text, /live steer недоступен/u);
+  assert.match(sent[0].text, /следующим prompt/u);
+});
+
+test("handleIncomingMessage immediately starts the queued follow-up when the busy run already cleared", async () => {
+  const drainCalls = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("should not send reply when queued follow-up starts immediately");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "докинь это сразу после гонки",
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 781,
+      message_thread_id: 92,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:92",
+          chat_id: "-1001234567890",
+          topic_id: "92",
+          ui_language: "rus",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async enqueuePromptQueue() {
+        return { position: 1 };
+      },
+      async drainPromptQueue(workerPoolArg, { session }) {
+        drainCalls.push({
+          workerPoolArg,
+          sessionKey: session.session_key,
+        });
+        return [
+          {
+            sessionKey: session.session_key,
+            result: { handled: true, reason: "prompt-started" },
+          },
+        ];
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        return { ok: false, reason: "busy" };
+      },
+      async steerActiveRun() {
+        return { ok: false, reason: "idle" };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-started");
+  assert.equal(drainCalls.length, 1);
+  assert.equal(drainCalls[0].sessionKey, "-1001234567890:92");
+});

@@ -18,7 +18,82 @@ import {
   buildNoSessionTopicMessage,
   buildPromptFromMessages,
   buildSteerAcceptedMessage,
+  buildSteerDeferredMessage,
 } from "./prompt-flow-common.js";
+
+const STEER_QUEUE_FALLBACK_REASONS = new Set([
+  "idle",
+  "finalizing",
+  "transport-recovering",
+]);
+
+async function maybeQueueDeferredSteerPrompt({
+  api,
+  effectivePrompt,
+  lifecycleManager,
+  message,
+  rawPrompt,
+  session,
+  sessionService,
+  workerPool,
+  attachments = [],
+  steerReason = null,
+}) {
+  if (
+    !STEER_QUEUE_FALLBACK_REASONS.has(steerReason) ||
+    typeof sessionService.enqueuePromptQueue !== "function"
+  ) {
+    return null;
+  }
+
+  const queued = await sessionService.enqueuePromptQueue(session, {
+    rawPrompt,
+    prompt: effectivePrompt,
+    attachments,
+    replyToMessageId: Number.isInteger(message?.message_id) ? message.message_id : null,
+  });
+
+  if (
+    attachments.length > 0 &&
+    typeof sessionService.clearPendingPromptAttachments === "function"
+  ) {
+    session = await sessionService.clearPendingPromptAttachments(session);
+  }
+
+  if (
+    queued.position === 1 &&
+    typeof sessionService.drainPromptQueue === "function"
+  ) {
+    const drainResults = await sessionService.drainPromptQueue(workerPool, {
+      session,
+    });
+    const drainResult = drainResults.find(
+      (entry) => entry.sessionKey === session.session_key,
+    );
+    if (drainResult?.result?.reason === "prompt-started") {
+      return { handled: true, reason: "prompt-started" };
+    }
+  }
+
+  const delivery = await safeSendMessage(
+    api,
+    buildReplyMessageParams(
+      message,
+      buildSteerDeferredMessage({
+        position: queued.position,
+        preview: rawPrompt,
+        language: getSessionUiLanguage(session),
+      }),
+    ),
+    session,
+    lifecycleManager,
+  );
+  if (delivery.parked) {
+    return { handled: true, reason: "topic-unavailable" };
+  }
+
+  return { handled: true, reason: "steer-deferred" };
+}
 
 async function startTopicPromptRun({
   api,
@@ -203,6 +278,22 @@ async function startTopicPromptRun({
           return { handled: true, reason: "topic-unavailable" };
         }
         return { handled: true, reason: steered.reason || "steered" };
+      }
+
+      const deferred = await maybeQueueDeferredSteerPrompt({
+        api,
+        effectivePrompt,
+        lifecycleManager,
+        message,
+        rawPrompt,
+        session,
+        sessionService,
+        workerPool,
+        attachments,
+        steerReason: steered.reason || null,
+      });
+      if (deferred) {
+        return deferred;
       }
     }
 

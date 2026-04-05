@@ -244,6 +244,45 @@ export function buildSteerAcceptedMessage(language = DEFAULT_UI_LANGUAGE) {
     : "Принял. Докину это в текущий run.";
 }
 
+export function buildSteerDeferredMessage({
+  position = 1,
+  preview = "",
+  language = DEFAULT_UI_LANGUAGE,
+}) {
+  const english = isEnglish(language);
+  const lines = [
+    english
+      ? "Live steer is unavailable right now."
+      : "Сейчас live steer недоступен.",
+    "",
+    position === 1
+      ? (english
+        ? "Queued this as the next prompt."
+        : "Поставил это следующим prompt'ом.")
+      : (english
+        ? `Queued this at position ${position}.`
+        : `Поставил это в очередь под номером ${position}.`),
+  ];
+
+  if (position === 1) {
+    lines.push(
+      "",
+      english
+        ? "I will start it as soon as the current run fully clears."
+        : "Запущу сразу после завершения текущего run.",
+    );
+  }
+
+  if (preview) {
+    lines.push(
+      "",
+      `${english ? "Summary" : "Коротко"}: ${formatQueuePreview(preview)}`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
 export function buildCapacityMessage(
   maxParallelSessions,
   language = DEFAULT_UI_LANGUAGE,

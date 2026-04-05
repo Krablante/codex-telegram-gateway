@@ -125,7 +125,7 @@ Rules:
 - `/q <text>` — put a Spike prompt into the topic queue
 - `/q status` — show queued items with short previews
 - `/q delete <position>` — remove one queued item by 1-based position
-- plain follow-up text during an active Spike run is live-steered into that same run; use `/q` only when you explicitly mean "do this next after the current run"
+- plain follow-up text during an active Spike run is live-steered into that same run; if steer is temporarily unavailable during transport recovery or the short finalizing edge, the follow-up is queued automatically as the next prompt instead of being dropped behind a generic busy reply
 - queued prompts may include the same Telegram attachments as normal prompts
 - attachment-only `/q` files stay reserved for the next `/q ...` text and are not consumed by a plain direct Spike prompt
 - long `/q ...` messages and media groups use the same fragment buffering path before they are queued
