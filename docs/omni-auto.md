@@ -137,8 +137,8 @@ Rules:
 
 The current threshold is intentionally simple:
 
-- Omni prompt age since last compact is at least 4 hours
-- Omni handoff count since last compact is at least 30
+- Omni handoff count since last compact is at least 10
+- there is no extra age floor; once `/auto` reaches that count and hits a safe cycle boundary, it refreshes continuity immediately
 
 If compaction itself fails, Omni falls back to continuing without compact instead of killing a healthy autonomy loop.
 

@@ -63,9 +63,9 @@ test("OmniCoordinator applies Omni v2 memory, pivot handoff, and auto-compact at
   session = await harness.sessionService.updateAutoMode(session, {
     ...session.auto_mode,
     phase: "running",
-    continuation_count: 30,
-    continuation_count_since_compact: 30,
-    first_omni_prompt_at: "2026-04-03T10:00:00.000Z",
+    continuation_count: 10,
+    continuation_count_since_compact: 10,
+    first_omni_prompt_at: "2999-01-01T00:00:00.000Z",
     last_evaluated_exchange_log_entries: 7,
   });
   session = await harness.sessionStore.patch(session, {
@@ -110,7 +110,7 @@ test("OmniCoordinator applies Omni v2 memory, pivot handoff, and auto-compact at
   assert.equal(memory.continuation_count_since_compact, 1);
   assert.notEqual(
     memory.first_omni_prompt_at,
-    "2026-04-03T10:00:00.000Z",
+    "2999-01-01T00:00:00.000Z",
   );
   assert.deepEqual(memory.do_not_regress, [
     "Do not break manual /compact UX.",

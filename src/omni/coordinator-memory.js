@@ -6,8 +6,7 @@ import {
 } from "./prompting.js";
 import { normalizeAutoModeState } from "../session-manager/auto-mode.js";
 
-const AUTO_COMPACT_MIN_AGE_MS = 4 * 60 * 60 * 1000;
-const AUTO_COMPACT_MIN_PROMPTS = 30;
+const AUTO_COMPACT_MIN_PROMPTS = 10;
 
 export async function loadOmniMemory(coordinator, session) {
   return coordinator.omniMemoryStore?.load(session) || buildDefaultOmniMemory();
@@ -120,18 +119,9 @@ export async function updateOmniMemoryFromDecision(
 }
 
 export function shouldAutoCompact(autoMode, coordinator) {
-  if (
-    !coordinator.sessionService?.sessionCompactor
-    || !autoMode.enabled
-    || !autoMode.first_omni_prompt_at
-    || autoMode.continuation_count_since_compact < AUTO_COMPACT_MIN_PROMPTS
-  ) {
-    return false;
-  }
-
-  const firstPromptAtMs = Date.parse(autoMode.first_omni_prompt_at);
-  return Number.isFinite(firstPromptAtMs)
-    && (Date.now() - firstPromptAtMs) >= AUTO_COMPACT_MIN_AGE_MS;
+  return Boolean(coordinator.sessionService?.sessionCompactor)
+    && autoMode.enabled
+    && autoMode.continuation_count_since_compact >= AUTO_COMPACT_MIN_PROMPTS;
 }
 
 export async function maybeAutoCompactBeforeContinuation(coordinator, session) {
