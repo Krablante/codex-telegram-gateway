@@ -2,7 +2,7 @@
 
 ## Canonical state root
 
-`/home/example/.local/state/codex-telegram-gateway`
+`${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
 
 ## Mutable surfaces
 
@@ -72,12 +72,12 @@ Current slices guarantee:
 - external `forum_topic_closed` / `forum_topic_reopened` service messages may move sessions between `active` and `parked`
 - transport failures like unavailable/deleted topic may also move a session into `parked`
 - expired parked sessions may be auto-purged during periodic retention sweep
-- new topic creation may resolve explicit workspace binding from `/new cwd=...` against the atlas workspace root
+- new topic creation may resolve explicit workspace binding from `/new cwd=...` against the configured workspace root
 - `/purge` removes compact memory files and artifacts, then leaves only a tiny `meta.json` purged stub until the topic is reused
 
 ## Rules
 
-- state lives under `atlas/state/...`, never inside the source repo
+- state lives under the configured state root, never inside the source repo
 - bot tokens and runtime credentials stay only here
 - later session artifacts inherit the `chat_id/topic_id` geography from the plan
 - the gateway does not keep tool chatter or full PTY transcripts as canonical memory; the clean exchange log is the durable raw surface, and the compact brief is a derived recovery surface

@@ -8,7 +8,7 @@ This repo keeps the surface small:
 - `Spike` is the main worker bot
 - optional `Omni` is the second bot for `/auto`
 - `Zoo` is a dedicated control-only topic for per-project tamagotchi snapshots
-- state lives under `atlas/state/...`, not in the repo
+- state lives under the configured state root, not in the repo
 - code shape is modular-first: thin routers, domain handlers, focused test ownership
 
 ## Code Direction
@@ -22,9 +22,9 @@ The repo has now moved to an explicit modular handler system and should stay tha
 
 ## Canonical paths
 
-- repo root: `/path/to/codex-telegram-gateway`
-- state root: `/home/example/.local/state/codex-telegram-gateway`
-- runtime env: `/home/example/.config/codex-telegram-gateway/runtime.env`
+- repo root: wherever you cloned the repo, for example `/path/to/codex-telegram-gateway`
+- state root: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
+- runtime env: `${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
 
 ## Read This Next
 
@@ -39,7 +39,7 @@ The repo has now moved to an explicit modular handler system and should stay tha
 
 ## Quick Start
 
-Atlas/Linux:
+Linux/operator path:
 
 ```bash
 cd /path/to/codex-telegram-gateway
@@ -157,7 +157,7 @@ scripts\windows\user-e2e.cmd
 
 - `Spike` stays the only heavy live worker; `Omni` uses short one-shot `codex exec` passes
 - if `OMNI_ENABLED=false`, the gateway behaves like a clean single-bot deployment
-- native Windows now supports direct `.env`-based startup without atlas paths or WSL-only assumptions; `WORKSPACE_ROOT` is preferred, `ATLAS_WORKSPACE_ROOT` stays as a compatibility alias
+- native Windows now supports direct `.env`-based startup without host-specific Linux paths or WSL-only assumptions; `WORKSPACE_ROOT` is preferred, `ATLAS_WORKSPACE_ROOT` stays as a compatibility alias
 - Windows wrappers intentionally use `npm ci --ignore-scripts`; this repo does not need package install scripts, and skipping them avoids flaky transitive `postinstall` failures on some Windows setups
 - `make user-login` and `scripts\windows\user-login.cmd` now use a small built-in Node terminal prompt layer; the old `input`/`inquirer`/`lodash` stack is no longer in the production dependency graph
 - `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`

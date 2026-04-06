@@ -48,9 +48,9 @@ On native Windows, use the wrapper scripts instead of bare `npm` inside PowerShe
 
 ## Runtime Visibility
 
-- heartbeat: `/home/example/.local/state/codex-telegram-gateway/logs/runtime-heartbeat.json`
-- events: `/home/example/.local/state/codex-telegram-gateway/logs/runtime-events.ndjson`
-- doctor snapshot: `/home/example/.local/state/codex-telegram-gateway/logs/doctor-last-run.json`
+- heartbeat: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-heartbeat.json`
+- events: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-events.ndjson`
+- doctor snapshot: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/doctor-last-run.json`
 - per-session exchange log: `.../sessions/<chat-id>/<topic-id>/exchange-log.jsonl`
 - per-session brief: `.../sessions/<chat-id>/<topic-id>/active-brief.md`
 
