@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.28] - 2026-04-06
+
+Fixed:
+
+- `/auto` continuation handoffs now switch to a compact goal capsule after bootstrap, so live Omni -> Spike prompts stay focused instead of dragging the full mission essay every cycle
+- Omni memory now keeps the legacy `remaining_goal_gap` alias in sync with `goal_unsatisfied`, so stale gap text does not linger after a new decision updates the real next gap
+
+Ops:
+
+- added `make service-restart-live` as the canonical live restart path: restart `Omni`, then soft-roll `Spike`
+
+Docs:
+
+- README, AGENTS, and runbooks now point operators at the safe restart entrypoint and warn against raw `systemctl restart` for ordinary live updates
+
+Tests:
+
+- added prompt-shape coverage for compact goal-capsule handoffs, fallback goal-capsule memory, and legacy goal-gap alias sync
+- public `make test`: 513 pass, 0 fail, 2 skip
+
 ## [0.3.27] - 2026-04-06
 
 Fixed:
