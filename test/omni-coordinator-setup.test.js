@@ -25,13 +25,9 @@ test("OmniCoordinator seeds topic-scoped Omni memory when the goal is captured",
 
   const stored = await harness.sessionStore.load("-1001234567890", "77");
   const memory = await harness.coordinator.loadOmniMemory(stored);
-  assert.deepEqual(memory.goal_constraints, [
-    "Ship Omni v2 without losing goal lock.",
-  ]);
-  assert.equal(
-    memory.why_this_matters_to_goal,
-    "Ship Omni v2 without losing goal lock.",
-  );
+  assert.equal(memory.goal_capsule, null);
+  assert.deepEqual(memory.goal_constraints, []);
+  assert.equal(memory.why_this_matters_to_goal, null);
 });
 
 test("OmniCoordinator preserves existing side work when a later decision omits that field", async () => {

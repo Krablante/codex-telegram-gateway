@@ -127,6 +127,7 @@ export async function sendPromptToSpike(
   const autoMode = normalizeAutoModeState(session.auto_mode);
   const now = new Date().toISOString();
   const currentMemory = omniMemory || (await coordinator.loadOmniMemory(session));
+  const useFullGoalContext = mode === "initial" || !session.codex_thread_id;
   const composedPrompt = buildOmniTopicPrompt({
     autoMode,
     initialWorkerPrompt: workerPrompt,
@@ -135,6 +136,7 @@ export async function sendPromptToSpike(
     mode,
     omniMemory: currentMemory,
     decisionMode,
+    useFullGoalContext,
   });
 
   markPromptAccepted(coordinator.serviceState);

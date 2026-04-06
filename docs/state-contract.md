@@ -23,7 +23,7 @@ Current slices guarantee:
 - `runtime.env` exists and is readable locally
 - `sessions/<chat-id>/<topic-id>/meta.json` may be created for active topic sessions
 - `sessions/<chat-id>/<topic-id>/meta.json:auto_mode` may carry topic-scoped Omni state including goal capture, locked phases, blocker state, and last Omni/Spike prompt correlation ids
-- `sessions/<chat-id>/<topic-id>/omni-memory.json` may carry small topic-scoped Omni supervisory memory such as the active proof line, remaining goal gap, candidate pivots, bounded side work, and do-not-regress constraints
+- `sessions/<chat-id>/<topic-id>/omni-memory.json` may carry small topic-scoped Omni supervisory memory such as a compact goal capsule, the active proof line, remaining goal gap, candidate pivots, bounded side work, and do-not-regress constraints
 - `sessions/<chat-id>/<topic-id>/omni-pending-prompt.json` may store a queued Omni-to-Spike continuation handoff waiting for the next safe prompt start
 - `sessions/<chat-id>/<topic-id>/telegram-topic-context.md` may store the current Telegram routing facts and the lightweight file-delivery contract for Codex
 - `sessions/<chat-id>/<topic-id>/exchange-log.jsonl` may store the append-only recovery log with only user prompts and final agent replies
@@ -82,5 +82,5 @@ Current slices guarantee:
 - later session artifacts inherit the `chat_id/topic_id` geography from the plan
 - the gateway does not keep tool chatter or full PTY transcripts as canonical memory; the clean exchange log is the durable raw surface, and the compact brief is a derived recovery surface
 - Omni and Spike may share the same topic session state, but only topic-scoped autonomy state is shared; Omni still remains a separate Telegram bot and a separate Codex process
-- Omni memory is intentionally small and topic-scoped; it is not a second transcript surface and does not replace `exchange-log.jsonl` or `active-brief.md`
+- Omni memory is intentionally small and topic-scoped; it is not a second transcript surface, should not mirror the full locked-goal essay, and does not replace `exchange-log.jsonl` or `active-brief.md`
 - the deployment may also run without Omni entirely; in that shape `auto_mode` metadata is just dormant session state, not an active routing lock

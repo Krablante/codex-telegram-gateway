@@ -54,6 +54,7 @@ Each `/auto` topic now keeps a small `omni-memory.json`.
 
 That memory is intentionally small and practical. It carries things like:
 
+- `goal_capsule`
 - `goal_constraints`
 - `current_proof_line`
 - `proof_line_status`
@@ -73,6 +74,8 @@ The point is continuity:
 - Omni does not need to rediscover the same supervisory context every cycle
 - Spike gets richer handoffs instead of empty “continue” nudges
 - auto-compact can refresh Spike context without losing Omni’s small planning state
+- the memory should carry fresh supervisory state, not repeated copies of the full mission essay
+- Omni distills the long locked goal into a short `goal_capsule` once the first evaluation cycle has enough context to do that honestly
 
 ## Human Input Rules
 
@@ -109,6 +112,7 @@ Omni -> Spike handoffs are now more structured.
 
 A continuation or pivot handoff can include:
 
+- a compact locked-goal capsule
 - current proof line
 - what changed since the last cycle
 - what part of the locked goal is still unsatisfied
@@ -119,9 +123,17 @@ A continuation or pivot handoff can include:
 
 This keeps `/auto` practical:
 
-- the locked goal stays visible
+- the locked goal stays visible without replaying the full mission essay every cycle
 - Spike still remains the only heavy worker
 - Omni can supervise long-running work without turning into a second build agent
+
+Prompt-shape rule:
+
+- initial `/auto` bootstrap still sends the full locked-goal context
+- Omni may also keep the full locked goal in its first self-eval pass until it has produced a trustworthy compact `goal_capsule`
+- the first Omni -> Spike handoff after automatic continuity refresh also sends the full context
+- ordinary live continuation handoffs use the compact goal capsule plus current supervisory state
+- Omni self-eval uses the latest worker instruction extract instead of replaying the full previous Spike wrapper
 
 ## Automatic Continuity Refresh
 

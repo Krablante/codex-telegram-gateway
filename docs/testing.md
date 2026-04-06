@@ -41,7 +41,7 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `node --test test/service-generation-store.test.js test/service-rollout.test.js test/service-rollout-command.test.js test/update-forwarding-ipc.test.js test/spike-update-routing.test.js` — focused session-aware rollout slices for leader lease, retiring-session ownership, repo-local operator rollout handoff, blocked-port loopback IPC recovery, rebound endpoint sync, local IPC forwarding, and topic route resolution
 - `node --test test/worker-pool.test.js test/worker-pool-startup.test.js test/worker-pool-file-delivery.test.js test/worker-pool-delivery.test.js test/worker-pool-live-steer.test.js test/worker-pool-shutdown.test.js` — focused worker-pool ownership slices for startup, delivery, live steer, shutdown, transient final-reply recovery, partial-delivery metadata, and parked-topic final-send behavior
 - `node --test test/prompt-queue.test.js` — focused `/q` queue semantics, including busy-retry after finalization and corrupt-queue quarantine
-- `node --test test/omni-coordinator.test.js test/omni-coordinator-*.test.js test/omni-decision.test.js test/omni-memory.test.js test/omni-prompt-handoff.test.js test/session-compactor.test.js` — focused Omni v2 coverage with a compact coordinator spine plus split setup/cycle/input/sleep/shutdown ownership
+- `node --test test/omni-coordinator.test.js test/omni-coordinator-*.test.js test/omni-decision.test.js test/omni-memory.test.js test/omni-prompting.test.js test/omni-prompt-handoff.test.js test/session-compactor.test.js` — focused Omni v2 coverage with a compact coordinator spine plus split setup/cycle/input/sleep/shutdown ownership and prompt-shape regressions
 - `node --test test/zoo-service.test.js test/zoo-service-menu.test.js test/zoo-service-add-flow.test.js test/zoo-service-refresh.test.js test/zoo-render.test.js test/zoo-analysis.test.js test/zoo-model-response.test.js test/zoo-store.test.js` — focused Zoo ownership slices for topic/menu, missing-topic-state callback recovery, add-flow, refresh, render, and store behavior
 - `make smoke` — focused Spike smoke path
 - `make smoke-omni` — focused Omni smoke path
@@ -180,6 +180,7 @@ Native Windows:
 - keep `src/omni/coordinator.js` as the thin public facade and move heavy Omni logic into `coordinator-memory.js`, `coordinator-delivery.js`, `coordinator-decision-flow.js`, and `coordinator-common.js`
 - keep fresh-state handoff and patch-shaping coverage in `test/omni-coordinator-delivery.test.js`
 - keep `OmniMemoryStore` normalization plus lock/freshness coverage in `test/omni-memory.test.js`
+- keep direct prompt-shape coverage for goal capsule vs full bootstrap behavior in `test/omni-prompting.test.js`
 - keep `/auto` setup, initial goal capture, setup delivery fallbacks, and initial handoff coverage in `test/omni-coordinator-setup.test.js`
 - keep cycle evaluation, auto-compact, sleep decisions, model/workspace resolution, and stale-final handling in `test/omni-coordinator-cycle.test.js`
 - keep blocked resume, `/omni` questions, and operator-input gating in `test/omni-coordinator-input.test.js`

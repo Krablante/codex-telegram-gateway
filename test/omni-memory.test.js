@@ -35,6 +35,7 @@ test("OmniMemoryStore writes, normalizes, and clears topic-scoped Omni memory", 
   const session = await ensureSession(sessionStore);
 
   const written = await memoryStore.write(session, {
+    goal_capsule: "Keep Omni goal-locked while staying compact.",
     goal_constraints: ["Stay topic-scoped.", "Stay topic-scoped."],
     current_proof_line: "continuity refresh",
     side_work_queue: ["inspect queue boundary"],
@@ -42,15 +43,18 @@ test("OmniMemoryStore writes, normalizes, and clears topic-scoped Omni memory", 
   });
 
   assert.deepEqual(written.goal_constraints, ["Stay topic-scoped."]);
+  assert.equal(written.goal_capsule, "Keep Omni goal-locked while staying compact.");
   assert.equal(written.current_proof_line, "continuity refresh");
   assert.deepEqual(written.side_work_queue, ["inspect queue boundary"]);
 
   const loaded = await memoryStore.load(session);
+  assert.equal(loaded.goal_capsule, "Keep Omni goal-locked while staying compact.");
   assert.equal(loaded.current_proof_line, "continuity refresh");
   assert.deepEqual(loaded.do_not_regress, ["keep manual /compact intact"]);
 
   await memoryStore.clear(session);
   const cleared = await memoryStore.load(session);
+  assert.equal(cleared.goal_capsule, null);
   assert.equal(cleared.current_proof_line, null);
   assert.deepEqual(cleared.goal_constraints, []);
 });

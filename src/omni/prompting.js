@@ -1,4 +1,5 @@
 import { getSessionUiLanguage, normalizeUiLanguage } from "../i18n/ui-language.js";
+import { getLockedGoalText, resolveGoalCapsule } from "./goal-capsule.js";
 
 function isEnglish(language) {
   return normalizeUiLanguage(language) === "eng";
@@ -212,8 +213,8 @@ export function buildAutoContinuationDispatchMessage({
       : "Omni -> Spike continuation handoff preview:",
     "",
     isEnglish(language)
-      ? "Spike wrapper still includes the locked goal and autonomy policy automatically."
-      : "Spike wrapper по-прежнему автоматически включает locked goal и autonomy policy.",
+      ? "Spike wrapper still includes goal lock and autonomy policy automatically."
+      : "Spike wrapper по-прежнему автоматически включает goal lock и autonomy policy.",
   ];
 
   if (decisionMode) {
@@ -406,6 +407,7 @@ export function buildOmniOperatorQueryPrompt({
   session,
   omniMemory = null,
 }) {
+  const latestWorkerInstruction = extractLatestSpikeTask(exchangeEntry?.user_prompt);
   const lines = [
     "You are Omni, the autonomy supervisor for Spike.",
     "Answer the operator directly in plain text.",
@@ -449,7 +451,12 @@ export function buildOmniOperatorQueryPrompt({
     "Latest planned wake-up prompt:",
     autoMode.sleep_next_prompt || "none",
   );
-  pushOptionalSection(lines, "Latest Spike prompt:", exchangeEntry?.user_prompt || "none");
+  pushOptionalSection(
+    lines,
+    "Latest Spike worker instruction:",
+    latestWorkerInstruction || "none",
+    { maxChars: 1600 },
+  );
   pushOptionalSection(
     lines,
     "Latest Spike final reply:",
@@ -468,7 +475,14 @@ export function buildOmniTopicPrompt({
   mode = "initial",
   omniMemory = null,
   decisionMode = null,
+  useFullGoalContext = false,
 }) {
+  const lockedGoal = getLockedGoalText(autoMode);
+  const goalCapsule = resolveGoalCapsule({ autoMode, omniMemory });
+  const goalHeading = useFullGoalContext ? "Locked goal:" : "Locked goal capsule:";
+  const goalText = useFullGoalContext
+    ? lockedGoal || goalCapsule || "none"
+    : goalCapsule || lockedGoal || "none";
   const lines = [
     "Goal-locked handoff from Omni.",
     "Autonomous continuation context.",
@@ -477,8 +491,8 @@ export function buildOmniTopicPrompt({
     `topic_id: ${session.topic_id}`,
     `mode: ${mode}`,
     "",
-    "Locked goal:",
-    autoMode.normalized_goal_interpretation || autoMode.literal_goal_text || "none",
+    goalHeading,
+    goalText,
     "",
     "Autonomy policy:",
     "- Continue until the locked goal is honestly done, not just until one local step looks complete.",
@@ -542,6 +556,9 @@ export function buildOmniEvaluationPrompt({
   session,
   omniMemory = null,
 }) {
+  const storedGoalCapsule = String(omniMemory?.goal_capsule || "").trim() || null;
+  const goalReference = storedGoalCapsule || getLockedGoalText(autoMode) || "none";
+  const latestWorkerInstruction = extractLatestSpikeTask(exchangeEntry?.user_prompt);
   const lines = [
     "You are Omni, the autonomy supervisor for Spike.",
     "Return JSON only. No markdown. No prose outside JSON.",
@@ -550,22 +567,26 @@ export function buildOmniEvaluationPrompt({
     "- Stay locked to the user goal.",
     "- Spike remains the only heavy worker.",
     "- Treat the current proof line as a means to the goal, not as the goal itself.",
+    storedGoalCapsule
+      ? "- The locked goal reference below is a compact capsule. Keep it faithful and do not drift the mission."
+      : "- The locked goal below is the full source objective. Distill it into a short faithful goal_capsule for future continuation prompts.",
     "- If the current proof line is exhausted but the bigger goal still has an honest next path, return pivot_to_next_line instead of blocked_external.",
     "- blocked_external is only for real external hard stops.",
     "- Bounded side work is allowed only when it directly serves the locked goal and does not disrupt a healthy main line.",
-    "- The real Spike wrapper already includes the locked goal and autonomy policy, so the handoff text should be concrete and operational, not a full mission restatement.",
+    "- The real Spike wrapper already includes goal lock and autonomy policy, so the handoff text should be concrete and operational, not a full mission restatement.",
     "- Never return a useless generic continue. The next action must say what Spike should actually do next.",
     "- If the live proof line is healthy and waiting, prefer continue_after_sleep with sleep_minutes 1..60 instead of instant re-pinging.",
+    "- Return goal_capsule as a very short 1-2 sentence goal interpretation suitable for future continuation prompts. Reuse it when it is still accurate.",
     "",
     "Required JSON shape:",
-    '{"decision_mode":"continue_same_line|continue_after_sleep|pivot_to_next_line|blocked_external|done|failed","summary":"short text","current_proof_line":"string or null","proof_line_status":"string or null","why_this_matters_to_goal":"string or null","what_changed":"string or null","goal_unsatisfied":"string or null","next_prompt":"string or null","side_work":["optional bounded goal-linked side work"],"do_not_regress":["optional constraints"],"known_bottlenecks":["optional bottlenecks"],"candidate_pivots":["optional pivot options"],"supervisor_notes":["optional notes"],"sleep_minutes":"integer 1..60 or null","user_message":"string or null","blocked_reason":"string or null"}',
+    '{"decision_mode":"continue_same_line|continue_after_sleep|pivot_to_next_line|blocked_external|done|failed","summary":"short text","goal_capsule":"string or null","current_proof_line":"string or null","proof_line_status":"string or null","why_this_matters_to_goal":"string or null","what_changed":"string or null","goal_unsatisfied":"string or null","next_prompt":"string or null","side_work":["optional bounded goal-linked side work"],"do_not_regress":["optional constraints"],"known_bottlenecks":["optional bottlenecks"],"candidate_pivots":["optional pivot options"],"supervisor_notes":["optional notes"],"sleep_minutes":"integer 1..60 or null","user_message":"string or null","blocked_reason":"string or null"}',
     "",
     `session_key: ${session.session_key}`,
     `topic_id: ${session.topic_id}`,
     `workspace_cwd: ${session.workspace_binding?.cwd ?? "unknown"}`,
     "",
-    "Locked goal:",
-    autoMode.normalized_goal_interpretation || autoMode.literal_goal_text || "none",
+    storedGoalCapsule ? "Locked goal capsule:" : "Locked goal:",
+    goalReference,
     "",
     pendingUserInput ? `Fresh operator input: ${pendingUserInput}` : "Fresh operator input: none",
   ];
@@ -597,7 +618,12 @@ export function buildOmniEvaluationPrompt({
   pushOptionalListSection(lines, "Candidate pivots memory:", omniMemory?.candidate_pivots);
   pushOptionalListSection(lines, "Do-not-regress memory:", omniMemory?.do_not_regress);
   pushOptionalListSection(lines, "Supervisor notes memory:", omniMemory?.supervisor_notes);
-  pushOptionalSection(lines, "Latest Spike prompt:", exchangeEntry?.user_prompt || "none");
+  pushOptionalSection(
+    lines,
+    "Latest Spike worker instruction:",
+    latestWorkerInstruction || "none",
+    { maxChars: 1600 },
+  );
   pushOptionalSection(
     lines,
     "Latest Spike final reply:",

@@ -195,6 +195,7 @@ export function parseOmniDecision(text) {
     userMessage,
     summary,
     sleepMinutes,
+    goalCapsule: readOptionalTextField(payload, "goal_capsule"),
     currentProofLine: readOptionalTextField(payload, "current_proof_line"),
     proofLineStatus: normalizeProofLineStatus(
       mode,

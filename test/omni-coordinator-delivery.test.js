@@ -120,3 +120,148 @@ test("sendPromptToSpike computes auto-mode and Omni memory patches from fresh st
   assert.equal(updatedSession.auto_mode.blocked_reason, null);
   assert.equal(updatedSession.auto_mode.pending_user_input, null);
 });
+
+test("sendPromptToSpike uses a compact goal capsule for continuation on a live thread", async () => {
+  const queued = [];
+  const longGoal = [
+    "Drive Arseed toward a real Snapseed-like daily-driver editor.",
+    "Scope and product line: Linux, Android, local web.",
+    "Hard success rules: ship working behavior, not shell progress.",
+  ].join(" ");
+
+  await sendPromptToSpike(
+    {
+      serviceState: {},
+      promptHandoffStore: {
+        async queue(_session, payload) {
+          queued.push(payload);
+        },
+      },
+      async loadOmniMemory() {
+        return {
+          goal_capsule: "Ship a Snapseed-like editor without losing daily-driver usability.",
+          goal_constraints: [],
+          continuation_count_since_compact: 0,
+          first_omni_prompt_at: "2026-04-05T00:00:00.000Z",
+          last_decision_mode: "continue_same_line",
+          primary_next_action: "Old action",
+        };
+      },
+      sessionService: {
+        async updateAutoMode(session, patch) {
+          const resolvedPatch =
+            typeof patch === "function"
+              ? await patch({
+                  session,
+                  autoMode: normalizeAutoModeState(session.auto_mode),
+                  now: "2026-04-05T12:00:00.000Z",
+                })
+              : patch;
+          return {
+            ...session,
+            auto_mode: normalizeAutoModeState({
+              ...session.auto_mode,
+              ...resolvedPatch,
+            }),
+          };
+        },
+      },
+      omniMemoryStore: {
+        async patch(_session, patch) {
+          return typeof patch === "function" ? patch({}) : patch;
+        },
+      },
+    },
+    {
+      ...buildSession({
+        literal_goal_text: longGoal,
+        normalized_goal_interpretation: longGoal,
+      }),
+      codex_thread_id: "thread-live",
+    },
+    "Run the next bounded verification.",
+    {
+      mode: "continuation",
+      decisionMode: "continue_same_line",
+    },
+  );
+
+  assert.equal(queued.length, 1);
+  assert.match(queued[0].prompt, /Locked goal capsule:/u);
+  assert.match(
+    queued[0].prompt,
+    /Ship a Snapseed-like editor without losing daily-driver usability\./u,
+  );
+  assert.doesNotMatch(queued[0].prompt, /Scope and product line:/u);
+});
+
+test("sendPromptToSpike keeps full goal context for a continuation after compact rebuild", async () => {
+  const queued = [];
+  const longGoal = [
+    "Drive Arseed toward a real Snapseed-like daily-driver editor.",
+    "Scope and product line: Linux, Android, local web.",
+    "Hard success rules: ship working behavior, not shell progress.",
+  ].join(" ");
+
+  await sendPromptToSpike(
+    {
+      serviceState: {},
+      promptHandoffStore: {
+        async queue(_session, payload) {
+          queued.push(payload);
+        },
+      },
+      async loadOmniMemory() {
+        return {
+          goal_capsule: "Ship a Snapseed-like editor without losing daily-driver usability.",
+          goal_constraints: [],
+          continuation_count_since_compact: 0,
+          first_omni_prompt_at: "2026-04-05T00:00:00.000Z",
+          last_decision_mode: "pivot_to_next_line",
+          primary_next_action: "Old action",
+        };
+      },
+      sessionService: {
+        async updateAutoMode(session, patch) {
+          const resolvedPatch =
+            typeof patch === "function"
+              ? await patch({
+                  session,
+                  autoMode: normalizeAutoModeState(session.auto_mode),
+                  now: "2026-04-05T12:00:00.000Z",
+                })
+              : patch;
+          return {
+            ...session,
+            auto_mode: normalizeAutoModeState({
+              ...session.auto_mode,
+              ...resolvedPatch,
+            }),
+          };
+        },
+      },
+      omniMemoryStore: {
+        async patch(_session, patch) {
+          return typeof patch === "function" ? patch({}) : patch;
+        },
+      },
+    },
+    {
+      ...buildSession({
+        literal_goal_text: longGoal,
+        normalized_goal_interpretation: longGoal,
+      }),
+      codex_thread_id: null,
+    },
+    "Run the next bounded verification.",
+    {
+      mode: "continuation",
+      decisionMode: "pivot_to_next_line",
+    },
+  );
+
+  assert.equal(queued.length, 1);
+  assert.match(queued[0].prompt, /Locked goal:/u);
+  assert.match(queued[0].prompt, /Scope and product line: Linux, Android, local web\./u);
+  assert.doesNotMatch(queued[0].prompt, /Locked goal capsule:/u);
+});

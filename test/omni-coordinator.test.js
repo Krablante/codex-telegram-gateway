@@ -64,6 +64,8 @@ test("OmniCoordinator captures the goal, explains the next step, and forwards th
   assert.equal(harness.sent.length, 2);
   assert.match(harness.sent[1].text, /Spike/u);
   assert.match(pendingPrompt.prompt, /Autonomous continuation context\./u);
+  assert.match(pendingPrompt.prompt, /Locked goal:\nShip Omni auto mode safely\./u);
+  assert.doesNotMatch(pendingPrompt.prompt, /Locked goal capsule:/u);
 });
 
 test("OmniCoordinator evaluates a Spike final event once and continues without re-looping", async () => {
@@ -96,6 +98,9 @@ test("OmniCoordinator evaluates a Spike final event once and continues without r
     last_omni_prompt_message_id: "700",
   });
   session = await harness.sessionStore.patch(session, {
+    codex_thread_id: "thread-1",
+  });
+  session = await harness.sessionStore.patch(session, {
     last_user_prompt: "Initial Spike prompt",
     last_agent_reply: "I updated the code but one validation branch still fails.",
     exchange_log_entries: 3,
@@ -122,8 +127,9 @@ test("OmniCoordinator evaluates a Spike final event once and continues without r
   assert.equal(harness.execPrompts.length, 1);
   assert.equal(harness.sent.length, 1);
   assert.match(harness.sent[0].text, /Omni -> Spike continuation handoff preview/u);
-  assert.match(harness.sent[0].text, /locked goal/u);
+  assert.match(harness.sent[0].text, /goal lock/u);
   assert.match(harness.sent[0].text, /Fix the remaining validation gap/u);
+  assert.match(pendingPrompt.prompt, /Locked goal capsule:/u);
   assert.match(pendingPrompt.prompt, /Fix the remaining validation gap/u);
 
   await harness.coordinator.scanPendingSpikeFinals();

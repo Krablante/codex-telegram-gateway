@@ -5,6 +5,7 @@ import {
   buildAutoContinuityRefreshFailedMessage,
 } from "./prompting.js";
 import { normalizeAutoModeState } from "../session-manager/auto-mode.js";
+import { buildFallbackGoalCapsule, getLockedGoalText } from "./goal-capsule.js";
 
 const AUTO_COMPACT_MIN_PROMPTS = 10;
 
@@ -18,17 +19,15 @@ export async function resetOmniMemory(coordinator, session) {
 
 export async function seedOmniMemoryFromGoal(coordinator, session) {
   const autoMode = normalizeAutoModeState(session.auto_mode);
-  const lockedGoal =
-    autoMode.normalized_goal_interpretation
-    || autoMode.literal_goal_text
-    || null;
+  const lockedGoal = getLockedGoalText(autoMode);
 
   if (!lockedGoal || !coordinator.omniMemoryStore) {
     return coordinator.loadOmniMemory(session);
   }
 
   return coordinator.omniMemoryStore.write(session, {
-    goal_constraints: [lockedGoal],
+    goal_capsule: null,
+    goal_constraints: [],
     current_proof_line: null,
     proof_line_status: null,
     last_spike_summary: null,
@@ -37,9 +36,9 @@ export async function seedOmniMemoryFromGoal(coordinator, session) {
     candidate_pivots: [],
     side_work_queue: [],
     supervisor_notes: [],
-    why_this_matters_to_goal: lockedGoal,
-    goal_unsatisfied: lockedGoal,
-    remaining_goal_gap: lockedGoal,
+    why_this_matters_to_goal: null,
+    goal_unsatisfied: null,
+    remaining_goal_gap: null,
     what_changed_since_last_cycle: null,
     last_what_changed: null,
     primary_next_action: null,
@@ -61,14 +60,18 @@ export async function updateOmniMemoryFromDecision(
     return coordinator.loadOmniMemory(session);
   }
 
+  const fallbackGoalCapsule = buildFallbackGoalCapsule(lockedGoal);
+
   return coordinator.omniMemoryStore.patch(session, (currentMemory) => ({
+    goal_capsule:
+      decision.goalCapsule === undefined
+        ? currentMemory.goal_capsule || fallbackGoalCapsule
+        : decision.goalCapsule || fallbackGoalCapsule,
     goal_constraints:
       decision.goalConstraints
       ?? (currentMemory.goal_constraints.length > 0
         ? currentMemory.goal_constraints
-        : lockedGoal
-          ? [lockedGoal]
-          : []),
+        : []),
     current_proof_line:
       decision.currentProofLine === undefined
         ? currentMemory.current_proof_line
@@ -87,7 +90,7 @@ export async function updateOmniMemoryFromDecision(
       decision.supervisorNotes ?? currentMemory.supervisor_notes,
     why_this_matters_to_goal:
       decision.whyThisMattersToGoal === undefined
-        ? currentMemory.why_this_matters_to_goal || lockedGoal
+        ? currentMemory.why_this_matters_to_goal
         : decision.whyThisMattersToGoal,
     goal_unsatisfied:
       decision.goalUnsatisfied === undefined

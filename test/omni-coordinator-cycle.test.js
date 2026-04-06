@@ -94,6 +94,8 @@ test("OmniCoordinator applies Omni v2 memory, pivot handoff, and auto-compact at
   assert.match(harness.sent[0].text, /auto-compact/u);
   assert.match(harness.sent[1].text, /Omni -> Spike continuation handoff preview/u);
   assert.match(pendingPrompt.prompt, /Goal-locked handoff from Omni\./u);
+  assert.match(pendingPrompt.prompt, /Locked goal:/u);
+  assert.doesNotMatch(pendingPrompt.prompt, /Locked goal capsule:/u);
   assert.match(
     pendingPrompt.prompt,
     /auto-compact cycle-boundary integration/u,
