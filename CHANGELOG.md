@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [0.3.27] - 2026-04-06
+
+Fixed:
+
+- `/auto` now refreshes continuity after 10 Omni handoffs at the next safe cycle boundary instead of waiting for an additional age threshold
+
+Docs:
+
+- Omni auto-mode docs now describe the count-only compact trigger explicitly
+
+Tests:
+
+- tightened the Omni cycle regression so a future `first_omni_prompt_at` can no longer block a valid count-based auto-compact
+
 ## [0.3.26] - 2026-04-05
 
 Fixed:
