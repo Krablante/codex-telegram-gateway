@@ -63,6 +63,39 @@ test("OmniCoordinator preserves existing side work when a later decision omits t
   ]);
 });
 
+test("OmniCoordinator keeps legacy remaining_goal_gap synced with goal_unsatisfied", async () => {
+  const harness = await buildHarness();
+  const session = await ensureSession(harness.sessionStore);
+
+  await harness.coordinator.updateOmniMemoryFromDecision(
+    session,
+    {
+      mode: "continue_same_line",
+      goalUnsatisfied: "Old gap.",
+      remainingGoalGap: "Old gap.",
+    },
+    {
+      lockedGoal: "Keep Omni goal-locked.",
+      spikeSummary: "Initial summary.",
+    },
+  );
+
+  const updated = await harness.coordinator.updateOmniMemoryFromDecision(
+    session,
+    {
+      mode: "pivot_to_next_line",
+      goalUnsatisfied: "New gap.",
+    },
+    {
+      lockedGoal: "Keep Omni goal-locked.",
+      spikeSummary: "Follow-up summary.",
+    },
+  );
+
+  assert.equal(updated.goal_unsatisfied, "New gap.");
+  assert.equal(updated.remaining_goal_gap, "New gap.");
+});
+
 test("OmniCoordinator parks setup replies instead of throwing on unavailable topics", async () => {
   const transportError = new Error(
     "Telegram API sendMessage failed: Bad Request: message thread not found",

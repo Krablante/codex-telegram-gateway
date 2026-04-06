@@ -61,6 +61,8 @@ export async function updateOmniMemoryFromDecision(
   }
 
   const fallbackGoalCapsule = buildFallbackGoalCapsule(lockedGoal);
+  const hasGoalUnsatisfied = decision.goalUnsatisfied !== undefined;
+  const hasRemainingGoalGap = decision.remainingGoalGap !== undefined;
 
   return coordinator.omniMemoryStore.patch(session, (currentMemory) => ({
     goal_capsule:
@@ -93,13 +95,17 @@ export async function updateOmniMemoryFromDecision(
         ? currentMemory.why_this_matters_to_goal
         : decision.whyThisMattersToGoal,
     goal_unsatisfied:
-      decision.goalUnsatisfied === undefined
-        ? currentMemory.goal_unsatisfied
-        : decision.goalUnsatisfied,
+      hasGoalUnsatisfied
+        ? decision.goalUnsatisfied
+        : hasRemainingGoalGap
+          ? decision.remainingGoalGap
+          : currentMemory.goal_unsatisfied,
     remaining_goal_gap:
-      decision.remainingGoalGap === undefined
-        ? currentMemory.remaining_goal_gap
-        : decision.remainingGoalGap,
+      hasRemainingGoalGap
+        ? decision.remainingGoalGap
+        : hasGoalUnsatisfied
+          ? decision.goalUnsatisfied
+          : currentMemory.remaining_goal_gap,
     what_changed_since_last_cycle:
       decision.whatChanged === undefined
         ? currentMemory.what_changed_since_last_cycle
