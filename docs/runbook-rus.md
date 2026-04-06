@@ -97,6 +97,7 @@ make service-status
 make service-logs
 make service-rollout
 make service-restart
+make service-restart-live
 make service-hard-restart
 ```
 
@@ -111,7 +112,10 @@ make service-install-omni
 make service-status-omni
 make service-logs-omni
 make service-restart-omni
+make service-restart-live
 ```
+
+`make service-restart-live` теперь каноничный путь для “перезапусти живого бота”: он перезапускает `Omni`, а `Spike` прокатывает через мягкий session-aware rollout. Raw `systemctl restart codex-telegram-gateway.service` не использовать, если не нужен именно слепой жёсткий рестарт.
 
 ## Что делать при проблемах
 

@@ -123,6 +123,7 @@ make service-status
 make service-status-omni
 make service-rollout
 make service-restart
+make service-restart-live
 make service-hard-restart
 make service-restart-omni
 make admin ARGS='status'
@@ -162,6 +163,7 @@ scripts\windows\user-e2e.cmd
 - `make user-login` and `scripts\windows\user-login.cmd` now use a small built-in Node terminal prompt layer; the old `input`/`inquirer`/`lodash` stack is no longer in the production dependency graph
 - `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`
 - on Linux, `make service-rollout` and `make service-restart` are the soft rollout path for Spike: the command waits until the replacement generation has actually taken leader traffic, while already active run topics keep finishing on the retiring generation; use `make service-hard-restart` only when you really want a blind restart
+- `make service-restart-live` is the canonical live-runtime restart path: it restarts `Omni` and then rolls `Spike` through the safe session-aware rollout flow
 - Windows process-tree shutdown now uses `taskkill /t` fallback instead of assuming POSIX-only negative-pid signaling, so interrupted Codex runs are less likely to leave orphaned child processes behind
 - local loopback IPC now retries blocked or reserved loopback ports on native Windows instead of failing the forwarding server on the first bind error
 - Telegram replies are rendered through a Telegram-safe HTML normalizer; headings, standard and expandable quotes, code, links, and readable nested lists are preserved

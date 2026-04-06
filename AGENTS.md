@@ -37,8 +37,14 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - `make soak`
 - `make service-install`
 - `make service-rollout`
+- `make service-restart-live`
 - `make test-live`
 - `make test`
+
+## Operator preferences
+
+- for “restart the live bot”, use `make service-restart-live`; it restarts `Omni` and rolls `Spike` softly
+- never use raw `systemctl restart codex-telegram-gateway.service` for ordinary live updates; that is the blind hard-restart path and can cut an active run
 
 ## Boundaries
 

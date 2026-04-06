@@ -97,6 +97,7 @@ make service-status
 make service-logs
 make service-rollout
 make service-restart
+make service-restart-live
 make service-hard-restart
 ```
 
@@ -111,7 +112,10 @@ make service-install-omni
 make service-status-omni
 make service-logs-omni
 make service-restart-omni
+make service-restart-live
 ```
+
+`make service-restart-live` is the canonical live-runtime restart: it restarts `Omni` and then rolls `Spike` through the soft session-aware path. Avoid raw `systemctl restart codex-telegram-gateway.service` unless you explicitly want the blind hard-restart behavior.
 
 ## Failure Handling
 
