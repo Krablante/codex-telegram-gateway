@@ -1,15 +1,103 @@
-# codex-telegram-gateway
+<p align="center">
+  <img src="./assets/readme/codex-telegram-gateway-banner.svg" alt="codex-telegram-gateway banner">
+</p>
 
-Personal Telegram gateway for the real local `codex` runtime.
+<h1 align="center">codex-telegram-gateway</h1>
 
-This repo keeps the surface small:
+<p align="center">
+  <strong>Run Codex from Telegram without dragging a heavyweight agent stack into every prompt.</strong>
+</p>
 
-- one Telegram topic = one session
-- `Spike` is the main worker bot
-- optional `Omni` is the second bot for `/auto`
-- `Zoo` is a dedicated control-only topic for per-project tamagotchi snapshots
-- state lives under the configured state root, not in the repo
-- code shape is modular-first: thin routers, domain handlers, focused test ownership
+<p align="center">
+  One topic = one session. <code>Spike</code> talks directly to <code>codex</code>. Optional <code>Omni</code> supervises <code>/auto</code>. <code>Zoo</code> adds a playful side lane for project stats.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Krablante/codex-telegram-gateway/releases">
+    <img src="https://img.shields.io/github/v/release/Krablante/codex-telegram-gateway?style=for-the-badge" alt="GitHub release">
+  </a>
+  <a href="https://github.com/Krablante/codex-telegram-gateway/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/Krablante/codex-telegram-gateway/ci.yml?branch=main&style=for-the-badge" alt="CI status">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License">
+  </a>
+  <img src="https://img.shields.io/badge/Node-20%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node 20+">
+  <img src="https://img.shields.io/badge/Telegram-Forum%20Topics-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram forum topics">
+</p>
+
+<p align="center">
+  <a href="./docs/setup.md">Setup</a>
+  ·
+  <a href="./docs/index.md">Docs</a>
+  ·
+  <a href="./docs/telegram-surface.md">Telegram Surface</a>
+  ·
+  <a href="./docs/omni-auto.md">Auto Mode</a>
+  ·
+  <a href="./docs/runbook.md">Runbook</a>
+  ·
+  <a href="./CHANGELOG.md">Changelog</a>
+</p>
+
+`codex-telegram-gateway` started as a personal tool for real work with friends and then got cleaned up into a public repo for anyone who wants a lean Telegram front end for Codex.
+
+If OpenClaw-like systems are your reference point, the difference here is intentional: the default path is just Telegram forum topics, a bot, and the actual local machine where `codex` already has your repos, auth, files, and tools. `Spike` talks to `codex` directly, so ordinary work does not pay for a permanent extra supervisor layer on every turn.
+
+`/auto` is there when autonomy is worth the extra spend. You give `Omni + Spike` a clear goal and a strong starting prompt, and they can keep pushing the project forward on their own. `Zoo` is separate, optional, and mostly there because a project tamagotchi is fun when it is also useful.
+
+## Why People Use It
+
+- one task, one topic, one durable session
+- direct Telegram -> `Spike` -> `codex` flow for normal work
+- less prompt overhead than heavier always-on agent stacks
+- optional `Omni` only when `/auto` is actually worth the extra tokens
+- real local files and commands, not a fake hosted wrapper
+- recovery that survives long-running work
+
+## Mental Model
+
+| Piece | Role |
+| --- | --- |
+| `General` topic | global controls, `/guide`, `/help`, `/global`, creating new work topics |
+| work topic | the actual task lane |
+| `Spike` | the live worker that reads code, edits files, runs commands, and sends progress/final replies |
+| `Omni` | optional lightweight supervisor for `/auto` |
+| `Zoo` topic | optional menu-only project tamagotchi lane |
+| local state root | durable memory: sessions, briefs, logs, queued prompts, artifacts |
+
+Architecture at a glance:
+
+```text
+Telegram forum
+├─ General
+│  ├─ /help
+│  ├─ /guide
+│  └─ /global
+├─ Work topics
+│  ├─ plain prompts -> Spike
+│  ├─ /q, /wait, /suffix, /compact, /purge
+│  └─ /auto -> Omni supervises, Spike still does the heavy work
+└─ Zoo
+   └─ optional menu-only pet cards for projects
+
+Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
+```
+
+## Highlights
+
+- one Telegram topic maps to one durable local session
+- live follow-ups can steer into an active run
+- commentary-style progress delivery instead of raw tool noise
+- attachment-aware prompts, including file-first flows
+- `/new Topic Name` topic creation when the bot has Telegram rights
+- `/help` visual card and `/guide` beginner PDF
+- topic-local and global menus through `/menu` and `/global`
+- queued prompts with `/q`
+- compacted recovery memory rebuilt from the clean exchange log
+- operator-only emergency private chat lane
+- optional `Omni` bot with goal-locked `/auto`
+- optional `Zoo` topic for project tamagotchi snapshots
 
 ## Code Direction
 
