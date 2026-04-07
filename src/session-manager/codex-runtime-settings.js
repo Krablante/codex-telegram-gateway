@@ -267,6 +267,60 @@ function buildResolvedValue({ sessionValue, globalValue, fallbackValue }) {
   };
 }
 
+function resolveCompatibleModelValue({
+  availableModels = null,
+  sessionValue = null,
+  globalValue = null,
+  fallbackValue = null,
+} = {}) {
+  if (!availableModels || availableModels.length === 0) {
+    return buildResolvedValue({
+      sessionValue,
+      globalValue,
+      fallbackValue,
+    });
+  }
+
+  const resolveAvailableModelSlug = (value) => findAvailableModel(availableModels, value)?.slug ?? null;
+
+  const sessionModel = resolveAvailableModelSlug(sessionValue);
+  if (sessionModel) {
+    return {
+      value: sessionModel,
+      source: "topic",
+    };
+  }
+
+  const globalModel = resolveAvailableModelSlug(globalValue);
+  if (globalModel) {
+    return {
+      value: globalModel,
+      source: "global",
+    };
+  }
+
+  const fallbackModel = normalizeStoredModelOverride(fallbackValue);
+  if (fallbackModel) {
+    return {
+      value: fallbackModel,
+      source: "default",
+    };
+  }
+
+  const firstAvailableModel = normalizeStoredModelOverride(availableModels[0]?.slug);
+  if (firstAvailableModel) {
+    return {
+      value: firstAvailableModel,
+      source: "default",
+    };
+  }
+
+  return {
+    value: null,
+    source: "unset",
+  };
+}
+
 function findAvailableModel(availableModels, modelSlug) {
   const normalizedModel = normalizeStoredModelOverride(modelSlug);
   if (!normalizedModel) {
@@ -365,7 +419,8 @@ export function resolveCodexRuntimeProfile({
   const reasoningField = getSessionRuntimeSettingFieldName(target, "reasoning");
   const globalModelField = getGlobalRuntimeSettingFieldName(target, "model");
   const globalReasoningField = getGlobalRuntimeSettingFieldName(target, "reasoning");
-  const model = buildResolvedValue({
+  const model = resolveCompatibleModelValue({
+    availableModels,
     sessionValue:
       modelField
         ? normalizeString(session?.[modelField])?.toLowerCase() ?? null
