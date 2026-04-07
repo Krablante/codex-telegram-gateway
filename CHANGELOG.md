@@ -6,6 +6,8 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.30] - 2026-04-07
+
 Fixed:
 
 - changing the configured model now clears a stale incompatible reasoning override for Spike, Omni, and `/compact` instead of leaving hidden unsupported values in state
