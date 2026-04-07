@@ -9,6 +9,7 @@ The format is intentionally simple and human-readable.
 Fixed:
 
 - changing the configured model now clears a stale incompatible reasoning override for Spike, Omni, and `/compact` instead of leaving hidden unsupported values in state
+- stale unavailable model overrides now stop shadowing the configured default profile, while an explicit config default still survives a stale cached model list
 
 Docs:
 
