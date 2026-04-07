@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is intentionally simple and human-readable.
 
+## [Unreleased]
+
+Fixed:
+
+- changing the configured model now clears a stale incompatible reasoning override for Spike, Omni, and `/compact` instead of leaving hidden unsupported values in state
+
+Docs:
+
+- README, Telegram surface docs, state contract, testing docs, and both guidebooks now label the `/compact` profile more explicitly as a brief-rebuild summarizer setting
+
+Tests:
+
+- added regression coverage for `/compact` global panel controls plus compact runtime-profile resolution and stale-reasoning cleanup in `SessionService`
+
+## [0.3.29] - 2026-04-07
+
+Changed:
+
+- `General -> Bot Settings` now exposes a separate global model/reasoning pair for the temporary `/compact` summarizer instead of forcing brief rebuilds to reuse the live worker defaults
+
+Docs:
+
+- guidebooks, Telegram surface docs, and the state contract now explain that `/compact` uses its own global model/reasoning profile from `General -> Bot Settings`
+
+Tests:
+
+- added regression coverage for `/compact` global panel controls and the compact runtime profile used by `SessionCompactor`
+
 ## [0.3.28] - 2026-04-06
 
 Fixed:

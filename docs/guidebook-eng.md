@@ -37,14 +37,14 @@ Menus are the easier and safer path for things that change regularly but are not
 - viewing `Status` inside a topic;
 - changing the UI language through the global menu in `General`;
 - turning `wait` on or off;
-- opening `Bot Settings` and changing `Spike`/`Omni` model and reasoning there, plus the model/reasoning used by `/compact`;
+- opening `Bot Settings` and changing `Spike`/`Omni` model and reasoning there, plus the separate global model/reasoning used by the temporary `/compact` summarizer;
 - running topic ops through `Compact`, `Interrupt`, and `Purge` buttons;
 - turning suffixes on or off;
 - opening `Zoo` or running `Clear` straight from the global menu in `General`;
 - opening `Guide` or `Help` straight from the global menu in `General`;
 - refreshing the current screen.
 
-The practical rule is simple: if you need to change a stable setting, start with a menu. It is faster, cleaner, and usually does not require remembering syntax. A few layout details are worth knowing: the global menu now starts with `Bot Settings` and `Language` on the top row, keeps `Guide` and `Help` immediately below them, leaves `Wait` / `Suffix` and `Zoo` / `Clear` lower on the root screen, and still keeps bot-specific runtime controls behind a dedicated `Bot Settings` screen instead of spreading them directly across the root menu. The effective bot summary also stays intentionally compact, for example `spike: gpt-5.4 (xhigh)`.
+The practical rule is simple: if you need to change a stable setting, start with a menu. It is faster, cleaner, and usually does not require remembering syntax. A few layout details are worth knowing: the global menu now starts with `Bot Settings` and `Language` on the top row, keeps `Guide` and `Help` immediately below them, leaves `Wait` / `Suffix` and `Zoo` / `Clear` lower on the root screen, and still keeps bot-specific runtime controls behind a dedicated `Bot Settings` screen instead of spreading them directly across the root menu. The effective bot summary also stays intentionally compact, for example `spike: gpt-5.4 (xhigh)`. If you switch a model and the previously saved reasoning level is no longer supported there, the gateway drops that stale reasoning value for the same scope instead of keeping a broken override around.
 
 ## What menus do not replace
 

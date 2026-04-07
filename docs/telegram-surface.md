@@ -63,7 +63,7 @@ Current panel coverage:
 
 - `/wait global ...`
 - `/suffix global ...`
-- `Bot Settings` submenu for Spike, Omni, and `/compact` model/reasoning screens
+- `Bot Settings` submenu for Spike, Omni, and the global `/compact` summarizer model/reasoning screens
 - live limits summary on the root screen
 - interface language switch for the `General` control panel
 - `Zoo` button that opens or refreshes the dedicated Zoo topic/menu
@@ -72,6 +72,7 @@ Current panel coverage:
 - `/help` card delivery from the same menu
 
 Stable values are handled directly by buttons. Free-form values such as the global suffix text or a custom global wait value are entered by replying to the pinned menu message.
+If a model change makes the previously saved reasoning level unsupported in the same scope, that stale reasoning value is cleared automatically.
 
 `/menu` works only inside a topic. It opens or recreates one persistent topic-local control panel there, repins it, removes the replaced menu, and cleans up the transient Telegram pin notices. Telegram-style command suggestions such as `/menu@YourBot` are accepted too.
 
@@ -158,6 +159,8 @@ Omni:
 - `/omni_model global [show|list|clear|<slug>]`
 - `/omni_reasoning [show|list|clear|<level>]`
 - `/omni_reasoning global [show|list|clear|<level>]`
+
+`/compact` uses a separate global model/reasoning pair from `General -> /global -> Bot Settings`. That profile is menu-only today and affects only the temporary summarizer that rebuilds `active-brief.md`.
 
 `/status` shows the effective profile after topic/global/default merge and includes the same live limits summary that the root menus use.
 

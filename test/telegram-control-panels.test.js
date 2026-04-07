@@ -388,17 +388,17 @@ test("handleIncomingCallbackQuery opens bot settings inside the global control m
   assert.equal(answered.length, 1);
   assert.equal(edited.length, 1);
   assert.match(edited[0].text, /Bot settings|Настройки ботов/u);
-  assert.match(edited[0].text, /compact: gpt-5\.4 \(medium\)/u);
+  assert.match(edited[0].text, /\/compact: gpt-5\.4 \(medium\)/u);
   assert.equal(edited[0].reply_markup.inline_keyboard[0][0].text, "Spike model");
   assert.equal(
     edited[0].reply_markup.inline_keyboard.some((row) =>
-      row.some((button) => button.text === "Compact model"),
+      row.some((button) => button.text === "/compact model"),
     ),
     true,
   );
   assert.equal(
     edited[0].reply_markup.inline_keyboard.some((row) =>
-      row.some((button) => button.text === "Compact reasoning"),
+      row.some((button) => button.text === "/compact reasoning"),
     ),
     true,
   );
@@ -451,10 +451,61 @@ test("handleIncomingCallbackQuery applies compact model from the global control 
   assert.equal(answered.length, 1);
   assert.equal(edited.length, 1);
   assert.equal(store.getState().active_screen, "compact_model");
-  assert.match(edited[0].text, /Compact global model/u);
+  assert.match(edited[0].text, /Compact summarizer model/u);
   assert.match(edited[0].text, /(?:configured|настроено): gpt-5\.4-mini/u);
   const settings = await sessionService.getGlobalCodexSettings();
   assert.equal(settings.compact_model, "gpt-5.4-mini");
+});
+
+test("handleIncomingCallbackQuery applies compact reasoning from the global control panel", async () => {
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "compact_reasoning",
+  });
+  const sessionService = createGlobalControlSessionService();
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-compact-reasoning",
+      data: "gcfg:r:c:high",
+      from: { id: 5825672398, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1003577434463 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService,
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-action-applied");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(store.getState().active_screen, "compact_reasoning");
+  assert.match(edited[0].text, /Compact summarizer reasoning/u);
+  assert.match(edited[0].text, /(?:configured|настроено): High \(high\)/u);
+  const settings = await sessionService.getGlobalCodexSettings();
+  assert.equal(settings.compact_reasoning_effort, "high");
 });
 
 test("handleIncomingCallbackQuery shows the full global suffix text on the suffix screen", async () => {

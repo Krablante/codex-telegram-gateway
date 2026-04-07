@@ -7,8 +7,10 @@ import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import {
   buildEmptyGlobalCodexSettingsState,
   getGlobalRuntimeSettingFieldName,
+  getSupportedReasoningLevelsForModel,
   getSessionRuntimeSettingFieldName,
   loadAvailableCodexModels,
+  normalizeReasoningEffort,
   resolveCodexRuntimeProfile,
 } from "./codex-runtime-settings.js";
 import {
@@ -457,6 +459,75 @@ export class SessionService {
     return this.globalCodexSettingsStore.load({ force: true });
   }
 
+  async clearIncompatibleGlobalReasoningSetting(target, globalSettings) {
+    const reasoningField = getGlobalRuntimeSettingFieldName(target, "reasoning");
+    const configuredReasoning = reasoningField
+      ? normalizeReasoningEffort(globalSettings?.[reasoningField])
+      : null;
+    if (!reasoningField || !configuredReasoning || !this.globalCodexSettingsStore) {
+      return globalSettings;
+    }
+
+    const availableModels = await loadAvailableCodexModels({
+      configPath: this.config.codexConfigPath,
+    });
+    const runtimeProfile = resolveCodexRuntimeProfile({
+      session: null,
+      globalSettings,
+      config: this.config,
+      target,
+      availableModels,
+    });
+    const supportedLevels = new Set(
+      getSupportedReasoningLevelsForModel(
+        availableModels,
+        runtimeProfile.model,
+      ).map((entry) => entry.value),
+    );
+    if (supportedLevels.has(configuredReasoning)) {
+      return globalSettings;
+    }
+
+    return this.globalCodexSettingsStore.patch({
+      [reasoningField]: null,
+    });
+  }
+
+  async clearIncompatibleSessionReasoningSetting(session, target) {
+    const reasoningField = getSessionRuntimeSettingFieldName(target, "reasoning");
+    const configuredReasoning = reasoningField
+      ? normalizeReasoningEffort(session?.[reasoningField])
+      : null;
+    if (!reasoningField || !configuredReasoning) {
+      return session;
+    }
+
+    const availableModels = await loadAvailableCodexModels({
+      configPath: this.config.codexConfigPath,
+    });
+    const globalSettings = await this.getGlobalCodexSettings();
+    const runtimeProfile = resolveCodexRuntimeProfile({
+      session,
+      globalSettings,
+      config: this.config,
+      target,
+      availableModels,
+    });
+    const supportedLevels = new Set(
+      getSupportedReasoningLevelsForModel(
+        availableModels,
+        runtimeProfile.model,
+      ).map((entry) => entry.value),
+    );
+    if (supportedLevels.has(configuredReasoning)) {
+      return session;
+    }
+
+    return this.sessionStore.patch(session, {
+      [reasoningField]: null,
+    });
+  }
+
   async updateGlobalCodexSetting(target, kind, value) {
     const fieldName = getGlobalRuntimeSettingFieldName(target, kind);
     if (!fieldName) {
@@ -470,9 +541,14 @@ export class SessionService {
       };
     }
 
-    return this.globalCodexSettingsStore.patch({
+    const nextSettings = await this.globalCodexSettingsStore.patch({
       [fieldName]: value,
     });
+    if (kind !== "model") {
+      return nextSettings;
+    }
+
+    return this.clearIncompatibleGlobalReasoningSetting(target, nextSettings);
   }
 
   async clearGlobalCodexSetting(target, kind) {
@@ -485,9 +561,14 @@ export class SessionService {
       throw new Error(`Unsupported session Codex setting target=${target} kind=${kind}`);
     }
 
-    return this.sessionStore.patch(session, {
+    const updatedSession = await this.sessionStore.patch(session, {
       [fieldName]: value,
     });
+    if (kind !== "model") {
+      return updatedSession;
+    }
+
+    return this.clearIncompatibleSessionReasoningSetting(updatedSession, target);
   }
 
   async clearSessionCodexSetting(session, target, kind) {

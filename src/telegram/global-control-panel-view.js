@@ -147,7 +147,8 @@ function buildSuffixPreview(promptSuffixState, language = DEFAULT_UI_LANGUAGE) {
 }
 
 function buildBotProfileLine(label, profile, language = DEFAULT_UI_LANGUAGE) {
-  return `${label}: ${profile.model} (${formatCompactReasoningValue(profile.reasoningEffort)})`;
+  const renderedLabel = label === "compact" ? "/compact" : label;
+  return `${renderedLabel}: ${profile.model} (${formatCompactReasoningValue(profile.reasoningEffort)})`;
 }
 
 function buildGlobalControlPanelText({
@@ -216,6 +217,9 @@ function buildGlobalControlPanelText({
       english
         ? "Choose what you want to tune."
         : "Выбери, что хочешь настроить.",
+      english
+        ? "The /compact profile is used only when the bot rebuilds the brief."
+        : "Профиль /compact используется только когда бот пересобирает brief.",
       "",
       buildBotProfileLine("spike", profiles.spike, language),
       ...(omniEnabled
@@ -241,13 +245,20 @@ function buildGlobalControlPanelText({
         ? "Spike global model"
         : target === "omni"
           ? "Omni global model"
-          : "Compact global model";
+          : "Compact summarizer model";
     const configuredValue = globalSettings?.[`${target}_model`] ?? null;
     return [
       title,
       "",
       `${english ? "configured" : "настроено"}: ${formatConfiguredValue(configuredValue, language)}`,
       `${english ? "effective" : "effective"}: ${profiles[target].model}`,
+      ...(target === "compact"
+        ? [
+            english
+              ? "Used only by the temporary /compact summarizer."
+              : "Используется только временным summarizer для /compact.",
+          ]
+        : []),
       "",
       english ? "Tap a model or clear it." : "Выбери модель кнопкой или сбрось.",
       "",
@@ -271,7 +282,7 @@ function buildGlobalControlPanelText({
         ? "Spike global reasoning"
         : target === "omni"
           ? "Omni global reasoning"
-          : "Compact global reasoning";
+          : "Compact summarizer reasoning";
     const configuredValue = globalSettings?.[`${target}_reasoning_effort`] ?? null;
     return [
       title,
@@ -279,6 +290,13 @@ function buildGlobalControlPanelText({
       `${english ? "configured" : "настроено"}: ${formatReasoningValue(configuredValue, language)}`,
       `${english ? "effective" : "effective"}: ${formatReasoningValue(profiles[target].reasoningEffort, language)}`,
       `${english ? "model basis" : "модель-основа"}: ${profiles[target].model}`,
+      ...(target === "compact"
+        ? [
+            english
+              ? "Used only by the temporary /compact summarizer."
+              : "Используется только временным summarizer для /compact.",
+          ]
+        : []),
       "",
       english ? "Tap a supported level or clear it." : "Выбери поддерживаемый уровень или сбрось.",
     ].join("\n");
@@ -360,8 +378,8 @@ function buildBotSettingsKeyboard(omniEnabled) {
         ]]
       : []),
     [
-      buildInlineKeyboardButton("Compact model", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.compact_model}`),
-      buildInlineKeyboardButton("Compact reasoning", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.compact_reasoning}`),
+      buildInlineKeyboardButton("/compact model", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.compact_model}`),
+      buildInlineKeyboardButton("/compact reasoning", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.compact_reasoning}`),
     ],
     [buildInlineKeyboardButton("Back", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`)],
   ];

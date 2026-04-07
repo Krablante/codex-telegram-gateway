@@ -327,6 +327,46 @@ test("SessionService persists global and topic Codex runtime settings with topic
   assert.equal(profile.modelSource, "global");
 });
 
+test("SessionService resolves compact runtime settings from global defaults", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const settingsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const globalCodexSettingsStore = new GlobalCodexSettingsStore(settingsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
+      codexModel: "gpt-5.4",
+      codexReasoningEffort: "medium",
+    },
+    globalCodexSettingsStore,
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 3061,
+    topicName: "Compact runtime settings",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+
+  await service.updateGlobalCodexSetting("compact", "model", "gpt-5.4-mini");
+  await service.updateGlobalCodexSetting("compact", "reasoning", "high");
+
+  const profile = await service.resolveCodexRuntimeProfile(session, {
+    target: "compact",
+  });
+  assert.equal(profile.model, "gpt-5.4-mini");
+  assert.equal(profile.modelSource, "global");
+  assert.equal(profile.reasoningEffort, "high");
+  assert.equal(profile.reasoningSource, "global");
+});
+
 test("SessionService clamps inherited reasoning to a value supported by the resolved model", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -403,6 +443,245 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
   assert.equal(profile.model, "gpt-5.1-codex-mini");
   assert.equal(profile.modelSource, "topic");
   assert.equal(profile.reasoningEffort, "high");
+  assert.equal(profile.reasoningSource, "default");
+});
+
+test("SessionService falls back from unavailable stored models to an available default", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const settingsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
+  );
+  const codexConfigRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-config-"),
+  );
+  const codexConfigPath = path.join(codexConfigRoot, "config.toml");
+  await fs.writeFile(codexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(
+    path.join(codexConfigRoot, "models_cache.json"),
+    `${JSON.stringify({
+      models: [
+        {
+          slug: "gpt-5.4",
+          display_name: "GPT-5.4",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "low" },
+            { effort: "medium" },
+            { effort: "high" },
+          ],
+        },
+        {
+          slug: "gpt-5.4-mini",
+          display_name: "GPT-5.4-Mini",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "medium" },
+            { effort: "high" },
+          ],
+        },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const sessionStore = new SessionStore(sessionsRoot);
+  const globalCodexSettingsStore = new GlobalCodexSettingsStore(settingsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
+      codexConfigPath,
+      codexModel: "gpt-5.4",
+      codexReasoningEffort: "medium",
+    },
+    globalCodexSettingsStore,
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 3071,
+    topicName: "Unavailable model fallback",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+
+  await service.updateGlobalCodexSetting("compact", "model", "gpt-ghost");
+  await service.updateGlobalCodexSetting("compact", "reasoning", "high");
+
+  const profile = await service.resolveCodexRuntimeProfile(session, {
+    target: "compact",
+  });
+  assert.equal(profile.model, "gpt-5.4");
+  assert.equal(profile.modelSource, "default");
+  assert.equal(profile.reasoningEffort, "high");
+  assert.equal(profile.reasoningSource, "global");
+});
+
+test("SessionService clears stale global reasoning when the global model changes", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const settingsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
+  );
+  const codexConfigRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-config-"),
+  );
+  const codexConfigPath = path.join(codexConfigRoot, "config.toml");
+  await fs.writeFile(codexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(
+    path.join(codexConfigRoot, "models_cache.json"),
+    `${JSON.stringify({
+      models: [
+        {
+          slug: "gpt-5.4",
+          display_name: "GPT-5.4",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "low" },
+            { effort: "medium" },
+            { effort: "high" },
+            { effort: "xhigh" },
+          ],
+        },
+        {
+          slug: "gpt-5.1-codex-mini",
+          display_name: "GPT-5.1-Codex-Mini",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "medium" },
+            { effort: "high" },
+          ],
+        },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const sessionStore = new SessionStore(sessionsRoot);
+  const globalCodexSettingsStore = new GlobalCodexSettingsStore(settingsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
+      codexConfigPath,
+      codexModel: "gpt-5.4",
+      codexReasoningEffort: "medium",
+    },
+    globalCodexSettingsStore,
+  });
+
+  let session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 308,
+    topicName: "Compact runtime cleanup",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+
+  await service.updateGlobalCodexSetting("compact", "reasoning", "xhigh");
+  const cleanedSettings = await service.updateGlobalCodexSetting(
+    "compact",
+    "model",
+    "gpt-5.1-codex-mini",
+  );
+  assert.equal(cleanedSettings.compact_model, "gpt-5.1-codex-mini");
+  assert.equal(cleanedSettings.compact_reasoning_effort, null);
+
+  const profile = await service.resolveCodexRuntimeProfile(session, {
+    target: "compact",
+  });
+  assert.equal(profile.model, "gpt-5.1-codex-mini");
+  assert.equal(profile.reasoningEffort, "medium");
+  assert.equal(profile.reasoningSource, "default");
+});
+
+test("SessionService clears stale topic reasoning when the topic model changes", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const settingsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
+  );
+  const codexConfigRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-config-"),
+  );
+  const codexConfigPath = path.join(codexConfigRoot, "config.toml");
+  await fs.writeFile(codexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(
+    path.join(codexConfigRoot, "models_cache.json"),
+    `${JSON.stringify({
+      models: [
+        {
+          slug: "gpt-5.4",
+          display_name: "GPT-5.4",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "low" },
+            { effort: "medium" },
+            { effort: "high" },
+            { effort: "xhigh" },
+          ],
+        },
+        {
+          slug: "gpt-5.1-codex-mini",
+          display_name: "GPT-5.1-Codex-Mini",
+          default_reasoning_level: "medium",
+          supported_reasoning_levels: [
+            { effort: "medium" },
+            { effort: "high" },
+          ],
+        },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const sessionStore = new SessionStore(sessionsRoot);
+  const globalCodexSettingsStore = new GlobalCodexSettingsStore(settingsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
+      codexConfigPath,
+      codexModel: "gpt-5.4",
+      codexReasoningEffort: "medium",
+    },
+    globalCodexSettingsStore,
+  });
+
+  let session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 309,
+    topicName: "Topic runtime cleanup",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  session = await service.updateSessionCodexSetting(
+    session,
+    "spike",
+    "reasoning",
+    "xhigh",
+  );
+  session = await service.updateSessionCodexSetting(
+    session,
+    "spike",
+    "model",
+    "gpt-5.1-codex-mini",
+  );
+  assert.equal(session.spike_model_override, "gpt-5.1-codex-mini");
+  assert.equal(session.spike_reasoning_effort_override, null);
+
+  const profile = await service.resolveCodexRuntimeProfile(session, {
+    target: "spike",
+  });
+  assert.equal(profile.model, "gpt-5.1-codex-mini");
+  assert.equal(profile.reasoningEffort, "medium");
   assert.equal(profile.reasoningSource, "default");
 });
 
