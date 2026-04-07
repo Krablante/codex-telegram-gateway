@@ -21,6 +21,8 @@ test("GlobalCodexSettingsStore quarantines malformed state files and falls back 
     spike_reasoning_effort: null,
     omni_model: null,
     omni_reasoning_effort: null,
+    compact_model: null,
+    compact_reasoning_effort: null,
   });
 
   const filesAfterLoad = await fs.readdir(settingsRoot);

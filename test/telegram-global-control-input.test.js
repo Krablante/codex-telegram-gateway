@@ -47,10 +47,10 @@ test("global control panel suffix text flow applies reply-based manual input", a
     callbackQuery: {
       id: "cbq-2",
       data: "gcfg:s:input",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -79,8 +79,8 @@ test("global control panel suffix text flow applies reply-based manual input", a
     globalControlPanelStore: store,
     message: {
       text: "P.S.\nKeep it short everywhere.",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       reply_to_message: { message_id: 901 },
     },
     promptFragmentAssembler,
@@ -105,7 +105,7 @@ test("handleIncomingCallbackQuery clears pending global panel input", async () =
     pending_input: {
       kind: "suffix_text",
       requested_at: "2026-04-04T15:00:00.000Z",
-      requested_by_user_id: "1234567890",
+      requested_by_user_id: "5825672398",
       menu_message_id: 901,
       screen: "suffix",
     },
@@ -127,10 +127,10 @@ test("handleIncomingCallbackQuery clears pending global panel input", async () =
     callbackQuery: {
       id: "cbq-pending-clear",
       data: "gcfg:p:clear",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -163,7 +163,7 @@ test("global control panel rejects overly long suffix replies", async () => {
     pending_input: {
       kind: "suffix_text",
       requested_at: "2026-04-04T15:00:00.000Z",
-      requested_by_user_id: "1234567890",
+      requested_by_user_id: "5825672398",
       menu_message_id: 901,
       screen: "suffix",
     },
@@ -180,8 +180,8 @@ test("global control panel rejects overly long suffix replies", async () => {
     globalControlPanelStore: store,
     message: {
       text: tooLongSuffix,
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       reply_to_message: { message_id: 901 },
     },
     promptFragmentAssembler: new PromptFragmentAssembler(),
@@ -226,10 +226,10 @@ test("global control panel keeps pending reply target aligned when the menu mess
     callbackQuery: {
       id: "cbq-3",
       data: "gcfg:s:input",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,

@@ -43,10 +43,10 @@ test("topic control panel suffix reply flow applies manual input and clears pend
     callbackQuery: {
       id: "cbq-topic-suffix",
       data: "tcfg:s:input",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },
@@ -75,8 +75,8 @@ test("topic control panel suffix reply flow applies manual input and clears pend
     config,
     message: {
       text: "P.S.\nKeep it short in this topic.",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 55,
       reply_to_message: { message_id: 91 },
     },
@@ -121,10 +121,10 @@ test("topic control panel custom wait reply flow applies the parsed local wait",
     callbackQuery: {
       id: "cbq-topic-wait-custom",
       data: "tcfg:w:input",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },
@@ -152,8 +152,8 @@ test("topic control panel custom wait reply flow applies the parsed local wait",
     config,
     message: {
       text: "2m",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 55,
       reply_to_message: { message_id: 91 },
     },
@@ -165,8 +165,8 @@ test("topic control panel custom wait reply flow applies the parsed local wait",
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    chat: { id: -1003577434463 },
+    from: { id: 5825672398 },
     message_thread_id: 55,
   });
 
@@ -209,10 +209,10 @@ test("topic control panel keeps pending reply target aligned when the menu messa
     callbackQuery: {
       id: "cbq-topic-recreate",
       data: "tcfg:s:input",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },

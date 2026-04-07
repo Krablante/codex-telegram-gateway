@@ -39,10 +39,10 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
     callbackQuery: {
       id: "cbq-topic-1",
       data: "tcfg:w:300",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },
@@ -55,8 +55,8 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    chat: { id: -1003577434463 },
+    from: { id: 5825672398 },
     message_thread_id: 55,
   });
 
@@ -92,10 +92,10 @@ test("handleIncomingCallbackQuery renders status inside the topic control menu",
     callbackQuery: {
       id: "cbq-topic-status",
       data: "tcfg:n:st",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },
@@ -179,8 +179,8 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
     message: {
       text: "/menu",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 55,
     },
     serviceState: createServiceState(),
@@ -292,8 +292,8 @@ test("handleIncomingMessage opens the local topic control menu from a suggested 
     config,
     message: {
       text: "/menu@gatewaybot",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 55,
     },
     serviceState: createServiceState(),
@@ -317,7 +317,7 @@ test("handleIncomingMessage recreates the local topic control menu when an expli
     active_screen: "root",
   });
   const session = createTopicSession({
-    session_key: "-1001234567890:2203",
+    session_key: "-1003577434463:2203",
     topic_id: "2203",
     topic_name: "codex-telegram",
   });
@@ -345,8 +345,8 @@ test("handleIncomingMessage recreates the local topic control menu when an expli
     config,
     message: {
       text: "/menu@gatewaybot",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 2203,
     },
     serviceState: createServiceState(),
@@ -390,10 +390,10 @@ test("handleIncomingCallbackQuery opens bot settings inside the topic control me
     callbackQuery: {
       id: "cbq-topic-bots",
       data: "tcfg:n:b",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },
@@ -432,10 +432,10 @@ test("handleTopicControlCallbackQuery dispatches topic command buttons through t
     callbackQuery: {
       id: "cbq-topic-compact",
       data: "tcfg:cmd:compact",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 55,
       },
     },
