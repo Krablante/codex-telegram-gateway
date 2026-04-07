@@ -28,7 +28,8 @@ const DEFAULT_CODEX_REASONING_EFFORTS = CODEX_REASONING_EFFORTS.filter(
   (entry) => ["low", "medium", "high", "xhigh"].includes(entry.value),
 );
 
-const MODEL_COMMAND_TARGETS = new Set(["spike", "omni"]);
+const GLOBAL_RUNTIME_SETTING_TARGETS = new Set(["spike", "omni", "compact"]);
+const SESSION_RUNTIME_SETTING_TARGETS = new Set(["spike", "omni"]);
 const RUNTIME_SETTING_KINDS = new Set(["model", "reasoning"]);
 
 function normalizeString(value) {
@@ -92,9 +93,17 @@ export async function loadAvailableCodexModels({
   }
 }
 
-export function normalizeRuntimeSettingTarget(target) {
+export function normalizeRuntimeSettingTarget(target, { scope = "any" } = {}) {
   const normalized = String(target ?? "").trim().toLowerCase();
-  return MODEL_COMMAND_TARGETS.has(normalized) ? normalized : null;
+  if (scope === "session") {
+    return SESSION_RUNTIME_SETTING_TARGETS.has(normalized) ? normalized : null;
+  }
+
+  if (scope === "global" || scope === "any") {
+    return GLOBAL_RUNTIME_SETTING_TARGETS.has(normalized) ? normalized : null;
+  }
+
+  return null;
 }
 
 export function normalizeRuntimeSettingKind(kind) {
@@ -192,6 +201,8 @@ export function buildEmptyGlobalCodexSettingsState() {
     spike_reasoning_effort: null,
     omni_model: null,
     omni_reasoning_effort: null,
+    compact_model: null,
+    compact_reasoning_effort: null,
   };
 }
 
@@ -203,11 +214,13 @@ export function normalizeGlobalCodexSettingsState(payload) {
     spike_reasoning_effort: normalizeReasoningEffort(payload?.spike_reasoning_effort),
     omni_model: normalizeString(payload?.omni_model)?.toLowerCase() ?? null,
     omni_reasoning_effort: normalizeReasoningEffort(payload?.omni_reasoning_effort),
+    compact_model: normalizeString(payload?.compact_model)?.toLowerCase() ?? null,
+    compact_reasoning_effort: normalizeReasoningEffort(payload?.compact_reasoning_effort),
   };
 }
 
 export function getSessionRuntimeSettingFieldName(target, kind) {
-  const normalizedTarget = normalizeRuntimeSettingTarget(target);
+  const normalizedTarget = normalizeRuntimeSettingTarget(target, { scope: "session" });
   const normalizedKind = normalizeRuntimeSettingKind(kind);
   if (!normalizedTarget || !normalizedKind) {
     return null;
@@ -217,7 +230,7 @@ export function getSessionRuntimeSettingFieldName(target, kind) {
 }
 
 export function getGlobalRuntimeSettingFieldName(target, kind) {
-  const normalizedTarget = normalizeRuntimeSettingTarget(target);
+  const normalizedTarget = normalizeRuntimeSettingTarget(target, { scope: "global" });
   const normalizedKind = normalizeRuntimeSettingKind(kind);
   if (!normalizedTarget || !normalizedKind) {
     return null;
@@ -353,14 +366,17 @@ export function resolveCodexRuntimeProfile({
   const globalModelField = getGlobalRuntimeSettingFieldName(target, "model");
   const globalReasoningField = getGlobalRuntimeSettingFieldName(target, "reasoning");
   const model = buildResolvedValue({
-    sessionValue: normalizeString(session?.[modelField])?.toLowerCase() ?? null,
+    sessionValue:
+      modelField
+        ? normalizeString(session?.[modelField])?.toLowerCase() ?? null
+        : null,
     globalValue: normalizeString(globalSettings?.[globalModelField])?.toLowerCase() ?? null,
     fallbackValue: normalizeString(config?.codexModel)?.toLowerCase() ?? null,
   });
   const reasoningEffort = resolveCompatibleReasoningValue({
     availableModels,
     modelSlug: model.value,
-    sessionValue: normalizeReasoningEffort(session?.[reasoningField]),
+    sessionValue: reasoningField ? normalizeReasoningEffort(session?.[reasoningField]) : null,
     globalValue: normalizeReasoningEffort(globalSettings?.[globalReasoningField]),
     fallbackValue: fallbackReasoningEffort,
   });

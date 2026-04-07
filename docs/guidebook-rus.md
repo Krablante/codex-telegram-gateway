@@ -37,7 +37,7 @@
 - смотреть `Status` внутри темы;
 - менять язык интерфейса через global menu в `General`;
 - включать и выключать `wait`;
-- открывать `Bot Settings` и там менять `Spike`/`Omni` model и reasoning;
+- открывать `Bot Settings` и там менять `Spike`/`Omni` model и reasoning, а также model/reasoning для `/compact`;
 - запускать topic-операции через кнопки `Compact`, `Interrupt`, `Purge`;
 - включать и выключать suffix;
 - открывать `Zoo` или запускать `Clear` прямо из глобального меню в `General`;

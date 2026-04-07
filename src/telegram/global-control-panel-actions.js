@@ -16,6 +16,18 @@ import {
 } from "./global-control-panel-view.js";
 
 export function buildDispatchCommandText(action) {
+  const commandNameForTarget = (target, kind) => {
+    if (target === "spike") {
+      return kind === "model" ? "model" : "reasoning";
+    }
+
+    if (target === "omni") {
+      return kind === "model" ? "omni_model" : "omni_reasoning";
+    }
+
+    return null;
+  };
+
   if (action.kind === "wait_set") {
     return `/wait global ${action.value}`;
   }
@@ -25,11 +37,13 @@ export function buildDispatchCommandText(action) {
   }
 
   if (action.kind === "model_set") {
-    return `/${action.target === "spike" ? "model" : "omni_model"} global ${action.value}`;
+    const commandName = commandNameForTarget(action.target, "model");
+    return commandName ? `/${commandName} global ${action.value}` : null;
   }
 
   if (action.kind === "reasoning_set") {
-    return `/${action.target === "spike" ? "reasoning" : "omni_reasoning"} global ${action.value}`;
+    const commandName = commandNameForTarget(action.target, "reasoning");
+    return commandName ? `/${commandName} global ${action.value}` : null;
   }
 
   return null;

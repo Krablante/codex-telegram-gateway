@@ -27,6 +27,8 @@ const SCREEN_CODES = {
   spike_reasoning: "sr",
   omni_model: "om",
   omni_reasoning: "or",
+  compact_model: "cm",
+  compact_reasoning: "cr",
 };
 const SCREEN_IDS = Object.fromEntries(
   Object.entries(SCREEN_CODES).map(([screenId, code]) => [code, screenId]),
@@ -34,10 +36,12 @@ const SCREEN_IDS = Object.fromEntries(
 const TARGET_CODES = {
   spike: "s",
   omni: "o",
+  compact: "c",
 };
 const TARGET_IDS = {
   s: "spike",
   o: "omni",
+  c: "compact",
 };
 const WAIT_PRESETS = [
   { label: "30s", seconds: 30 },
@@ -210,22 +214,34 @@ function buildGlobalControlPanelText({
       english ? "Bot settings" : "Настройки ботов",
       "",
       english
-        ? "Open the bot you want to tune."
-        : "Выбери бота, настройки которого хочешь менять.",
+        ? "Choose what you want to tune."
+        : "Выбери, что хочешь настроить.",
       "",
       buildBotProfileLine("spike", profiles.spike, language),
       ...(omniEnabled
         ? [buildBotProfileLine("omni", profiles.omni, language)]
         : []),
+      buildBotProfileLine("compact", profiles.compact, language),
     ].join("\n");
   }
 
-  if (screen === "spike_model" || screen === "omni_model") {
-    const target = screen === "spike_model" ? "spike" : "omni";
+  if (
+    screen === "spike_model"
+    || screen === "omni_model"
+    || screen === "compact_model"
+  ) {
+    const target =
+      screen === "spike_model"
+        ? "spike"
+        : screen === "omni_model"
+          ? "omni"
+          : "compact";
     const title =
       target === "spike"
         ? "Spike global model"
-        : "Omni global model";
+        : target === "omni"
+          ? "Omni global model"
+          : "Compact global model";
     const configuredValue = globalSettings?.[`${target}_model`] ?? null;
     return [
       title,
@@ -239,12 +255,23 @@ function buildGlobalControlPanelText({
     ].join("\n");
   }
 
-  if (screen === "spike_reasoning" || screen === "omni_reasoning") {
-    const target = screen === "spike_reasoning" ? "spike" : "omni";
+  if (
+    screen === "spike_reasoning"
+    || screen === "omni_reasoning"
+    || screen === "compact_reasoning"
+  ) {
+    const target =
+      screen === "spike_reasoning"
+        ? "spike"
+        : screen === "omni_reasoning"
+          ? "omni"
+          : "compact";
     const title =
       target === "spike"
         ? "Spike global reasoning"
-        : "Omni global reasoning";
+        : target === "omni"
+          ? "Omni global reasoning"
+          : "Compact global reasoning";
     const configuredValue = globalSettings?.[`${target}_reasoning_effort`] ?? null;
     return [
       title,
@@ -332,6 +359,10 @@ function buildBotSettingsKeyboard(omniEnabled) {
           buildInlineKeyboardButton("Omni reasoning", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.omni_reasoning}`),
         ]]
       : []),
+    [
+      buildInlineKeyboardButton("Compact model", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.compact_model}`),
+      buildInlineKeyboardButton("Compact reasoning", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.compact_reasoning}`),
+    ],
     [buildInlineKeyboardButton("Back", `${GLOBAL_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`)],
   ];
 }
@@ -443,6 +474,10 @@ function buildGlobalControlPanelMarkup({
     return { inline_keyboard: buildModelKeyboard("omni", availableModels, language) };
   }
 
+  if (screen === "compact_model") {
+    return { inline_keyboard: buildModelKeyboard("compact", availableModels, language) };
+  }
+
   if (screen === "spike_reasoning") {
     return {
       inline_keyboard: buildReasoningKeyboard(
@@ -458,6 +493,16 @@ function buildGlobalControlPanelMarkup({
       inline_keyboard: buildReasoningKeyboard(
         "omni",
         getSupportedReasoningLevelsForModel(availableModels, profiles.omni.model),
+        language,
+      ),
+    };
+  }
+
+  if (screen === "compact_reasoning") {
+    return {
+      inline_keyboard: buildReasoningKeyboard(
+        "compact",
+        getSupportedReasoningLevelsForModel(availableModels, profiles.compact.model),
         language,
       ),
     };
@@ -482,8 +527,10 @@ export async function loadGlobalControlPanelView({
     || screen === "bot_settings"
     || screen === "spike_model"
     || screen === "omni_model"
+    || screen === "compact_model"
     || screen === "spike_reasoning"
-    || screen === "omni_reasoning";
+    || screen === "omni_reasoning"
+    || screen === "compact_reasoning";
 
   let availableModels = [];
   let globalSettings = null;
@@ -494,6 +541,10 @@ export async function loadGlobalControlPanelView({
     reasoningEffort: null,
   };
   let omniProfile = {
+    model: null,
+    reasoningEffort: null,
+  };
+  let compactProfile = {
     model: null,
     reasoningEffort: null,
   };
@@ -515,6 +566,13 @@ export async function loadGlobalControlPanelView({
       globalSettings,
       config,
       target: "omni",
+      availableModels,
+    });
+    compactProfile = resolveCodexRuntimeProfile({
+      session: null,
+      globalSettings,
+      config,
+      target: "compact",
       availableModels,
     });
   }
@@ -546,6 +604,7 @@ export async function loadGlobalControlPanelView({
     profiles: {
       spike: spikeProfile,
       omni: omniProfile,
+      compact: compactProfile,
     },
     waitState:
       needsWaitState

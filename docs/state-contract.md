@@ -44,6 +44,7 @@ Current slices guarantee:
 - `indexes/spike-leader.json` may track the current Spike intake-leader lease
 - `omni/indexes/omni-telegram-update-offset.json` may be refreshed by `make run-omni` or `make smoke-omni`
 - `settings/global-prompt-suffix.json` may store the persistent service-wide prompt suffix used by `/suffix global ...`
+- `settings/global-codex-settings.json` may store the persistent service-wide model/reasoning defaults for Spike, Omni, and `/compact`
 - `settings/global-control-panel.json` may store the persistent `General`-topic control-panel message id, active screen, panel UI language, and pending reply-based input state for `/global`
 - `settings/general-message-ledger.json` may store the tracked `General` message ids used by `/clear` so the bot can preserve the active menu and remove known clutter without a user-session sweep
 - `settings/rollout-coordination.json` may track the most recent Spike rollout request/in-progress/completed state and the retained topic-session keys

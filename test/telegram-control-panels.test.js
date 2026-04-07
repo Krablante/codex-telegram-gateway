@@ -40,8 +40,8 @@ test("handleIncomingMessage opens the persistent global control panel in General
     message: {
       text: "/global",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     promptFragmentAssembler: new PromptFragmentAssembler(),
     serviceState,
@@ -112,8 +112,8 @@ test("handleIncomingMessage opens the persistent global control panel when Gener
     message: {
       text: "/global",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 0,
     },
     promptFragmentAssembler: new PromptFragmentAssembler(),
@@ -150,8 +150,8 @@ test("handleIncomingMessage keeps /menu General guidance in the selected General
     message: {
       text: "/menu",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -201,10 +201,10 @@ test("handleIncomingCallbackQuery applies a global wait preset from the control 
     callbackQuery: {
       id: "cbq-1",
       data: "gcfg:w:60",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -221,8 +221,8 @@ test("handleIncomingCallbackQuery applies a global wait preset from the control 
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    chat: { id: -1003577434463 },
+    from: { id: 5825672398 },
   });
 
   assert.equal(result.reason, "global-control-action-applied");
@@ -261,10 +261,10 @@ test("handleGlobalControlCallbackQuery reports unavailable global wait without t
     callbackQuery: {
       id: "cbq-wait-unavailable",
       data: "gcfg:w:60",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -309,10 +309,10 @@ test("handleIncomingCallbackQuery updates the global panel language and refreshe
     callbackQuery: {
       id: "cbq-language",
       data: "gcfg:l:eng",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -365,10 +365,10 @@ test("handleIncomingCallbackQuery opens bot settings inside the global control m
     callbackQuery: {
       id: "cbq-global-bots",
       data: "gcfg:n:b",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -388,9 +388,73 @@ test("handleIncomingCallbackQuery opens bot settings inside the global control m
   assert.equal(answered.length, 1);
   assert.equal(edited.length, 1);
   assert.match(edited[0].text, /Bot settings|Настройки ботов/u);
+  assert.match(edited[0].text, /compact: gpt-5\.4 \(medium\)/u);
   assert.equal(edited[0].reply_markup.inline_keyboard[0][0].text, "Spike model");
+  assert.equal(
+    edited[0].reply_markup.inline_keyboard.some((row) =>
+      row.some((button) => button.text === "Compact model"),
+    ),
+    true,
+  );
+  assert.equal(
+    edited[0].reply_markup.inline_keyboard.some((row) =>
+      row.some((button) => button.text === "Compact reasoning"),
+    ),
+    true,
+  );
   assert.equal(edited[0].reply_markup.inline_keyboard.at(-1)[0].text, "Back");
   assert.equal(store.getState().active_screen, "bot_settings");
+});
+
+test("handleIncomingCallbackQuery applies compact model from the global control panel", async () => {
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "compact_model",
+  });
+  const sessionService = createGlobalControlSessionService();
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-compact-model",
+      data: "gcfg:m:c:gpt-5.4-mini",
+      from: { id: 5825672398, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1003577434463 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService,
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-action-applied");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(store.getState().active_screen, "compact_model");
+  assert.match(edited[0].text, /Compact global model/u);
+  assert.match(edited[0].text, /(?:configured|настроено): gpt-5\.4-mini/u);
+  const settings = await sessionService.getGlobalCodexSettings();
+  assert.equal(settings.compact_model, "gpt-5.4-mini");
 });
 
 test("handleIncomingCallbackQuery shows the full global suffix text on the suffix screen", async () => {
@@ -415,10 +479,10 @@ test("handleIncomingCallbackQuery shows the full global suffix text on the suffi
     callbackQuery: {
       id: "cbq-suffix-full",
       data: "gcfg:n:s",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -475,10 +539,10 @@ test("handleIncomingCallbackQuery sends help cards in the selected global panel 
     callbackQuery: {
       id: "cbq-help",
       data: "gcfg:h:show",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -528,10 +592,10 @@ test("handleIncomingCallbackQuery sends the guidebook in the selected global pan
     callbackQuery: {
       id: "cbq-guide",
       data: "gcfg:g:show",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -577,7 +641,7 @@ test("handleGlobalControlCallbackQuery dispatches /zoo from the global root menu
     callbackQuery: {
       id: "cbq-zoo-shortcut",
       data: "gcfg:z:show",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
         chat,
@@ -599,7 +663,7 @@ test("handleGlobalControlCallbackQuery dispatches /zoo from the global root menu
   assert.equal(result.reason, "global-control-zoo-opened");
   assert.equal(answered.length, 1);
   assert.deepEqual(dispatched, [{
-    actor: { id: 1234567890, is_bot: false },
+    actor: { id: 5825672398, is_bot: false },
     chat,
     commandText: "/zoo",
   }]);
@@ -625,10 +689,10 @@ test("handleIncomingCallbackQuery keeps zoo routing alive for the global Zoo but
     callbackQuery: {
       id: "cbq-zoo-live-route",
       data: "gcfg:z:show",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
     },
     config,
@@ -683,7 +747,7 @@ test("handleGlobalControlCallbackQuery dispatches /clear from the global root me
     callbackQuery: {
       id: "cbq-clear-shortcut",
       data: "gcfg:c:run",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
         message_id: 901,
         chat,
@@ -705,7 +769,7 @@ test("handleGlobalControlCallbackQuery dispatches /clear from the global root me
   assert.equal(result.reason, "global-control-clear-run");
   assert.equal(answered.length, 1);
   assert.deepEqual(dispatched, [{
-    actor: { id: 1234567890, is_bot: false },
+    actor: { id: 5825672398, is_bot: false },
     chat,
     commandText: "/clear",
   }]);

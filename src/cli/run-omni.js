@@ -254,8 +254,12 @@ async function main() {
     fileName: "omni-telegram-update-offset.json",
   });
   const sessionStore = new SessionStore(layout.sessions);
-  const sessionCompactor = new SessionCompactor({ sessionStore, config });
   const globalCodexSettingsStore = new GlobalCodexSettingsStore(layout.settings);
+  const sessionCompactor = new SessionCompactor({
+    sessionStore,
+    config,
+    globalCodexSettingsStore,
+  });
   const sessionLifecycleManager = new SessionLifecycleManager({
     config,
     sessionStore,

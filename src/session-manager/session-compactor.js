@@ -1,5 +1,10 @@
 import { runCodexTask } from "../pty-worker/codex-runner.js";
 import { normalizeAutoModeState } from "./auto-mode.js";
+import {
+  buildEmptyGlobalCodexSettingsState,
+  loadAvailableCodexModels,
+  resolveCodexRuntimeProfile,
+} from "./codex-runtime-settings.js";
 
 const MAX_SUMMARIZER_RETRIES = 1;
 const COMPACTION_APP_SERVER_BOOT_TIMEOUT_MS = 60000;
@@ -117,6 +122,7 @@ async function generateBriefWithCodex({
   config,
   exchangeLogEntries,
   exchangeLogPath,
+  runtimeProfile,
   reason,
   runTask,
   session,
@@ -144,6 +150,8 @@ async function generateBriefWithCodex({
         appServerBootTimeoutMs: COMPACTION_APP_SERVER_BOOT_TIMEOUT_MS,
         rolloutDiscoveryTimeoutMs: COMPACTION_ROLLOUT_DISCOVERY_TIMEOUT_MS,
         rolloutStallAfterChildExitMs: COMPACTION_ROLLOUT_STALL_AFTER_CHILD_EXIT_MS,
+        model: runtimeProfile?.model ?? null,
+        reasoningEffort: runtimeProfile?.reasoningEffort ?? null,
         onEvent: async (summary) => {
           if (summary?.kind === "agent_message" && typeof summary.text === "string") {
             finalAgentMessage = summary.text;
@@ -175,12 +183,31 @@ export class SessionCompactor {
   constructor({
     sessionStore,
     config = null,
+    globalCodexSettingsStore = null,
     runTask = runCodexTask,
   }) {
     this.sessionStore = sessionStore;
     this.config = config;
+    this.globalCodexSettingsStore = globalCodexSettingsStore;
     this.runTask = runTask;
     this.activeCompactions = new Map();
+  }
+
+  async loadCompactRuntimeProfile() {
+    const availableModels = await loadAvailableCodexModels({
+      configPath: this.config?.codexConfigPath,
+    });
+    const globalSettings = this.globalCodexSettingsStore
+      ? await this.globalCodexSettingsStore.load({ force: true })
+      : buildEmptyGlobalCodexSettingsState();
+
+    return resolveCodexRuntimeProfile({
+      session: null,
+      globalSettings,
+      config: this.config,
+      target: "compact",
+      availableModels,
+    });
   }
 
   isCompacting(sessionOrKey) {
@@ -232,6 +259,7 @@ export class SessionCompactor {
             config: this.config,
             exchangeLogEntries: exchangeLog.length,
             exchangeLogPath,
+            runtimeProfile: await this.loadCompactRuntimeProfile(),
             reason,
             runTask: this.runTask,
             session: current,

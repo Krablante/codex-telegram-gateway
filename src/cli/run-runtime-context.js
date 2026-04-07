@@ -79,7 +79,11 @@ export async function createRunRuntimeContext({
   const topicControlPanelStore = new TopicControlPanelStore(sessionStore);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   const promptHandoffStore = new OmniPromptHandoffStore(sessionStore);
-  const sessionCompactor = new SessionCompactor({ sessionStore, config });
+  const sessionCompactor = new SessionCompactor({
+    sessionStore,
+    config,
+    globalCodexSettingsStore,
+  });
   const sessionLifecycleManager = new SessionLifecycleManager({
     config,
     sessionStore,

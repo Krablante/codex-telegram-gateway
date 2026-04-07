@@ -63,7 +63,7 @@ Current panel coverage:
 
 - `/wait global ...`
 - `/suffix global ...`
-- `Bot Settings` submenu for Spike and Omni model/reasoning screens
+- `Bot Settings` submenu for Spike, Omni, and `/compact` model/reasoning screens
 - live limits summary on the root screen
 - interface language switch for the `General` control panel
 - `Zoo` button that opens or refreshes the dedicated Zoo topic/menu

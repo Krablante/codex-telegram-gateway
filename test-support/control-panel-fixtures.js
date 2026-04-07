@@ -1,8 +1,8 @@
 export const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -65,6 +65,8 @@ export function createGlobalControlSessionService(overrides = {}) {
     spike_reasoning_effort: null,
     omni_model: null,
     omni_reasoning_effort: null,
+    compact_model: null,
+    compact_reasoning_effort: null,
   };
 
   return {
@@ -174,8 +176,8 @@ export function createServiceState(overrides = {}) {
 
 export function createTopicSession(overrides = {}) {
   return {
-    session_key: "-1001234567890:55",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:55",
+    chat_id: "-1003577434463",
     topic_id: "55",
     topic_name: "Slice 4 test",
     ui_language: "rus",
@@ -187,10 +189,10 @@ export function createTopicSession(overrides = {}) {
     omni_model_override: null,
     omni_reasoning_effort_override: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
     ...overrides,
   };

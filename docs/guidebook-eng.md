@@ -37,7 +37,7 @@ Menus are the easier and safer path for things that change regularly but are not
 - viewing `Status` inside a topic;
 - changing the UI language through the global menu in `General`;
 - turning `wait` on or off;
-- opening `Bot Settings` and changing `Spike`/`Omni` model and reasoning there;
+- opening `Bot Settings` and changing `Spike`/`Omni` model and reasoning there, plus the model/reasoning used by `/compact`;
 - running topic ops through `Compact`, `Interrupt`, and `Purge` buttons;
 - turning suffixes on or off;
 - opening `Zoo` or running `Clear` straight from the global menu in `General`;

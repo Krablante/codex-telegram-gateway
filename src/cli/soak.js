@@ -55,8 +55,8 @@ function buildSyntheticTopicMessage({
     from: {
       id: Number(allowedUserId),
       is_bot: false,
-      first_name: "example",
-      username: "example",
+      first_name: "bloob",
+      username: "bloob",
     },
     chat: {
       id: Number(chatId),
@@ -104,7 +104,11 @@ async function main() {
   const globalPromptSuffixStore = new GlobalPromptSuffixStore(layout.settings);
   const globalCodexSettingsStore = new GlobalCodexSettingsStore(layout.settings);
   const sessionStore = new SessionStore(layout.sessions);
-  const sessionCompactor = new SessionCompactor({ sessionStore, config });
+  const sessionCompactor = new SessionCompactor({
+    sessionStore,
+    config,
+    globalCodexSettingsStore,
+  });
   const lifecycleManager = new SessionLifecycleManager({
     config,
     sessionStore,
