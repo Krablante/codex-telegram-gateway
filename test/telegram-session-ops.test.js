@@ -9,6 +9,7 @@ import {
   buildCompactMessage,
   buildCompactStartedMessage,
   buildDiffCleanMessage,
+  buildDiffUnavailableMessage,
   buildPurgedSessionMessage,
   buildPurgeAckMessage,
   buildPurgeBusyMessage,
@@ -16,10 +17,10 @@ import {
 } from "../src/telegram/command-router.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -47,8 +48,8 @@ function buildTopicCommandMessage(text, overrides = {}) {
   return {
     text,
     entities: [{ type: "bot_command", offset: 0, length: text.length }],
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_thread_id: 55,
     ...overrides,
   };
@@ -56,16 +57,16 @@ function buildTopicCommandMessage(text, overrides = {}) {
 
 function buildSession(overrides = {}) {
   return {
-    session_key: "-1001234567890:55",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:55",
+    chat_id: "-1003577434463",
     topic_id: "55",
     topic_name: "Test topic 1",
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
     ...overrides,
   };
@@ -78,7 +79,7 @@ function buildServiceState() {
     lastCommandName: null,
     lastCommandAt: null,
     botUsername: "gatewaybot",
-    allowedUserId: "1234567890",
+    allowedUserId: "5825672398",
     startedAt: "2026-03-22T12:00:00.000Z",
     handledUpdates: 3,
     acceptedPrompts: 1,
@@ -175,18 +176,18 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
     message: {
       text: "/new Slice 4 test",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: buildServiceState(),
     sessionService: {
       async resolveInheritedBinding() {
         return {
           binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
           inheritedFromSessionKey: null,
         };
@@ -225,7 +226,7 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
   const pinned = [];
   const topicControlPanelStore = createTopicControlPanelStore();
   const session = buildSession({
-    session_key: "-1001234567890:58",
+    session_key: "-1003577434463:58",
     topic_id: "58",
     ui_language: "rus",
     prompt_suffix_topic_enabled: true,
@@ -253,8 +254,8 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
     message: {
       text: "/new Local menu topic",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -328,8 +329,8 @@ test("handleIncomingMessage creates new topic session with explicit binding path
     message: {
       text: "/new cwd=homelab/infra/automation/codex-telegram-gateway Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -339,10 +340,10 @@ test("handleIncomingMessage creates new topic session with explicit binding path
           "homelab/infra/automation/codex-telegram-gateway",
         );
         return {
-          repo_root: "/workspace/codex-telegram-gateway",
-          cwd: "/workspace/codex-telegram-gateway",
+          repo_root: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+          cwd: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
           branch: "main",
-          worktree_path: "/workspace/codex-telegram-gateway",
+          worktree_path: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
         };
       },
       async createTopicSession({ title, workspaceBinding, inheritedFromSessionKey }) {
@@ -350,7 +351,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
         assert.equal(inheritedFromSessionKey, null);
         assert.equal(
           workspaceBinding.cwd,
-          "/workspace/codex-telegram-gateway",
+          "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
         );
         return {
           forumTopic: {
@@ -358,7 +359,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
             message_thread_id: 56,
           },
           session: buildSession({
-            session_key: "-1001234567890:56",
+            session_key: "-1003577434463:56",
             topic_id: "56",
             workspace_binding: workspaceBinding,
           }),
@@ -402,18 +403,18 @@ test("handleIncomingMessage creates a new topic in English when General panel la
     message: {
       text: "/new English topic",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: buildServiceState(),
     sessionService: {
       async resolveInheritedBinding() {
         return {
           binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
           inheritedFromSessionKey: null,
         };
@@ -427,7 +428,7 @@ test("handleIncomingMessage creates a new topic in English when General panel la
             message_thread_id: 57,
           },
           session: buildSession({
-            session_key: "-1001234567890:57",
+            session_key: "-1003577434463:57",
             topic_id: "57",
             ui_language: "eng",
           }),
@@ -465,8 +466,8 @@ test("handleIncomingMessage reports binding resolution failures for /new", async
     message: {
       text: "/new cwd=/missing/path Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -512,8 +513,8 @@ test("handleIncomingMessage reports binding resolution failures for /new in Engl
     message: {
       text: "/new cwd=/missing/path Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -586,6 +587,62 @@ test("handleIncomingMessage reports empty /diff inline when workspace is clean",
   assert.equal(
     messages[0].text,
     buildDiffCleanMessage(session, "2026-03-22T12:05:00.000Z"),
+  );
+});
+
+test("handleIncomingMessage reports unavailable /diff inline for non-git bindings", async () => {
+  const messages = [];
+  const session = buildSession({
+    workspace_binding: {
+      repo_root: "C:/Users/Friend/Desktop/plain-folder",
+      cwd: "C:/Users/Friend/Desktop/plain-folder",
+      branch: null,
+      worktree_path: "C:/Users/Friend/Desktop/plain-folder",
+    },
+  });
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendDocument() {
+        throw new Error("should not send a document for unavailable diff");
+      },
+      async sendMessage(payload) {
+        messages.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: buildTopicCommandMessage("/diff"),
+    serviceState: buildServiceState(),
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async createDiffArtifact() {
+        return {
+          unavailable: true,
+          reason: "workspace-not-git",
+          generatedAt: "2026-04-08T18:55:00.000Z",
+          cwd: session.workspace_binding.cwd,
+        };
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "diff");
+  assert.equal(messages.length, 1);
+  assert.equal(
+    messages[0].text,
+    buildDiffUnavailableMessage(session, "2026-04-08T18:55:00.000Z"),
   );
 });
 

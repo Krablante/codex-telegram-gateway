@@ -55,7 +55,7 @@ Menus do not replace the work itself. Some things still belong to plain text or 
 - `/guide`, `/zoo`, and `/clear` still work from `General` if you prefer direct commands;
 - `Zoo`, `Clear`, `Guide`, and `Help` are available as buttons in the global menu, but the direct commands still work too;
 - `/q`, when you want to explicitly queue the next prompt;
-- `/diff`;
+- `/diff`, to inspect git-backed changes; plain folders return a small unavailable reply instead of crashing the bot;
 - `/auto` and questions for `Omni`.
 
 One more practical detail matters: some values start from a menu but are not chosen by button. Custom wait values or free-form suffix text are usually entered as a reply to the menu message after the bot asks for input.
@@ -141,7 +141,7 @@ If you do not want to keep many commands in your head, these are enough to start
 - `/menu` for the local topic menu;
 - `/status` for a quick topic check;
 - `/q` to queue the next prompt;
-- `/diff` to see what already changed;
+- `/diff` to see what already changed in a git-backed workspace;
 - `/compact` to compress a long topic into a brief;
 - `/guide` to receive the PDF guidebook;
 - `/zoo` to open the project board;

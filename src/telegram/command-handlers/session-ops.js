@@ -16,6 +16,7 @@ import {
   buildCompactMessage,
   buildCompactStartedMessage,
   buildDiffCleanMessage,
+  buildDiffUnavailableMessage,
   buildDocumentTooLargeMessage,
   buildNewTopicAckMessage,
   buildNewTopicBootstrapMessage,
@@ -140,6 +141,18 @@ export async function handleDiffCommand({
   language,
 }) {
   const diffArtifact = await sessionService.createDiffArtifact(session);
+  if (diffArtifact.unavailable) {
+    return {
+      handledSession: session,
+      responseText: buildDiffUnavailableMessage(
+        session,
+        diffArtifact.generatedAt,
+        language,
+      ),
+      reason: "diff-unavailable",
+    };
+  }
+
   if (diffArtifact.clean) {
     return {
       handledSession: session,

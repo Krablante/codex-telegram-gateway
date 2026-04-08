@@ -2,7 +2,7 @@
 
 ## Canonical state root
 
-`${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
+`/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway`
 
 ## Mutable surfaces
 
@@ -64,7 +64,7 @@ Current slices guarantee:
 - `/auto` may also trigger the same compaction path internally at a safe cycle boundary, with a short visible Telegram notice but without changing the manual `/compact` UX
 - if a stored `codex_thread_id` no longer resumes cleanly after the controlled retry, the next run may clear it, regenerate `active-brief.md` from `exchange-log.jsonl`, and continue from that brief
 - active follow-up user input may be buffered briefly and then live-steered into the same current Codex turn instead of starting a second run
-- if the live websocket transport drops mid-run, completion may continue via rollout-file recovery instead of failing immediately
+- if the live websocket transport drops mid-run, or native Windows finalization leaves the websocket alive without a terminal event, completion may continue via rollout-file recovery instead of failing immediately
 - if a long final reply partially reaches Telegram before a later chunk fails, Spike final-event metadata may still record the already-delivered Telegram message ids
 - run completion may hold a short grace window after primary `turn/completed` so a slightly late primary final answer still lands before the worker falls back to a generic success reply
 - during service rollout, the leader generation may forward raw Telegram updates for a still-running foreign-owned topic to the retiring generation over local loopback IPC
@@ -73,12 +73,12 @@ Current slices guarantee:
 - external `forum_topic_closed` / `forum_topic_reopened` service messages may move sessions between `active` and `parked`
 - transport failures like unavailable/deleted topic may also move a session into `parked`
 - expired parked sessions may be auto-purged during periodic retention sweep
-- new topic creation may resolve explicit workspace binding from `/new cwd=...` against the configured workspace root
+- new topic creation may resolve explicit workspace binding from `/new cwd=...` against the atlas workspace root
 - `/purge` removes compact memory files and artifacts, then leaves only a tiny `meta.json` purged stub until the topic is reused
 
 ## Rules
 
-- state lives under the configured state root, never inside the source repo
+- state lives under `atlas/state/...`, never inside the source repo
 - bot tokens and runtime credentials stay only here
 - later session artifacts inherit the `chat_id/topic_id` geography from the plan
 - the gateway does not keep tool chatter or full PTY transcripts as canonical memory; the clean exchange log is the durable raw surface, and the compact brief is a derived recovery surface

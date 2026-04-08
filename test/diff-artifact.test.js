@@ -33,7 +33,7 @@ test("createWorkspaceDiffArtifact returns clean snapshot for unchanged workspace
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 91,
     createdVia: "test",
     workspaceBinding: {
@@ -60,7 +60,7 @@ test("createWorkspaceDiffArtifact stores a diff artifact for dirty workspace", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 92,
     createdVia: "test",
     workspaceBinding: {
@@ -84,4 +84,35 @@ test("createWorkspaceDiffArtifact stores a diff artifact for dirty workspace", a
   assert.match(artifactText, /Workspace diff snapshot/u);
   assert.match(artifactText, /tracked\.txt/u);
   assert.match(artifactText, /new\.txt/u);
+});
+
+test("createWorkspaceDiffArtifact reports unavailable for non-git workspace bindings", async () => {
+  const cwd = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-plain-workspace-"),
+  );
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 93,
+    createdVia: "test",
+    workspaceBinding: {
+      repo_root: cwd,
+      cwd,
+      branch: null,
+      worktree_path: cwd,
+    },
+  });
+
+  const result = await createWorkspaceDiffArtifact({
+    session,
+    sessionStore,
+  });
+
+  assert.equal(result.unavailable, true);
+  assert.equal(result.reason, "workspace-not-git");
+  assert.equal(result.cwd, cwd);
+  assert.ok(result.generatedAt);
 });

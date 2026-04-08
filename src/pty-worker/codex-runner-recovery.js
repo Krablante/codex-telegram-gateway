@@ -5,6 +5,10 @@ import { safeJsonParse } from "./codex-runner-common.js";
 
 const ROLLOUT_REPLAY_OVERLAP_BYTES = 64 * 1024;
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function buildSummaryReplayKey(summary, { primaryThreadId = null, latestThreadId = null } = {}) {
   if (!summary || typeof summary !== "object") {
     return null;
@@ -165,6 +169,104 @@ export async function readRolloutDelta({
   }
 }
 
+export async function watchRolloutForTaskComplete({
+  codexSessionsRoot,
+  rolloutPollIntervalMs,
+  getSettled,
+  getWatchingDisabled,
+  getActiveTurnId,
+  getHasPrimaryFinalAnswer,
+  getPrimaryThreadId,
+  getLatestThreadId,
+  getRolloutPath,
+  setRolloutPath,
+  getRolloutObservedOffset,
+  rememberSummary,
+  emitSummary,
+  onTaskComplete,
+}) {
+  let resolvedRolloutPath = getRolloutPath();
+  let offset = Number.isInteger(getRolloutObservedOffset?.())
+    ? Math.max(0, getRolloutObservedOffset())
+    : 0;
+  let carryover = Buffer.alloc(0);
+
+  while (!getSettled()) {
+    if (getWatchingDisabled?.()) {
+      return {
+        completed: false,
+        rolloutPath: resolvedRolloutPath,
+        offset,
+      };
+    }
+
+    if (!resolvedRolloutPath) {
+      const resolved = await readLatestContextSnapshot({
+        threadId: getPrimaryThreadId() || getLatestThreadId(),
+        sessionsRoot: codexSessionsRoot,
+        knownRolloutPath: resolvedRolloutPath,
+      });
+      resolvedRolloutPath = resolved.rolloutPath || resolvedRolloutPath;
+      if (resolvedRolloutPath) {
+        setRolloutPath?.(resolvedRolloutPath);
+      } else {
+        await sleep(rolloutPollIntervalMs);
+        continue;
+      }
+    }
+
+    let delta = null;
+    try {
+      delta = await readRolloutDelta({
+        filePath: resolvedRolloutPath,
+        offset,
+        carryover,
+      });
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        await sleep(rolloutPollIntervalMs);
+        continue;
+      }
+      throw error;
+    }
+    offset = delta.nextOffset;
+    carryover = delta.carryover;
+
+    for (const line of delta.lines) {
+      const primaryThreadId = getPrimaryThreadId() || getLatestThreadId();
+      const latestThreadId = getLatestThreadId();
+      const summary = summarizeRolloutLine(line.text, {
+        primaryThreadId,
+        activeTurnId: getActiveTurnId?.() ?? null,
+      });
+      if (summary?.eventType !== "rollout.task_complete") {
+        continue;
+      }
+
+      const shouldEmit = !getHasPrimaryFinalAnswer?.();
+      const isNewSummary = rememberSummary(summary, { primaryThreadId, latestThreadId });
+      if (shouldEmit && isNewSummary && summary.text) {
+        await emitSummary(summary);
+      }
+
+      await onTaskComplete(summary);
+      return {
+        completed: true,
+        rolloutPath: resolvedRolloutPath,
+        offset,
+      };
+    }
+
+    await sleep(rolloutPollIntervalMs);
+  }
+
+  return {
+    completed: false,
+    rolloutPath: resolvedRolloutPath,
+    offset,
+  };
+}
+
 export async function followRolloutAfterDisconnect({
   disconnectError,
   codexSessionsRoot,
@@ -206,7 +308,7 @@ export async function followRolloutAfterDisconnect({
     if (Date.now() - startedAt >= rolloutDiscoveryTimeoutMs) {
       throw disconnectError;
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await sleep(250);
   }
 
   let offset = rolloutPathWasKnownAtDisconnect && Number.isInteger(observedOffset)
@@ -267,7 +369,7 @@ export async function followRolloutAfterDisconnect({
       );
     }
 
-    await new Promise((resolve) => setTimeout(resolve, rolloutPollIntervalMs));
+    await sleep(rolloutPollIntervalMs);
   }
 
   return {

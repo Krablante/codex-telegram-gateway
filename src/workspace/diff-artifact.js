@@ -3,6 +3,17 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+function isNonGitWorkspaceError(error) {
+  const details = [
+    error?.stderr?.trim(),
+    error?.stdout?.trim(),
+    error?.message,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return /not a git repository/i.test(details);
+}
+
 async function runGit(cwd, args) {
   try {
     const result = await execFileAsync("git", ["-C", cwd, ...args], {
@@ -53,12 +64,25 @@ function buildDiffSnapshot(session, generatedAt, status, unstagedDiff, stagedDif
 export async function createWorkspaceDiffArtifact({ session, sessionStore }) {
   const generatedAt = new Date().toISOString();
   const cwd = session.workspace_binding.cwd;
-  const status = await runGit(cwd, [
-    "status",
-    "--short",
-    "--branch",
-    "--untracked-files=all",
-  ]);
+  let status = null;
+  try {
+    status = await runGit(cwd, [
+      "status",
+      "--short",
+      "--branch",
+      "--untracked-files=all",
+    ]);
+  } catch (error) {
+    if (isNonGitWorkspaceError(error)) {
+      return {
+        unavailable: true,
+        reason: "workspace-not-git",
+        generatedAt,
+        cwd,
+      };
+    }
+    throw error;
+  }
   const unstagedDiff = await runGit(cwd, [
     "diff",
     "--no-ext-diff",

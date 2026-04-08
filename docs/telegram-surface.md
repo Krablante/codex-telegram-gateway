@@ -33,6 +33,8 @@ Spike-only mode:
 
 `/help` sends the visual help card as two separate file attachments.
 
+`/diff` is git-backed on purpose. If the current binding points at a plain folder instead of a repo, the bot now returns a small inline unavailable reply instead of throwing the update.
+
 `/guide` works in `General` only and sends the beginner PDF guidebook in the selected `General` language.
 
 `/clear` works in `General` only. It preserves the active global menu message and its current screen, then removes the tracked General clutter that the bot knows about. Successful cleanup stays silent; separate General messages are reserved for real cleanup errors.

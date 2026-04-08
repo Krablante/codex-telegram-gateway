@@ -314,6 +314,69 @@ test("runCodexTask completes from rollout task_complete when websocket finalizat
   );
 });
 
+test("runCodexTask completes from rollout task_complete while the websocket stays connected", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-live-task-complete-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "08");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-04-08T18-55-00-root-thread.jsonl",
+  );
+  await fs.writeFile(rolloutPath, "");
+
+  const ws = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const summaries = [];
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Заверши run по live task_complete.",
+    onEvent(summary) {
+      summaries.push(summary);
+    },
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+    codexSessionsRoot,
+    rolloutPollIntervalMs: 20,
+  });
+
+  emitListenBanner(child, 43129);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  await fs.appendFile(
+    rolloutPath,
+    `${JSON.stringify({
+      timestamp: "2026-04-08T18:56:23.493Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "root-turn",
+        last_agent_message: "Финал из live task_complete watcher.",
+      },
+    })}\n`,
+  );
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(child.killCalls, ["SIGTERM"]);
+  assert.equal(
+    summaries.some((summary) => summary.text === "Финал из live task_complete watcher."),
+    true,
+  );
+});
+
 test("runCodexTask rollout fallback fails if the app-server exits and no final_answer arrives", async (t) => {
   const child = createMockChild();
   const codexSessionsRoot = await fs.mkdtemp(

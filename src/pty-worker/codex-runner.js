@@ -15,6 +15,7 @@ import {
 import {
   createSummaryTracker,
   followRolloutAfterDisconnect,
+  watchRolloutForTaskComplete,
 } from "./codex-runner-recovery.js";
 import {
   createJsonRpcClient,
@@ -126,6 +127,7 @@ export function runCodexTask({
   let sawPrimaryFinalAnswer = false;
   let pendingTurnCompletion = false;
   let pendingTurnCompletionTimer = null;
+  let rolloutTaskCompleteWatcher = null;
   let finishedResolve = () => {};
   let finishedReject = () => {};
   const summaryTracker = createSummaryTracker();
@@ -216,6 +218,45 @@ export function runCodexTask({
       pendingTurnCompletionTimer = null;
       finishCompletedTurn();
     }, TURN_COMPLETION_FINAL_MESSAGE_GRACE_MS);
+  };
+
+  const startRolloutTaskCompleteWatcher = () => {
+    if (rolloutTaskCompleteWatcher) {
+      return;
+    }
+
+    rolloutTaskCompleteWatcher = Promise.resolve()
+      .then(() => watchRolloutForTaskComplete({
+        codexSessionsRoot,
+        rolloutPollIntervalMs,
+        getSettled: () => settled,
+        getWatchingDisabled: () =>
+          shuttingDown || recoveringFromDisconnect || pendingTurnCompletion,
+        getActiveTurnId: () => activeTurnId,
+        getHasPrimaryFinalAnswer: () => sawPrimaryFinalAnswer,
+        getPrimaryThreadId: () => primaryThreadId,
+        getLatestThreadId: () => latestThreadId,
+        getRolloutPath: () => rolloutPath,
+        setRolloutPath: (value) => {
+          rolloutPath = value;
+        },
+        getRolloutObservedOffset: () => rolloutObservedOffset,
+        rememberSummary: (summary, ids) => summaryTracker.rememberSummary(summary, ids),
+        emitSummary: emitFallbackSummary,
+        onTaskComplete: async () => {
+          if (
+            settled ||
+            shuttingDown ||
+            recoveringFromDisconnect ||
+            pendingTurnCompletion
+          ) {
+            return;
+          }
+
+          finishCompletedTurn();
+        },
+      }))
+      .catch(() => {});
   };
 
   const isPrimaryThreadEvent = (threadId) => {
@@ -550,6 +591,7 @@ export function runCodexTask({
       input: initialInput,
     });
     activeTurnId = turnResponse?.turn?.id || activeTurnId;
+    startRolloutTaskCompleteWatcher();
     flushChain = flushChain
       .catch(() => {})
       .then(() => flushPendingSteers());

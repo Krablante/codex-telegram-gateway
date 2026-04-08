@@ -6,6 +6,19 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+Fixed:
+
+- Spike now finishes a stuck native Windows run from rollout `task_complete` even when the websocket stays alive and never emits the terminal live event
+- `/diff` now returns a normal inline unavailable reply for plain-folder bindings instead of throwing `not a git repository` and poisoning the poll cycle
+
+Docs:
+
+- README, Telegram surface docs, state contract, and both guidebooks now describe the non-git `/diff` behavior and the rollout-backed Windows finalization path
+
+Tests:
+
+- added regression coverage for live `task_complete` finalization without websocket disconnect and for `/diff` on non-git bindings
+
 ## [0.3.30] - 2026-04-07
 
 Fixed:

@@ -453,6 +453,26 @@ export function buildDiffCleanMessage(
   ].join("\n");
 }
 
+export function buildDiffUnavailableMessage(
+  session,
+  generatedAt,
+  language = getSessionUiLanguage(session),
+) {
+  return [
+    isEnglish(language)
+      ? "Workspace diff is unavailable for this binding."
+      : "Workspace diff недоступен для этой привязки.",
+    "",
+    isEnglish(language)
+      ? "Current cwd is not a git repository."
+      : "Текущий cwd не является git-репозиторием.",
+    "",
+    `session_key: ${session.session_key}`,
+    `generated_at: ${generatedAt}`,
+    `cwd: ${session.workspace_binding.cwd}`,
+  ].join("\n");
+}
+
 export function buildDocumentTooLargeMessage(
   session,
   filePath,
