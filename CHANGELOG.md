@@ -6,6 +6,12 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.32] - 2026-04-08
+
+Docs:
+
+- minor styled README refresh so the public repo keeps one consistent README format and visual style instead of drifting toward the plain private variant
+
 ## [0.3.31] - 2026-04-08
 
 Fixed:
