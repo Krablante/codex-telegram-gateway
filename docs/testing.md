@@ -5,7 +5,7 @@
 Linux/operator path:
 
 ```bash
-cd /home/example/codex-telegram-gateway
+cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
 make doctor
 make test
 ```
@@ -34,10 +34,10 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `node --test test/telegram-callback-batch-ack.test.js` — focused callback fast-path coverage so batch-level early acks stay best-effort and non-breaking
 - `node --test test/telegram-control-panels.test.js test/telegram-global-control-input.test.js test/telegram-topic-control-panels.test.js test/telegram-topic-control-input.test.js` — focused global and topic panel ownership, including callback, recreate, lifecycle, pending reply-input paths, and global `/compact` runtime controls
 - `node --test test/control-panel-store.test.js test/telegram-file-directive.test.js test/telegram-reply-normalizer.test.js` — focused control-panel store serialization and Telegram transport normalization regressions, including CRLF input paths
-- `node --test test/telegram-control-surface.test.js test/telegram-session-ops.test.js` — focused `/clear`, `/new`, `/diff`, `/compact`, and `/purge` ownership slices
+- `node --test test/telegram-control-surface.test.js test/telegram-session-ops.test.js` — focused `/clear`, `/new`, `/diff`, `/compact`, and `/purge` ownership slices, including the non-git `/diff` fallback path
 - `node --test test/command-router.test.js test/telegram-surface-settings.test.js test/telegram-surface-reference.test.js test/telegram-prompt-flow.test.js test/telegram-prompt-auto.test.js test/telegram-prompt-starts.test.js test/telegram-prompt-queue.test.js test/telegram-prompt-buffering.test.js test/telegram-prompt-attachments.test.js test/telegram-prompt-wait.test.js` — router spine, command-surface ownership, and split prompt-ingress coverage
 - `node --test test/run-update-processing.test.js test/run-stale-run-recovery.test.js test/run-maintenance.test.js test/run-rollout-controller.test.js test/run-background-jobs.test.js` — focused poll bootstrap, stale-running startup recovery, run-once maintenance, rollout control, background timer ownership, offset persistence, and forwarded-vs-local update processing coverage for the Spike runtime shell
-- `node --test test/codex-runner.test.js test/codex-runner-common.test.js test/codex-runner-lifecycle.test.js test/codex-runner-recovery.test.js` — focused codex-runner ownership slices for helper exports, live turn lifecycle, late-final ordering after `turn/completed`, completion-resolution timing, and rollout recovery
+- `node --test test/codex-runner.test.js test/codex-runner-common.test.js test/codex-runner-lifecycle.test.js test/codex-runner-recovery.test.js` — focused codex-runner ownership slices for helper exports, live turn lifecycle, late-final ordering after `turn/completed`, completion-resolution timing, live `task_complete` finalization without websocket disconnect, and rollout recovery
 - `node --test test/service-generation-store.test.js test/service-rollout.test.js test/service-rollout-command.test.js test/update-forwarding-ipc.test.js test/spike-update-routing.test.js` — focused session-aware rollout slices for leader lease, retiring-session ownership, repo-local operator rollout handoff, blocked-port loopback IPC recovery, rebound endpoint sync, local IPC forwarding, and topic route resolution
 - `node --test test/worker-pool.test.js test/worker-pool-startup.test.js test/worker-pool-file-delivery.test.js test/worker-pool-delivery.test.js test/worker-pool-live-steer.test.js test/worker-pool-shutdown.test.js` — focused worker-pool ownership slices for startup, delivery, live steer, shutdown, transient final-reply recovery, partial-delivery metadata, and parked-topic final-send behavior
 - `node --test test/prompt-queue.test.js` — focused `/q` queue semantics, including busy-retry after finalization and corrupt-queue quarantine
@@ -135,7 +135,7 @@ Native Windows:
 - keep the topic panel shell/domain split aligned: `topic-control-panel.js` for public routing, `topic-control-panel-lifecycle.js` for message lifecycle, `topic-control-panel-actions.js` for direct mutations, `topic-control-panel-input.js` for pending-input flow, and `topic-control-panel-view.js` for render/schema work
 - keep shared panel test fixtures in `test-support/control-panel-fixtures.js` instead of re-growing copy-paste setup blocks
 - keep `/clear` and other General control-surface behavior in `test/telegram-control-surface.test.js`
-- keep `/new`, `/diff`, `/compact`, and `/purge` behavior in `test/telegram-session-ops.test.js`
+- keep `/new`, `/diff`, `/compact`, and `/purge` behavior in `test/telegram-session-ops.test.js`, including non-git `/diff` fallbacks
 - keep `SessionService` auto-mode stale/overlap regressions in `test/session-service.test.js`
 - keep `SessionStore` lock serialization, `patchWithCurrent()` freshness, and concurrent artifact-count coverage in `test/session-store.test.js`
 - keep emergency private-chat allowlist and attachment-flow regressions in `test/emergency-router.test.js`

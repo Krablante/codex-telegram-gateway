@@ -10,7 +10,7 @@ Use this file for live operations and recovery. Product surface details now live
 ## Repo-Local Checks
 
 ```bash
-cd /path/to/codex-telegram-gateway
+cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
 make admin ARGS='status'
 make admin ARGS='sessions --state parked'
 make doctor
@@ -20,14 +20,14 @@ make test
 ## Manual Foreground Run
 
 ```bash
-cd /path/to/codex-telegram-gateway
+cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
 make run
 ```
 
 With Omni enabled:
 
 ```bash
-cd /path/to/codex-telegram-gateway
+cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
 make run-omni
 ```
 
@@ -48,9 +48,9 @@ On native Windows, use the wrapper scripts instead of bare `npm` inside PowerShe
 
 ## Runtime Visibility
 
-- heartbeat: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-heartbeat.json`
-- events: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-events.ndjson`
-- doctor snapshot: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/doctor-last-run.json`
+- heartbeat: `/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway/logs/runtime-heartbeat.json`
+- events: `/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway/logs/runtime-events.ndjson`
+- doctor snapshot: `/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway/logs/doctor-last-run.json`
 - per-session exchange log: `.../sessions/<chat-id>/<topic-id>/exchange-log.jsonl`
 - per-session brief: `.../sessions/<chat-id>/<topic-id>/active-brief.md`
 
@@ -66,14 +66,14 @@ Healthy runtime means:
 Use the repo-local admin CLI when a topic is already parked/deleted and Telegram commands are no longer reachable:
 
 ```bash
-cd /path/to/codex-telegram-gateway
+cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
 make admin ARGS='status'
 make admin ARGS='sessions --state parked'
-make admin ARGS='show -1001234567890 12345'
-make admin ARGS='pin -1001234567890 12345'
-make admin ARGS='unpin -1001234567890 12345'
-make admin ARGS='reactivate -1001234567890 12345'
-make admin ARGS='purge -1001234567890 12345'
+make admin ARGS='show -1003577434463 12345'
+make admin ARGS='pin -1003577434463 12345'
+make admin ARGS='unpin -1003577434463 12345'
+make admin ARGS='reactivate -1003577434463 12345'
+make admin ARGS='purge -1003577434463 12345'
 ```
 
 Native Windows equivalent:
@@ -81,23 +81,23 @@ Native Windows equivalent:
 ```powershell
 scripts\windows\admin.cmd status
 scripts\windows\admin.cmd sessions --state parked
-scripts\windows\admin.cmd show -1001234567890 12345
-scripts\windows\admin.cmd pin -1001234567890 12345
-scripts\windows\admin.cmd unpin -1001234567890 12345
-scripts\windows\admin.cmd reactivate -1001234567890 12345
-scripts\windows\admin.cmd purge -1001234567890 12345
+scripts\windows\admin.cmd show -1003577434463 12345
+scripts\windows\admin.cmd pin -1003577434463 12345
+scripts\windows\admin.cmd unpin -1003577434463 12345
+scripts\windows\admin.cmd reactivate -1003577434463 12345
+scripts\windows\admin.cmd purge -1003577434463 12345
 ```
 
 ## Services
 
 ```bash
-cd /path/to/codex-telegram-gateway
+cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
 make service-install
 make service-status
 make service-logs
 make service-rollout
 make service-restart
-make service-restart-live
+make service-restart-private
 make service-hard-restart
 ```
 
@@ -112,10 +112,10 @@ make service-install-omni
 make service-status-omni
 make service-logs-omni
 make service-restart-omni
-make service-restart-live
+make service-restart-private
 ```
 
-`make service-restart-live` is the canonical live-runtime restart: it restarts `Omni` and then rolls `Spike` through the soft session-aware path. Avoid raw `systemctl restart codex-telegram-gateway.service` unless you explicitly want the blind hard-restart behavior.
+`make service-restart-private` is the canonical private-runtime restart: it restarts `Omni` and then rolls `Spike` through the soft session-aware path. Avoid raw `systemctl restart codex-telegram-gateway.service` unless you explicitly want the blind hard-restart behavior.
 
 ## Failure Handling
 
@@ -123,6 +123,7 @@ make service-restart-live
 - use `make admin ARGS='status'` before blind restarts
 - if only one topic is wedged, prefer topic-level `/status`, `/interrupt`, `/purge`
 - if a live run is still active, start with the soft `service-restart`; move to `service-hard-restart` only when you explicitly want to cut the whole cgroup
+- if soft rollout times out because one retained topic is still active, finish or interrupt that topic and rerun `make service-restart-private` instead of falling back to raw `systemctl restart`
 - if the topic path itself is broken, switch to the emergency private chat lane
 - if the topic is already gone, use the local admin surface instead of poking Telegram harder
 - on native Windows, use `scripts\windows\admin.cmd ...` instead of trying Linux-only `make admin`
@@ -139,6 +140,7 @@ make service-restart-live
 - if the final Spike reply hits a transient Telegram/network send failure, the gateway now retries that final delivery; if the send still never comes back, it keeps the final answer visible in the existing progress bubble instead of silently dropping the run result
 - if a long final reply already delivered some chunks before a later chunk failed, Spike final-event metadata now keeps the delivered Telegram message ids instead of pretending that nothing reached Telegram
 - if `turn/completed` wins the race against the real final `agent_message`, the runner now keeps a short grace window for that late primary final answer before falling back to a generic completion text
+- if native Windows leaves the websocket alive but the rollout already wrote `task_complete`, the runner can now still finish from that rollout signal instead of staying stuck in `running`
 - if local rollout-forwarding IPC hits a blocked or reserved loopback port, the server now retries the next candidate loopback port instead of failing on the first bind error
 - expired parked sessions may be auto-purged by retention sweep
 - the heartbeat now also exposes generation id, leader/retiring state, and rollout status for service-level handoff visibility

@@ -71,10 +71,10 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - `src/pty-worker/worker-pool-lifecycle.js` owns run startup, resume fallback, lifecycle persistence, interrupts, and shutdown coordination
    - `src/pty-worker/worker-pool-common.js` keeps the shared worker contracts and pure helpers that really cross those slices
 8. The `codex-runner` layer now follows the same shell-plus-domain split:
-   - `src/pty-worker/codex-runner.js` is the thin public facade for `runCodexTask`: child lifecycle wiring, turn orchestration, steer buffering, short late-final grace after `turn/completed`, and finish/fail coordination
+   - `src/pty-worker/codex-runner.js` is the thin public facade for `runCodexTask`: child lifecycle wiring, turn orchestration, steer buffering, short late-final grace after `turn/completed`, live rollout `task_complete` fallback, and finish/fail coordination
    - `src/pty-worker/codex-runner-common.js` keeps shared runner helpers such as warning filtering, child-exit checks, and event summarization
    - `src/pty-worker/codex-runner-transport.js` owns app-server startup wait, websocket connect, and JSON-RPC transport behavior
-   - `src/pty-worker/codex-runner-recovery.js` owns rollout replay parsing, summary dedupe tracking, and post-disconnect fallback recovery
+   - `src/pty-worker/codex-runner-recovery.js` owns rollout replay parsing, summary dedupe tracking, live `task_complete` watching, and post-disconnect fallback recovery
 9. `src/cli/run-omni.js` plus `src/omni/` optionally run a second Telegram bot that owns `/auto`, records the goal, forwards prompts to Spike, and wakes only when Spike appends a final-event checkpoint for a completed run.
    - `src/omni/coordinator.js` is now the thin public facade for `OmniCoordinator`
    - `src/omni/coordinator-memory.js` owns coordinator-side memory seeding, patching, and auto-compact bookkeeping on top of `memory.js`
@@ -116,7 +116,7 @@ This repo now explicitly follows a modular-first handler model.
 - button presses now also clear Telegram's callback spinner on a per-batch fast path before the full message/callback business logic finishes, so button pickup stays snappy even when the batch still has heavier work behind it
 - service rollout is now per-topic rather than whole-process drain: a retiring generation keeps only the topics that already had an active run, while the replacement generation becomes the intake leader for everything else
 - generation liveness for rollout/forwarding is verified through the advertised loopback IPC identity, not only by pid plus heartbeat TTL, so fast pid reuse is much less likely to fool ownership checks
-- if the websocket transport drops, the gateway can continue watching the rollout file and still wait for commentary/final output
+- if the websocket transport drops, or native Windows leaves it alive without a terminal event, the gateway can still use the rollout file to finish the run
 - progress is commentary-oriented; command output and transport bookkeeping are not meant to become user-facing progress text
 - the emergency lane uses one-shot `codex exec`, not `app-server`, and does not depend on topic routing/session continuity
 - Omni also uses short one-shot `codex exec` evaluations instead of a second live `app-server` stack; the only heavy live worker remains Spike
@@ -141,7 +141,7 @@ The gateway does not treat raw PTY output or full tool chatter as canonical memo
 ## Operational boundaries
 
 - Telegram remains the only user-facing transport in this repo
-- service runtime/state lives under the configured state root, not inside the repo
+- service runtime/state lives under `atlas/state/...`, not inside the repo
 - file delivery is intentionally restricted to the current worktree, the session state directory, and the system temp dir
 - the service is intentionally single-operator in this phase
 - emergency mode is on-demand only: writing in operator private chat starts one isolated rescue run, and the lock disappears automatically when that run finishes or is interrupted

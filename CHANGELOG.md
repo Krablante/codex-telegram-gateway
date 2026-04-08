@@ -6,6 +6,8 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.31] - 2026-04-08
+
 Fixed:
 
 - Spike now finishes a stuck native Windows run from rollout `task_complete` even when the websocket stays alive and never emits the terminal live event
@@ -13,7 +15,7 @@ Fixed:
 
 Docs:
 
-- README, Telegram surface docs, state contract, and both guidebooks now describe the non-git `/diff` behavior and the rollout-backed Windows finalization path
+- README, architecture, runbooks, Telegram surface docs, state contract, testing docs, and both guidebooks now describe the non-git `/diff` behavior and the rollout-backed Windows finalization path
 
 Tests:
 
