@@ -2,6 +2,9 @@ import {
   handleIncomingCallbackQuery,
   handleIncomingMessage,
 } from "./command-router.js";
+import { buildReplyMessageParams } from "./command-parsing.js";
+import { IncomingAttachmentTooLargeError } from "./incoming-attachments.js";
+import { safeSendMessage } from "./topic-delivery.js";
 
 export async function handleSpikeUpdate({
   api,
@@ -84,6 +87,22 @@ export async function handleSpikeUpdate({
       workerPool,
     });
   } catch (error) {
+    if (error instanceof IncomingAttachmentTooLargeError && update.message) {
+      try {
+        await safeSendMessage(
+          api,
+          buildReplyMessageParams(update.message, error.replyText),
+          error.session,
+          lifecycleManager,
+        );
+      } catch (deliveryError) {
+        if (updateId !== null) {
+          await runtimeObserver?.noteUpdateFailure(updateId, deliveryError);
+        }
+      }
+      return;
+    }
+
     if (updateId !== null) {
       await runtimeObserver?.noteUpdateFailure(updateId, error);
     }

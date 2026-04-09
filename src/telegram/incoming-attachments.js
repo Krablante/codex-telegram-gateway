@@ -13,6 +13,59 @@ const IMAGE_EXTENSIONS = new Set([
   ".bmp",
 ]);
 
+function buildAttachmentTooLargeMessage({
+  language,
+  fileName,
+  sizeBytes,
+  limitBytes = TELEGRAM_DOWNLOAD_SOFT_LIMIT_BYTES,
+}) {
+  if (language === "eng") {
+    return [
+      "Attachment is too large for direct bot download.",
+      "",
+      `file: ${fileName}`,
+      `size_bytes: ${sizeBytes}`,
+      `limit_bytes: ${limitBytes}`,
+      "",
+      "Send a smaller file, split it, or send a link/path instead.",
+    ].join("\n");
+  }
+
+  return [
+    "Вложение слишком большое для прямой загрузки ботом.",
+    "",
+    `file: ${fileName}`,
+    `size_bytes: ${sizeBytes}`,
+    `limit_bytes: ${limitBytes}`,
+    "",
+    "Пришли файл поменьше, разбей его на части или дай ссылку/путь вместо прямой загрузки.",
+  ].join("\n");
+}
+
+export class IncomingAttachmentTooLargeError extends Error {
+  constructor({
+    session,
+    fileName,
+    sizeBytes,
+    limitBytes = TELEGRAM_DOWNLOAD_SOFT_LIMIT_BYTES,
+  }) {
+    const language = getSessionUiLanguage(session);
+    const replyText = buildAttachmentTooLargeMessage({
+      language,
+      fileName,
+      sizeBytes,
+      limitBytes,
+    });
+    super(replyText);
+    this.name = "IncomingAttachmentTooLargeError";
+    this.replyText = replyText;
+    this.session = session || null;
+    this.fileName = fileName;
+    this.sizeBytes = sizeBytes;
+    this.limitBytes = limitBytes;
+  }
+}
+
 function sanitizeFileName(fileName) {
   const baseName = path.basename(String(fileName || "").trim());
   const sanitized = baseName.replace(/[^a-z0-9._-]+/giu, "-");
@@ -129,11 +182,11 @@ export async function ingestIncomingAttachments({
       Number.isInteger(spec.sizeBytes) &&
       spec.sizeBytes > TELEGRAM_DOWNLOAD_SOFT_LIMIT_BYTES
     ) {
-      throw new Error(
-        language === "eng"
-          ? `Attachment ${spec.originalFileName} is too large for bot download (${spec.sizeBytes} bytes).`
-          : `Вложение ${spec.originalFileName} слишком большое для bot download (${spec.sizeBytes} bytes).`,
-      );
+      throw new IncomingAttachmentTooLargeError({
+        session,
+        fileName: spec.originalFileName,
+        sizeBytes: spec.sizeBytes,
+      });
     }
 
     const file = await api.getFile({ file_id: spec.fileId });

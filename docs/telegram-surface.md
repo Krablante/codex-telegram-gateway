@@ -35,6 +35,8 @@ Spike-only mode:
 
 `/diff` is git-backed on purpose. If the current binding points at a plain folder instead of a repo, the bot now returns a small inline unavailable reply instead of throwing the update.
 
+If a prompt attachment is larger than the current direct bot-download ceiling, the bot now replies inline that the file is too large and acknowledges the update instead of poisoning the poll cycle with the same failing Telegram update forever. Truly large Telegram-native file intake remains future Local Bot API work.
+
 `/guide` works in `General` only and sends the beginner PDF guidebook in the selected `General` language.
 
 `/clear` works in `General` only. It preserves the active global menu message and its current screen, then removes the tracked General clutter that the bot knows about. Successful cleanup stays silent; separate General messages are reserved for real cleanup errors.

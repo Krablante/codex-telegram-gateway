@@ -28,6 +28,7 @@ Current slices guarantee:
 - `sessions/<chat-id>/<topic-id>/telegram-topic-context.md` may store the current Telegram routing facts and the lightweight file-delivery contract for Codex
 - `sessions/<chat-id>/<topic-id>/exchange-log.jsonl` may store the append-only recovery log with only user prompts and final agent replies
 - `sessions/<chat-id>/<topic-id>/spike-prompt-queue.json` may store the topic-scoped FIFO queue for `/q` prompts, including prompt text, reply target ids, and downloaded attachment descriptors
+- `sessions/<chat-id>/<topic-id>/incoming/` may store direct-prompt and queued-prompt attachments downloaded from Telegram for that topic session
 - `sessions/<chat-id>/<topic-id>/active-brief.md` may store the latest LLM-generated recovery brief derived from that exchange log; the brief is expected to carry enough continuity for a fresh run to understand workspace context, recent state, latest exchange, and open work
 - `sessions/<chat-id>/<topic-id>/artifacts/` may store generated diff snapshots
 - `emergency/attachments/<chat-id>/private/incoming/` may store private-chat emergency attachments downloaded from Telegram
@@ -65,6 +66,7 @@ Current slices guarantee:
 - if a stored `codex_thread_id` no longer resumes cleanly after the controlled retry, the next run may clear it, regenerate `active-brief.md` from `exchange-log.jsonl`, and continue from that brief
 - active follow-up user input may be buffered briefly and then live-steered into the same current Codex turn instead of starting a second run
 - if the live websocket transport drops mid-run, or native Windows finalization leaves the websocket alive without a terminal event, completion may continue via rollout-file recovery instead of failing immediately
+- if a Telegram attachment exceeds the current direct bot-download ceiling, the update may be acknowledged with a small inline "too large" reply instead of retry-looping the same failing poll cycle forever
 - if a long final reply partially reaches Telegram before a later chunk fails, Spike final-event metadata may still record the already-delivered Telegram message ids
 - run completion may hold a short grace window after primary `turn/completed` so a slightly late primary final answer still lands before the worker falls back to a generic success reply
 - during service rollout, the leader generation may forward raw Telegram updates for a still-running foreign-owned topic to the retiring generation over local loopback IPC

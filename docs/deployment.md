@@ -27,6 +27,12 @@ Telegram-side baseline:
 - make the bot an admin in that forum chat
 - topic creation and cleanup flows work best when the bot can post, edit, delete, pin, and manage topics
 
+Large-file note:
+
+- the default cloud Bot API path is still the normal deployment shape
+- oversized prompt attachments are now rejected cleanly with an inline reply instead of poisoning the poll loop
+- if you later want true Telegram-native huge-file ingestion with per-topic disk storage, plan on a Local Bot API server; that is a future extension, not a requirement for the current deploy
+
 ## Supported Shapes
 
 ### Spike-only

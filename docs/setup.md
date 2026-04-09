@@ -47,6 +47,12 @@ You do not need `Omni` to get started. Spike-only mode is the simplest and usual
 
 If you are on Windows, prefer the native Windows path first. Only use WSL when you already know your WSL networking and path setup are healthy.
 
+Large-file note:
+
+- normal setup stays on the default cloud Bot API
+- oversized prompt attachments now fail cleanly with an inline reply instead of wedging the poll loop
+- if you later want true Telegram-native huge-file ingestion with per-topic disk storage, plan on a Local Bot API server; that is an optional future extension, not part of the minimum install
+
 ## 1. Create The Spike Bot
 
 1. Open `@BotFather`.

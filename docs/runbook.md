@@ -137,6 +137,7 @@ make service-restart-private
 - if `zoo/topic.json` is missing, incomplete, or quarantined, a live Zoo menu callback now rebuilds the stored chat/topic/menu binding; before this fix the symptom was silent Zoo button no-ops or the Zoo topic falling back into ordinary session routing
 - if Telegram reports a topic as unavailable, the session may move into `parked`
 - if Telegram loses the original reply target for a topic message, topic delivery falls back to a plain send in the same topic
+- if a prompt attachment is larger than the current direct bot-download ceiling, the gateway now sends a small inline "too large" reply and acknowledges the update instead of retry-looping the same failed poll cycle forever
 - if the final Spike reply hits a transient Telegram/network send failure, the gateway now retries that final delivery; if the send still never comes back, it keeps the final answer visible in the existing progress bubble instead of silently dropping the run result
 - if a long final reply already delivered some chunks before a later chunk failed, Spike final-event metadata now keeps the delivered Telegram message ids instead of pretending that nothing reached Telegram
 - if `turn/completed` wins the race against the real final `agent_message`, the runner now keeps a short grace window for that late primary final answer before falling back to a generic completion text
