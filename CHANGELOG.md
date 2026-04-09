@@ -6,6 +6,20 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.33] - 2026-04-09
+
+Fixed:
+
+- oversized prompt attachments no longer poison the Telegram poll cycle; the gateway now sends a small inline "too large" reply and acknowledges the update instead of retrying the same failing attachment forever
+
+Docs:
+
+- Telegram surface, state contract, deployment/setup docs, runbooks, and testing docs now describe the clean oversized-attachment behavior and record Local Bot API as the future path for true huge-file Telegram ingestion
+
+Tests:
+
+- added regression coverage for oversized prompt attachments in the Spike update-dispatch layer
+
 ## [0.3.32] - 2026-04-08
 
 Docs:
