@@ -4,6 +4,70 @@ import { renderTelegramHtml } from "../transport/telegram-reply-normalizer.js";
 
 const TELEGRAM_HTML_PARSE_MODE = "HTML";
 
+class TelegramRetryAfterError extends Error {
+  constructor(method, description, retryAfterSeconds) {
+    super(`Telegram API ${method} failed: ${description}`);
+    this.name = "TelegramRetryAfterError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function parseRetryAfterSeconds(payload, description) {
+  const structuredRetryAfter = Number(payload?.parameters?.retry_after);
+  if (Number.isFinite(structuredRetryAfter) && structuredRetryAfter > 0) {
+    return structuredRetryAfter;
+  }
+
+  const match = String(description || "").match(/retry after\s+(\d+)/iu);
+  if (!match) {
+    return null;
+  }
+
+  const parsedValue = Number(match[1]);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : null;
+}
+
+function waitForAbortOrTimeout(timeoutMs, signal) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error("Aborted"));
+      return;
+    }
+
+    let settled = false;
+    const finish = (handler) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      handler();
+    };
+
+    const timer = setTimeout(() => finish(resolve), timeoutMs);
+    const onAbort = () => finish(() => reject(signal.reason ?? new Error("Aborted")));
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function executeWithRetry(operation, { signal } = {}) {
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof TelegramRetryAfterError)) {
+        throw error;
+      }
+      await waitForAbortOrTimeout(error.retryAfterSeconds * 1000, signal);
+    }
+  }
+}
+
 function withTelegramHtmlFormatting(method, params) {
   if (!params || typeof params !== "object" || typeof params.parse_mode === "string") {
     return params;
@@ -42,6 +106,10 @@ async function parseTelegramResponse(response, method) {
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.ok) {
     const description = payload?.description || response.statusText;
+    const retryAfterSeconds = parseRetryAfterSeconds(payload, description);
+    if (retryAfterSeconds) {
+      throw new TelegramRetryAfterError(method, description, retryAfterSeconds);
+    }
     throw new Error(`Telegram API ${method} failed: ${description}`);
   }
 
@@ -115,27 +183,36 @@ export class TelegramBotApiClient {
   }
 
   async call(method, params = undefined, options = {}) {
-    const url = buildMethodUrl(this.token, this.baseUrl, method);
-    const formattedParams = withTelegramHtmlFormatting(method, params);
-    const hasParams = formattedParams && Object.keys(formattedParams).length > 0;
-    const response = await fetch(url, {
-      method: hasParams ? "POST" : "GET",
-      headers: hasParams ? { "content-type": "application/json" } : undefined,
-      body: hasParams ? JSON.stringify(formattedParams) : undefined,
+    return executeWithRetry(async () => {
+      const url = buildMethodUrl(this.token, this.baseUrl, method);
+      const formattedParams = withTelegramHtmlFormatting(method, params);
+      const hasParams = formattedParams && Object.keys(formattedParams).length > 0;
+      const response = await fetch(url, {
+        method: hasParams ? "POST" : "GET",
+        headers: hasParams ? { "content-type": "application/json" } : undefined,
+        body: hasParams ? JSON.stringify(formattedParams) : undefined,
+        signal: options.signal,
+      });
+
+      return parseTelegramResponse(response, method);
+    }, {
       signal: options.signal,
     });
-
-    return parseTelegramResponse(response, method);
   }
 
-  async callMultipart(method, body, options = {}) {
-    const response = await fetch(buildMethodUrl(this.token, this.baseUrl, method), {
-      method: "POST",
-      body,
+  async callMultipart(method, buildBody, options = {}) {
+    return executeWithRetry(async () => {
+      const body = typeof buildBody === "function" ? await buildBody() : buildBody;
+      const response = await fetch(buildMethodUrl(this.token, this.baseUrl, method), {
+        method: "POST",
+        body,
+        signal: options.signal,
+      });
+
+      return parseTelegramResponse(response, method);
+    }, {
       signal: options.signal,
     });
-
-    return parseTelegramResponse(response, method);
   }
 
   async getWebhookInfo(options = {}) {
@@ -197,7 +274,7 @@ export class TelegramBotApiClient {
   async sendDocument(params, options = {}) {
     return this.callMultipart(
       "sendDocument",
-      await buildFileFormData(params, {
+      () => buildFileFormData(params, {
         fieldName: "document",
         methodName: "sendDocument",
         defaultContentType: "application/octet-stream",
@@ -209,7 +286,7 @@ export class TelegramBotApiClient {
   async sendPhoto(params, options = {}) {
     return this.callMultipart(
       "sendPhoto",
-      await buildFileFormData(params, {
+      () => buildFileFormData(params, {
         fieldName: "photo",
         methodName: "sendPhoto",
         defaultContentType: "image/png",

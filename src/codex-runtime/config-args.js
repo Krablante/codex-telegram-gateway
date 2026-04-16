@@ -7,6 +7,8 @@ export function appendCodexRuntimeConfigArgs(
   {
     model = null,
     reasoningEffort = null,
+    sandboxMode = null,
+    approvalPolicy = null,
   } = {},
 ) {
   const nextArgs = Array.isArray(args) ? args : [];
@@ -19,6 +21,20 @@ export function appendCodexRuntimeConfigArgs(
     nextArgs.push(
       "-c",
       `model_reasoning_effort="${escapeTomlString(reasoningEffort)}"`,
+    );
+  }
+
+  if (sandboxMode) {
+    nextArgs.push(
+      "-c",
+      `sandbox_mode="${escapeTomlString(sandboxMode)}"`,
+    );
+  }
+
+  if (approvalPolicy) {
+    nextArgs.push(
+      "-c",
+      `approval_policy="${escapeTomlString(approvalPolicy)}"`,
     );
   }
 

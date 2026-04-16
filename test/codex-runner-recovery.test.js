@@ -441,6 +441,179 @@ test("runCodexTask rollout fallback fails if the app-server exits and no final_a
   );
 });
 
+test("runCodexTask resolves interrupted when disconnect recovery sees a user interrupt before child exit", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-interrupt-recovery-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "15");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-04-15T19-45-56-root-thread.jsonl",
+  );
+  await fs.writeFile(rolloutPath, "");
+
+  const ws = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Остановись cleanly во время recovery.",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+    codexSessionsRoot,
+    rolloutDiscoveryTimeoutMs: 100,
+    rolloutPollIntervalMs: 20,
+    rolloutStallAfterChildExitMs: 60,
+  });
+
+  emitListenBanner(child, 43130);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+
+  assert.equal(await run.interrupt(), false);
+
+  child.exitCode = 0;
+  child.emit("close", 0, null);
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.interruptReason, "user");
+});
+
+test("runCodexTask finishes interrupted from rollout turn_aborted and reaps the child", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-turn-aborted-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "15");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-04-15T19-20-40-root-thread.jsonl",
+  );
+  await fs.writeFile(rolloutPath, "");
+
+  const ws = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Не зависай после turn_aborted.",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+    codexSessionsRoot,
+    rolloutDiscoveryTimeoutMs: 100,
+    rolloutPollIntervalMs: 20,
+    rolloutStallWithoutChildExitMs: 200,
+  });
+
+  emitListenBanner(child, 43131);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+
+  await fs.appendFile(
+    rolloutPath,
+    `${JSON.stringify({
+      timestamp: "2026-04-15T19:20:40.000Z",
+      type: "event_msg",
+      payload: {
+        type: "turn_aborted",
+        turn_id: "root-turn",
+        reason: "interrupted",
+      },
+    })}\n`,
+  );
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.interruptReason, "upstream");
+  assert.equal(result.abortReason, "interrupted");
+  assert.deepEqual(child.killCalls, ["SIGTERM"]);
+});
+
+test("runCodexTask fails stalled recovery when the websocket disconnects and rollout stops growing", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-stall-live-child-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "15");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-04-15T19-20-40-root-thread.jsonl",
+  );
+  await fs.writeFile(rolloutPath, "");
+
+  const ws = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Не виси бесконечно после disconnect.",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+    codexSessionsRoot,
+    rolloutDiscoveryTimeoutMs: 100,
+    rolloutPollIntervalMs: 20,
+    rolloutStallWithoutChildExitMs: 60,
+  });
+
+  emitListenBanner(child, 43132);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+
+  await assert.rejects(
+    run.finished,
+    /rollout recovery stalled after websocket disconnect/u,
+  );
+  assert.deepEqual(child.killCalls, ["SIGTERM"]);
+});
+
 test("runCodexTask reports transport-recovering instead of pretending to steer a disconnected run", async (t) => {
   const child = createMockChild();
   const codexSessionsRoot = await fs.mkdtemp(

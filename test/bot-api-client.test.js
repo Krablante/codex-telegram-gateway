@@ -79,3 +79,56 @@ test("TelegramBotApiClient formats editMessageText text as Telegram HTML", async
     '<b>Title</b>\n\n<a href="https://example.com">docs</a>',
   );
 });
+
+test("TelegramBotApiClient retries retry_after responses inside one sendMessage call", async () => {
+  const calls = [];
+  let attempt = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, options = {}) => {
+    attempt += 1;
+    calls.push(JSON.parse(options.body));
+    if (attempt === 1) {
+      return {
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        async json() {
+          return {
+            ok: false,
+            description: "Too Many Requests: retry after 1",
+            parameters: {
+              retry_after: 0.001,
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      async json() {
+        return {
+          ok: true,
+          result: {
+            message_id: 3,
+          },
+        };
+      },
+    };
+  };
+
+  try {
+    const client = new TelegramBotApiClient({ token: "TOKEN" });
+    const result = await client.sendMessage({
+      chat_id: 1,
+      text: "hello",
+    });
+    assert.equal(result.message_id, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].text, "hello");
+  assert.deepEqual(calls[0], calls[1]);
+});

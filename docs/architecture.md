@@ -141,7 +141,7 @@ The gateway does not treat raw PTY output or full tool chatter as canonical memo
 ## Operational boundaries
 
 - Telegram remains the only user-facing transport in this repo
-- service runtime/state lives under `atlas/state/...`, not inside the repo
+- service runtime/state lives under the configured local state root, not inside the repo
 - file delivery is intentionally restricted to the current worktree, the session state directory, and the system temp dir
 - the service is intentionally single-operator in this phase
 - emergency mode is on-demand only: writing in operator private chat starts one isolated rescue run, and the lock disappears automatically when that run finishes or is interrupted

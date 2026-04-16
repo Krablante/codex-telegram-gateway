@@ -148,6 +148,12 @@ Rules:
 
 Topic suffix overrides global suffix.
 
+Recommended persistent global suffix:
+
+- keep the existing concise operator style guidance
+- explicitly allow tools, MCP, and GPT-5.4 subagents
+- point Codex at `pitlane` for code navigation, `tavily` for fresh web research, `context7` for library docs, and `requests` for direct HTTP/API fetches
+
 ## Runtime Controls
 
 Spike:

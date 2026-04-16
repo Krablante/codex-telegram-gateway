@@ -25,7 +25,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - default CLI env file: `${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
 - default `make` env file: `.env`
 - default state root: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
-- compatibility alias: `ATLAS_WORKSPACE_ROOT` is still accepted for `WORKSPACE_ROOT`
+- a legacy compatibility alias is still accepted for `WORKSPACE_ROOT`
 
 ## Run and validate
 
@@ -46,15 +46,17 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - for “restart the live bot”, use `make service-restart-live`; it restarts `Omni` and rolls `Spike` softly
 - never use raw `systemctl restart codex-telegram-gateway.service` for ordinary live updates; that is the blind hard-restart path and can cut an active run
 
+## Agent Prompt Guidance
+
+- prompt surfaces here should explicitly allow the runtime to use any available tools, MCP, and GPT-5.4 subagents when that materially helps
+- prefer `pitlane` for codebase navigation, symbol lookup, usages, callers/callees, and execution-path tracing before broad file reads
+- prefer `tavily` for fresh web search/research, `context7` for current library docs, and `requests` for direct HTTP/API fetches
+- keep tool use targeted; do not tell Codex to read large parts of the repo or the web blindly when a narrower MCP call will do
+- keep prompt guidance concise and practical instead of bloated
+
 ## Boundaries
 
 - do not turn this into a generic multi-provider orchestration platform
 - do not add approval-flow or sandbox policy layers in this repo
 - keep bot tokens and runtime secrets out of git
 - keep mutable logs, sessions, indexes, and artifacts under the configured state root, not in the repo
-- if operating this repo from Atlas, check ignored local `AGENTS.local.md` first for host-specific GitHub admin/API notes before browser login flows
-
-## Atlas reminder
-
-- root `atlas/AGENTS.md` is the main workspace contract; keep its global rules, navigation order, and precedence in mind even when working in this scope
-- `atlas/_context/README.md` is the one-file fast-start for shared workspace context; open deeper `_context/*` modules only when the task clearly needs them

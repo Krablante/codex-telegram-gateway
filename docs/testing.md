@@ -5,7 +5,7 @@
 Linux/operator path:
 
 ```bash
-cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
+cd /path/to/codex-telegram-gateway
 make doctor
 make test
 ```

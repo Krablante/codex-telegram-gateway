@@ -19,15 +19,15 @@ test("CodexWorkerPool passes resolved Spike model and reasoning into runTask", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 177,
     topicName: "Runtime profile test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
@@ -132,6 +132,71 @@ test("CodexWorkerPool passes resolved Spike model and reasoning into runTask", a
   ]);
 });
 
+test("CodexWorkerPool clears the active run slot when startup persistence fails", async () => {
+  const deleteCalls = [];
+  const session = {
+    session_key: "-1003577434463:1701",
+    chat_id: "-1003577434463",
+    topic_id: "1701",
+    ui_language: "rus",
+    workspace_binding: {
+      cwd: "/home/bloob/atlas",
+    },
+  };
+  const serviceState = {
+    acceptedPrompts: 0,
+    lastPromptAt: null,
+    activeRunCount: 0,
+  };
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage(payload) {
+        deleteCalls.push(payload);
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore: {
+      async patch() {
+        throw new Error("session meta write failed");
+      },
+    },
+    serviceState,
+    runTask() {
+      throw new Error("runTask should not start when startup persistence fails");
+    },
+  });
+
+  await assert.rejects(
+    workerPool.startPromptRun({
+      session,
+      prompt: "Проверь cleanup раннего старта.",
+      message: {
+        message_id: 91,
+        message_thread_id: 1701,
+      },
+    }),
+    /session meta write failed/u,
+  );
+
+  assert.equal(workerPool.getActiveRun(session.session_key), null);
+  assert.equal(workerPool.getActiveOrStartingRunCount(), 0);
+  assert.deepEqual(workerPool.canStart(session.session_key), { ok: true });
+  assert.equal(serviceState.activeRunCount, 0);
+  assert.equal(deleteCalls.length, 1);
+
+  await workerPool.shutdown();
+});
+
 test("CodexWorkerPool launches Codex with a reasoning level supported by the resolved model", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -172,15 +237,15 @@ test("CodexWorkerPool launches Codex with a reasoning level supported by the res
 
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 178,
     topicName: "Runtime profile compatibility",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
@@ -291,15 +356,15 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 244,
     topicName: "Fresh brief bootstrap test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   const compactedSession = await sessionStore.patch(session, {
@@ -317,12 +382,12 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
       "# Active brief",
       "",
       "updated_from_reason: command/compact",
-      "session_key: -1001234567890:244",
+      "session_key: -1003577434463:244",
       "topic_name: Fresh brief bootstrap test",
-      "cwd: /workspace",
+      "cwd: /home/bloob/atlas",
       "",
       "## Workspace context",
-      "- repo_root: /workspace",
+      "- repo_root: /home/bloob/atlas",
       "- focus: codex-telegram-gateway compact flow",
       "",
       "## Current state",
@@ -453,23 +518,23 @@ test("CodexWorkerPool does not reply to internal Omni handoff message ids", asyn
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2441,
     topicName: "Internal Omni handoff reply test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "2234567890",
-      spike_bot_id: "3234567890",
+      omni_bot_id: "8603043042",
+      spike_bot_id: "8537834861",
     },
   });
 
@@ -548,15 +613,15 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 145,
     topicName: "Resume retry success test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   const resumedSession = await sessionStore.patch(session, {
@@ -711,5 +776,4 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
     "Recovered sentinel after retry: SENTINEL_WOLF",
   );
 });
-
 

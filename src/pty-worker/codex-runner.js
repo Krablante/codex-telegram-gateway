@@ -29,6 +29,7 @@ const APP_SERVER_SHUTDOWN_GRACE_MS = 5000;
 const ROLLOUT_DISCOVERY_TIMEOUT_MS = 5000;
 const ROLLOUT_POLL_INTERVAL_MS = 1000;
 const ROLLOUT_STALL_AFTER_CHILD_EXIT_MS = 5000;
+const ROLLOUT_STALL_WITHOUT_CHILD_EXIT_MS = 30000;
 const TURN_COMPLETION_FINAL_MESSAGE_GRACE_MS = 200;
 const CODEX_SESSIONS_ROOT = path.join(os.homedir(), ".codex", "sessions");
 
@@ -39,6 +40,8 @@ export function buildCodexArgs({
   listenUrl = `ws://${APP_SERVER_HOST}:0`,
   model = null,
   reasoningEffort = null,
+  sandboxMode = "danger-full-access",
+  approvalPolicy = "never",
 } = {}) {
   const args = [
     "app-server",
@@ -48,6 +51,8 @@ export function buildCodexArgs({
   return appendCodexRuntimeConfigArgs(args, {
     model,
     reasoningEffort,
+    sandboxMode,
+    approvalPolicy,
   });
 }
 
@@ -89,6 +94,7 @@ export function runCodexTask({
   rolloutDiscoveryTimeoutMs = ROLLOUT_DISCOVERY_TIMEOUT_MS,
   rolloutPollIntervalMs = ROLLOUT_POLL_INTERVAL_MS,
   rolloutStallAfterChildExitMs = ROLLOUT_STALL_AFTER_CHILD_EXIT_MS,
+  rolloutStallWithoutChildExitMs = ROLLOUT_STALL_WITHOUT_CHILD_EXIT_MS,
   model = null,
   reasoningEffort = null,
   platform = process.platform,
@@ -120,6 +126,7 @@ export function runCodexTask({
   let shuttingDown = false;
   let settled = false;
   let recoveringFromDisconnect = false;
+  let interruptRequested = false;
   let recoveryChildExit = null;
   let flushChain = Promise.resolve();
   let notificationChain = Promise.resolve();
@@ -199,6 +206,25 @@ export function runCodexTask({
       signal: null,
       threadId: latestThreadId,
       warnings,
+      resumeReplacement: null,
+    });
+  };
+
+  const finishInterruptedTurn = ({
+    threadId = latestThreadId,
+    interruptReason = interruptRequested ? "user" : null,
+    abortReason = null,
+  } = {}) => {
+    clearPendingTurnCompletion();
+    shutdownTransport();
+    finish({
+      exitCode: null,
+      signal: "SIGINT",
+      threadId,
+      warnings,
+      interrupted: true,
+      interruptReason,
+      abortReason,
       resumeReplacement: null,
     });
   };
@@ -377,6 +403,9 @@ export function runCodexTask({
         code,
         signal,
       };
+      if (interruptRequested) {
+        finishInterruptedTurn();
+      }
       return;
     }
 
@@ -492,6 +521,7 @@ export function runCodexTask({
             rolloutDiscoveryTimeoutMs,
             rolloutPollIntervalMs,
             rolloutStallAfterChildExitMs,
+            rolloutStallWithoutChildExitMs,
             getSettled: () => settled,
             getRecoveryChildExit: () => recoveryChildExit,
             getActiveTurnId: () => activeTurnId,
@@ -502,6 +532,7 @@ export function runCodexTask({
               rolloutPath = value;
             },
             getRolloutObservedOffset: () => rolloutObservedOffset,
+            isInterruptRequested: () => interruptRequested,
             rememberSummary: (summary, ids) => summaryTracker.rememberSummary(summary, ids),
             emitSummary: emitFallbackSummary,
             onFinalAnswer: async () => {
@@ -512,6 +543,14 @@ export function runCodexTask({
                 threadId: latestThreadId,
                 warnings,
                 resumeReplacement: null,
+              });
+            },
+            onTurnAborted: async (summary) => {
+              activeTurnId = null;
+              finishInterruptedTurn({
+                threadId: summary?.threadId || latestThreadId,
+                interruptReason: interruptRequested ? "user" : "upstream",
+                abortReason: summary?.abortReason || null,
               });
             },
           }))
@@ -609,6 +648,7 @@ export function runCodexTask({
       return queueSteer(input);
     },
     interrupt({ threadId = latestThreadId, turnId = activeTurnId } = {}) {
+      interruptRequested = true;
       if (!rpc || !threadId || !turnId) {
         return Promise.resolve(false);
       }

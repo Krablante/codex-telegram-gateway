@@ -164,8 +164,17 @@ export function buildProgressText(state, language = "rus") {
   return parts.join("\n\n");
 }
 
-export function buildInterruptedText(language = "rus") {
-  return isEnglish(language) ? "Stopped." : "Остановлено.";
+export function buildInterruptedText(
+  language = "rus",
+  { requestedByUser = false, interruptReason = null } = {},
+) {
+  if (requestedByUser || interruptReason === "user") {
+    return isEnglish(language) ? "Stopped." : "Остановлено.";
+  }
+
+  return isEnglish(language)
+    ? "The run was interrupted before a final answer."
+    : "Выполнение run было прервано до финального ответа.";
 }
 
 export function buildFailureText(error, language = "rus") {

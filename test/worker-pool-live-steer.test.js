@@ -19,15 +19,15 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 203,
     topicName: "Steer buffer",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -405,15 +405,15 @@ test("CodexWorkerPool keeps root thread state when foreign subagent events arriv
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2032,
     topicName: "Foreign thread isolation",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -604,15 +604,15 @@ test("CodexWorkerPool does not let late live events clobber a completed run back
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2031,
     topicName: "Late event race",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -725,15 +725,15 @@ test("CodexWorkerPool surfaces non-interrupt run failures instead of interrupted
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 203,
     topicName: "Failure reply",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -793,21 +793,99 @@ test("CodexWorkerPool surfaces non-interrupt run failures instead of interrupted
   assert.match(reloaded.last_agent_reply, /Не смог закончить run\./u);
 });
 
+test("CodexWorkerPool keeps upstream SIGINT runs as interrupted instead of failed", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 2032,
+    topicName: "Upstream interrupt reply",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+
+  const sentMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: () => ({
+      child: { kill() {} },
+      finished: Promise.resolve({
+        exitCode: null,
+        signal: "SIGINT",
+        threadId: "upstream-interrupted-thread",
+        warnings: [],
+        interrupted: true,
+        interruptReason: "upstream",
+        abortReason: "interrupted",
+        resumeReplacement: null,
+      }),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Проверь neutral interrupt.",
+    message: {
+      message_id: 603,
+      message_thread_id: 2032,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+  const finalReply = sentMessages.at(-1)?.text || "";
+  assert.doesNotMatch(finalReply, /Не смог закончить run\./u);
+  assert.match(finalReply, /Выполнение run было прервано до финального ответа\./u);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "interrupted");
+  assert.equal(reloaded.codex_thread_id, null);
+  assert.match(reloaded.last_agent_reply, /Выполнение run было прервано до финального ответа\./u);
+});
+
 test("CodexWorkerPool localizes failure replies to English when the session UI language is ENG", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2031,
     topicName: "English failure",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
@@ -876,15 +954,15 @@ test("CodexWorkerPool treats a starting run as busy before progress delivery com
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 204,
     topicName: "Starting busy guard",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -995,15 +1073,15 @@ test("CodexWorkerPool shutdown waits for a reserved start to become interruptibl
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 205,
     topicName: "Shutdown reserved start",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -1127,15 +1205,15 @@ test("CodexWorkerPool keeps a completed final answer even if interrupt lands lat
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2041,
     topicName: "Late interrupt",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 

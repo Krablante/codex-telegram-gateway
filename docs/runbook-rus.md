@@ -10,7 +10,7 @@
 ## Быстрые проверки в репо
 
 ```bash
-cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
+cd /path/to/codex-telegram-gateway
 make admin ARGS='status'
 make admin ARGS='sessions --state parked'
 make doctor
@@ -20,14 +20,14 @@ make test
 ## Ручной foreground run
 
 ```bash
-cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
+cd /path/to/codex-telegram-gateway
 make run
 ```
 
 Если включён Omni:
 
 ```bash
-cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
+cd /path/to/codex-telegram-gateway
 make run-omni
 ```
 
@@ -48,9 +48,9 @@ scripts\windows\run-omni.cmd
 
 ## Где смотреть runtime
 
-- heartbeat: `/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway/logs/runtime-heartbeat.json`
-- events: `/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway/logs/runtime-events.ndjson`
-- doctor snapshot: `/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway/logs/doctor-last-run.json`
+- heartbeat: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-heartbeat.json`
+- events: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-events.ndjson`
+- doctor snapshot: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/doctor-last-run.json`
 - per-session exchange log: `.../sessions/<chat-id>/<topic-id>/exchange-log.jsonl`
 - per-session brief: `.../sessions/<chat-id>/<topic-id>/active-brief.md`
 
@@ -66,7 +66,7 @@ scripts\windows\run-omni.cmd
 Используй repo-local admin CLI, когда тема уже parked или удалена и Telegram-команды до неё больше не доходят:
 
 ```bash
-cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
+cd /path/to/codex-telegram-gateway
 make admin ARGS='status'
 make admin ARGS='sessions --state parked'
 make admin ARGS='show -1003577434463 12345'
@@ -91,13 +91,13 @@ scripts\windows\admin.cmd purge -1003577434463 12345
 ## Сервисы
 
 ```bash
-cd /home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway
+cd /path/to/codex-telegram-gateway
 make service-install
 make service-status
 make service-logs
 make service-rollout
 make service-restart
-make service-restart-private
+make service-restart-live
 make service-hard-restart
 ```
 
@@ -112,10 +112,10 @@ make service-install-omni
 make service-status-omni
 make service-logs-omni
 make service-restart-omni
-make service-restart-private
+make service-restart-live
 ```
 
-`make service-restart-private` теперь каноничный путь для “перезапусти приватного бота”: он перезапускает `Omni`, а `Spike` прокатывает через мягкий session-aware rollout. Raw `systemctl restart codex-telegram-gateway.service` не использовать, если не нужен именно слепой жёсткий рестарт.
+`make service-restart-live` теперь каноничный путь для обычного живого рестарта: он перезапускает `Omni`, а `Spike` прокатывает через мягкий session-aware rollout. Raw `systemctl restart codex-telegram-gateway.service` не использовать, если не нужен именно слепой жёсткий рестарт.
 
 ## Что делать при проблемах
 
@@ -123,7 +123,7 @@ make service-restart-private
 - перед слепым рестартом смотри `make admin ARGS='status'`
 - если сломалась только одна тема, сначала пробуй topic-level `/status`, `/interrupt`, `/purge`
 - если live run ещё активен, сначала используй мягкий `service-restart`; к `service-hard-restart` переходи только если нужен именно жёсткий обрыв всего cgroup
-- если soft rollout упёрся в timeout из-за ещё активной retained topic, сначала дай этой теме завершиться или прерви её, потом повтори `make service-restart-private` вместо raw `systemctl restart`
+- если soft rollout упёрся в timeout из-за ещё активной retained topic, сначала дай этой теме завершиться или прерви её, потом повтори `make service-restart-live` вместо raw `systemctl restart`
 - если сломан сам topic path, переключайся в emergency private chat lane
 - если тема уже исчезла, используй local admin surface вместо попыток сильнее давить Telegram
 - на native Windows для этого используй `scripts\windows\admin.cmd ...`, а не Linux-only `make admin`

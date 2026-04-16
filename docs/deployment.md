@@ -85,7 +85,7 @@ Optional Omni settings:
 Workspace settings:
 
 - `WORKSPACE_ROOT` — preferred workspace root for new installs
-- `ATLAS_WORKSPACE_ROOT` — compatibility alias for older installs
+- a legacy compatibility alias for `WORKSPACE_ROOT` is still accepted for older installs
 - `DEFAULT_SESSION_BINDING_PATH` — optional default landing path for plain `/new` without `cwd=...`
 
 Codex limits settings:

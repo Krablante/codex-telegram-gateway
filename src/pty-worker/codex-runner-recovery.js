@@ -99,6 +99,17 @@ export function summarizeRolloutLine(
     };
   }
 
+  if (event.payload.type === "turn_aborted") {
+    return {
+      kind: "turn",
+      eventType: "turn.aborted",
+      text: "Codex turn aborted",
+      threadId: primaryThreadId,
+      turnId: event.payload.turn_id || activeTurnId,
+      abortReason: event.payload.reason || null,
+    };
+  }
+
   return null;
 }
 
@@ -273,6 +284,7 @@ export async function followRolloutAfterDisconnect({
   rolloutDiscoveryTimeoutMs,
   rolloutPollIntervalMs,
   rolloutStallAfterChildExitMs,
+  rolloutStallWithoutChildExitMs,
   getSettled,
   getRecoveryChildExit,
   getActiveTurnId,
@@ -281,9 +293,11 @@ export async function followRolloutAfterDisconnect({
   getRolloutPath,
   setRolloutPath,
   getRolloutObservedOffset,
+  isInterruptRequested,
   rememberSummary,
   emitSummary,
   onFinalAnswer,
+  onTurnAborted,
 }) {
   let resolvedRolloutPath = getRolloutPath();
   const rolloutPathWasKnownAtDisconnect = Boolean(resolvedRolloutPath);
@@ -348,6 +362,18 @@ export async function followRolloutAfterDisconnect({
         continue;
       }
 
+      if (
+        summary.eventType === "turn.aborted"
+        && (summary.abortReason === "interrupted" || isInterruptRequested?.())
+      ) {
+        await onTurnAborted?.(summary);
+        return {
+          completed: true,
+          rolloutPath: resolvedRolloutPath,
+          offset,
+        };
+      }
+
       await emitSummary(summary);
       if (summary.messagePhase === "final_answer") {
         await onFinalAnswer();
@@ -360,12 +386,56 @@ export async function followRolloutAfterDisconnect({
     }
 
     const recoveryChildExit = getRecoveryChildExit?.();
+    const recoveryStalledForMs = Date.now() - lastObservedGrowthAt;
     if (
       recoveryChildExit &&
-      Date.now() - lastObservedGrowthAt >= rolloutStallAfterChildExitMs
+      recoveryStalledForMs >= rolloutStallAfterChildExitMs
     ) {
+      if (isInterruptRequested?.()) {
+        await onTurnAborted?.({
+          kind: "turn",
+          eventType: "turn.aborted",
+          text: "Codex turn aborted",
+          threadId: getPrimaryThreadId() || getLatestThreadId(),
+          turnId: getActiveTurnId?.() ?? null,
+          abortReason: "interrupted",
+        });
+        return {
+          completed: true,
+          rolloutPath: resolvedRolloutPath,
+          offset,
+        };
+      }
+
       throw new Error(
         `Codex app-server exited before rollout fallback reached a final answer (code=${recoveryChildExit.code ?? "null"}, signal=${recoveryChildExit.signal ?? "null"})`,
+      );
+    }
+
+    if (
+      !recoveryChildExit &&
+      Number.isFinite(rolloutStallWithoutChildExitMs) &&
+      rolloutStallWithoutChildExitMs > 0 &&
+      recoveryStalledForMs >= rolloutStallWithoutChildExitMs
+    ) {
+      if (isInterruptRequested?.()) {
+        await onTurnAborted?.({
+          kind: "turn",
+          eventType: "turn.aborted",
+          text: "Codex turn aborted",
+          threadId: getPrimaryThreadId() || getLatestThreadId(),
+          turnId: getActiveTurnId?.() ?? null,
+          abortReason: "interrupted",
+        });
+        return {
+          completed: true,
+          rolloutPath: resolvedRolloutPath,
+          offset,
+        };
+      }
+
+      throw new Error(
+        "Codex rollout recovery stalled after websocket disconnect and no new rollout output arrived",
       );
     }
 

@@ -19,6 +19,10 @@ test("buildCodexArgs builds app-server args", () => {
     "app-server",
     "--listen",
     "ws://127.0.0.1:40187",
+    "-c",
+    'sandbox_mode="danger-full-access"',
+    "-c",
+    'approval_policy="never"',
   ]);
 });
 
@@ -35,6 +39,26 @@ test("buildCodexArgs appends model and reasoning overrides", () => {
     'model="gpt-5.4-mini"',
     "-c",
     'model_reasoning_effort="high"',
+    "-c",
+    'sandbox_mode="danger-full-access"',
+    "-c",
+    'approval_policy="never"',
+  ]);
+});
+
+test("buildCodexArgs allows sandbox and approval overrides", () => {
+  assert.deepEqual(buildCodexArgs({
+    listenUrl: "ws://127.0.0.1:40187",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+  }), [
+    "app-server",
+    "--listen",
+    "ws://127.0.0.1:40187",
+    "-c",
+    'sandbox_mode="workspace-write"',
+    "-c",
+    'approval_policy="on-request"',
   ]);
 });
 

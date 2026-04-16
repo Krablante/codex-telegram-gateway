@@ -76,6 +76,7 @@ export async function startPromptRun(
     startReserved = false;
   };
   markPromptAccepted(pool.serviceState);
+  let run = null;
 
   const state = {
     sessionKey,
@@ -136,7 +137,7 @@ export async function startPromptRun(
       getSessionUiLanguage(session),
     );
 
-    const run = {
+    run = {
       sessionKey,
       session,
       child: null,
@@ -178,9 +179,13 @@ export async function startPromptRun(
           result.exitCode === 0 &&
           typeof state.finalAgentMessage === "string" &&
           state.finalAgentMessage.trim();
+        const interruptedResult =
+          state.interruptRequested ||
+          result?.interrupted === true ||
+          result?.signal === "SIGINT";
         state.status = completedWithReply
           ? "completed"
-          : state.interruptRequested
+          : interruptedResult
             ? "interrupted"
             : result.exitCode === 0
               ? "completed"
@@ -220,7 +225,10 @@ export async function startPromptRun(
             ? state.finalAgentMessage ||
               (isEnglish(getSessionUiLanguage(run.session)) ? "Done." : "Готово.")
             : state.status === "interrupted"
-              ? buildInterruptedText(getSessionUiLanguage(run.session))
+              ? buildInterruptedText(getSessionUiLanguage(run.session), {
+                requestedByUser: state.interruptRequested,
+                interruptReason: result?.interruptReason || null,
+              })
               : buildRunFailureText(result, getSessionUiLanguage(run.session));
         const finalReplyDeliveryText =
           state.status === "completed"
@@ -375,6 +383,15 @@ export async function startPromptRun(
       topicId: message.message_thread_id,
     };
   } catch (error) {
+    if (run && !run.lifecyclePromise) {
+      pool.stopProgressLoop(run);
+      if (pool.activeRuns.get(sessionKey) === run) {
+        pool.activeRuns.delete(sessionKey);
+      }
+      pool.pendingLiveSteers.delete(sessionKey);
+      setActiveRunCount(pool.serviceState, pool.activeRuns.size);
+      await run.state.progress?.dismiss?.().catch(() => false);
+    }
     releaseStartReservation();
     settleStartingRun();
     throw error;
