@@ -148,6 +148,173 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
   assert.equal(sentMessages.at(-1).reply_to_message_id, 601);
 });
 
+test("CodexWorkerPool restarts the run after an upstream interrupt that happens after accepted live steer", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-live-steer-restart-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 2033,
+    topicName: "Live steer restart",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+
+  const sentMessages = [];
+  const runCalls = [];
+  const steerCalls = [];
+  const firstAttemptFinished = createDeferred();
+  const restartImagePath = "/tmp/live-steer-restart.png";
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ prompt, imagePaths, sessionThreadId, onEvent }) => {
+      runCalls.push({ prompt, imagePaths, sessionThreadId });
+      const child = { kill() {} };
+      if (runCalls.length === 1) {
+        return {
+          child,
+          steer({ input }) {
+            steerCalls.push(input);
+            return Promise.resolve({
+              ok: true,
+              reason: "steered",
+            });
+          },
+          finished: firstAttemptFinished.promise,
+        };
+      }
+
+      return {
+        child,
+        finished: (async () => {
+          await onEvent(
+            {
+              kind: "thread",
+              eventType: "thread.started",
+              text: "Codex thread started: recovered-thread",
+              threadId: "recovered-thread",
+            },
+            {
+              type: "thread.started",
+              thread_id: "recovered-thread",
+            },
+          );
+          await onEvent(
+            {
+              kind: "agent_message",
+              eventType: "item.completed",
+              text: "Учёл follow-up и продолжил run.",
+              messagePhase: "final_answer",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Учёл follow-up и продолжил run.",
+              },
+            },
+          );
+
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "recovered-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Проверь тему и не умирай.",
+    message: {
+      message_id: 700,
+      message_thread_id: 2033,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key)?.controller);
+
+  const steered = await workerPool.steerActiveRun({
+    session,
+    rawPrompt: "И ещё учти follow-up после live steer.",
+    message: {
+      message_id: 701,
+      message_thread_id: 2033,
+    },
+    attachments: [
+      {
+        file_path: restartImagePath,
+        is_image: true,
+        mime_type: "image/png",
+        size_bytes: 1234,
+      },
+    ],
+  });
+  assert.equal(steered.ok, true);
+  assert.equal(steerCalls.length, 1);
+  assert.equal(steerCalls[0][1].type, "localImage");
+  assert.equal(steerCalls[0][1].path, restartImagePath);
+
+  firstAttemptFinished.resolve({
+    exitCode: null,
+    signal: "SIGINT",
+    threadId: "aborted-thread",
+    warnings: [],
+    interrupted: true,
+    interruptReason: "upstream",
+    abortReason: "interrupted",
+    resumeReplacement: null,
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+  assert.equal(runCalls.length, 2);
+  assert.equal(runCalls[0].sessionThreadId, null);
+  assert.equal(runCalls[1].sessionThreadId, null);
+  assert.match(runCalls[1].prompt, /И ещё учти follow-up после live steer\./u);
+  assert.deepEqual(runCalls[1].imagePaths, [restartImagePath]);
+
+  const finalReply = sentMessages.at(-1)?.text || "";
+  assert.equal(finalReply, "Учёл follow-up и продолжил run.");
+  assert.equal(sentMessages.at(-1)?.reply_to_message_id, 701);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.codex_thread_id, "recovered-thread");
+  assert.equal(reloaded.last_agent_reply, "Учёл follow-up и продолжил run.");
+});
+
 test("CodexWorkerPool keeps pending live steer buffered when flush fails", async () => {
   const workerPool = new CodexWorkerPool({
     api: {

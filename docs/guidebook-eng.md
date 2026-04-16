@@ -64,7 +64,7 @@ Short version: menus are great for toggles, presets, screen navigation, and the 
 
 ## How work usually flows in a topic
 
-Inside a work topic, plain text is treated as a normal prompt. If the run is free, it starts immediately. If the run is still active, a follow-up can be folded into that same stream. If live steer hits a short transient failure, the bot now retries briefly first, and only then keeps that follow-up as the next prompt instead of bouncing it with a generic busy reply.
+Inside a work topic, plain text is treated as a normal prompt. If the run is free, it starts immediately. If the run is still active, a follow-up can be folded into that same stream. If live steer hits a short transient failure, the bot now retries briefly first, and only then keeps that follow-up as the next prompt instead of bouncing it with a generic busy reply. If the upstream turn is aborted after already accepting that follow-up, the gateway rebuilds the same top-level run on a fresh thread instead of treating it as a terminal interruption.
 
 `/q` is not for “one more thought.” It is for an explicit “do this next.”
 

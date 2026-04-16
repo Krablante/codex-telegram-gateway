@@ -24,10 +24,22 @@ function isRunStillSteerable(pool, sessionKey, run) {
 
 function applyAcceptedSteer({
   exchangePrompt,
+  input,
   message,
   run,
 }) {
   run.exchangePrompt = appendPromptPart(run.exchangePrompt, exchangePrompt);
+  run.state.acceptedLiveSteerCount =
+    (Number(run.state.acceptedLiveSteerCount) || 0) + 1;
+  if (Array.isArray(input) && input.length > 0) {
+    const nextImagePaths = new Set(run.state.liveSteerImagePaths || []);
+    for (const item of input) {
+      if (item?.type === "localImage" && item.path) {
+        nextImagePaths.add(item.path);
+      }
+    }
+    run.state.liveSteerImagePaths = Array.from(nextImagePaths);
+  }
   const replyTargetMessageId = resolveReplyToMessageId(message);
   if (Number.isInteger(replyTargetMessageId)) {
     run.state.replyToMessageId = replyTargetMessageId;
@@ -63,6 +75,7 @@ async function steerRunWithRetry(
     if (result?.ok) {
       applyAcceptedSteer({
         exchangePrompt,
+        input,
         message,
         run,
       });

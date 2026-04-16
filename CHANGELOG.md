@@ -6,6 +6,21 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.35] - 2026-04-16
+
+Fixed:
+
+- accepted live-steer follow-ups no longer die as fake terminal interruptions when upstream aborts the current turn right after accepting steer; the worker pool clears dead thread state and rebuilds the same top-level run on a fresh thread
+- steer-triggered recovery now replays accepted image inputs as real `localImage` items on the replacement attempt instead of degrading them into text-only context
+
+Docs:
+
+- README, architecture, Telegram surface docs, both guidebooks, and testing docs now describe the new live-steer recovery path so operators understand when the gateway retries, queues, and rebuilds the run
+
+Tests:
+
+- added regression coverage for accepted live-steer restart after upstream abort, including replay of image attachments on the recovery attempt
+
 ## [0.3.34] - 2026-04-16
 
 Fixed:

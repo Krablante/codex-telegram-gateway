@@ -104,6 +104,8 @@ export async function startPromptRun(
     replyToMessageId: resolveReplyToMessageId(message),
     lastTypingActionAt: 0,
     typingActionInFlight: false,
+    acceptedLiveSteerCount: 0,
+    liveSteerImagePaths: [],
   };
 
   try {
@@ -558,11 +560,12 @@ export async function executeRunAttempts(
   },
 ) {
   let nextPrompt = prompt;
-  const imagePaths = attachments
+  const initialImagePaths = attachments
     .filter((attachment) => attachment?.is_image && attachment?.file_path)
     .map((attachment) => attachment.file_path);
   let nextSessionThreadId = sessionThreadId;
   let resumeRetryCount = 0;
+  let recoveredLiveSteerCount = 0;
 
   while (true) {
     if (run.state.interruptRequested && !run.child) {
@@ -575,6 +578,10 @@ export async function executeRunAttempts(
       };
     }
 
+    const imagePaths = Array.from(new Set([
+      ...initialImagePaths,
+      ...(run.state.liveSteerImagePaths || []),
+    ]));
     const result = await pool.runAttempt(run, {
       prompt: includeTopicContext
         ? buildPromptWithTopicContext(
@@ -586,6 +593,19 @@ export async function executeRunAttempts(
       imagePaths,
       sessionThreadId: nextSessionThreadId,
     });
+
+    if (
+      shouldRecoverInterruptedLiveSteer(run, result, {
+        recoveredLiveSteerCount,
+      })
+    ) {
+      recoveredLiveSteerCount = Number(run.state.acceptedLiveSteerCount) || 0;
+      nextPrompt = await prepareLiveSteerFallback(pool, run, {
+        prompt: run.exchangePrompt,
+      });
+      nextSessionThreadId = null;
+      continue;
+    }
 
     if (!result.resumeReplacement || run.state.interruptRequested) {
       return result;
@@ -610,6 +630,55 @@ export async function executeRunAttempts(
     });
     nextSessionThreadId = null;
   }
+}
+
+function shouldRecoverInterruptedLiveSteer(
+  run,
+  result,
+  { recoveredLiveSteerCount = 0 } = {},
+) {
+  const acceptedLiveSteerCount = Number(run?.state?.acceptedLiveSteerCount) || 0;
+  if (acceptedLiveSteerCount <= recoveredLiveSteerCount) {
+    return false;
+  }
+
+  if (run?.state?.interruptRequested) {
+    return false;
+  }
+
+  const interruptedResult =
+    result?.interrupted === true ||
+    result?.signal === "SIGINT";
+  return (
+    interruptedResult &&
+    result?.interruptReason === "upstream" &&
+    result?.abortReason === "interrupted"
+  );
+}
+
+async function prepareLiveSteerFallback(pool, run, { prompt }) {
+  run.session = await pool.sessionStore.patch(run.session, {
+    codex_thread_id: null,
+    codex_rollout_path: null,
+    last_context_snapshot: null,
+  });
+  run.state.threadId = null;
+  run.state.activeTurnId = null;
+  run.state.rolloutPath = null;
+  run.state.contextSnapshot = null;
+  run.state.status = "rebuilding";
+  run.state.resumeMode = "live-steer-restart";
+  run.state.latestSummary = "live-steer-restart";
+  run.state.latestSummaryKind = "rebuild";
+  run.state.latestProgressMessage = null;
+  run.state.latestCommandOutput = null;
+  run.state.latestCommand = null;
+  run.state.finalAgentMessage = null;
+  run.state.finalAgentMessageSource = null;
+  run.state.progress.queueUpdate(
+    buildProgressText(run.state, getSessionUiLanguage(run.session)),
+  );
+  return pool.buildFreshBriefBootstrapPrompt(run, prompt);
 }
 
 export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionThreadId }) {
