@@ -31,6 +31,37 @@ import { buildFinalCompletedReplyText } from "./worker-pool-delivery.js";
 
 const MAX_THREAD_RESUME_RETRIES = 1;
 
+function buildRunEventSessionFields(session) {
+  return {
+    session_key: session?.session_key || null,
+    chat_id: session?.chat_id || null,
+    topic_id: session?.topic_id || null,
+    topic_name: session?.topic_name || null,
+  };
+}
+
+function computeRunDurationMs(startedAt, finishedAt) {
+  const started = Date.parse(startedAt || "");
+  const finished = Date.parse(finishedAt || "");
+  if (!Number.isFinite(started) || !Number.isFinite(finished)) {
+    return null;
+  }
+
+  return Math.max(0, finished - started);
+}
+
+async function noteRunEventBestEffort(pool, type, details = {}) {
+  if (!pool?.runtimeObserver || typeof pool.runtimeObserver.appendEvent !== "function") {
+    return;
+  }
+
+  try {
+    await pool.runtimeObserver.appendEvent(type, details);
+  } catch (error) {
+    console.warn(`runtime observer ${type} failed: ${error.message}`);
+  }
+}
+
 export async function startPromptRun(
   pool,
   {
@@ -165,6 +196,15 @@ export async function startPromptRun(
       last_run_started_at: run.startedAt,
       last_progress_message_id: stringifyMessageId(progress.messageId),
     });
+    await noteRunEventBestEffort(pool, "run.started", {
+      ...buildRunEventSessionFields(session),
+      started_at: run.startedAt,
+      reply_to_message_id: state.replyToMessageId,
+      include_topic_context: includeTopicContext,
+      attachment_count: Array.isArray(attachments) ? attachments.length : 0,
+      stored_thread_id: session.codex_thread_id ?? null,
+      resume_mode: state.resumeMode,
+    });
 
     let resultPersisted = false;
     let spikeFinalEventEmitted = false;
@@ -256,6 +296,23 @@ export async function startPromptRun(
           last_run_finished_at: finishedAt,
           last_token_usage: state.lastTokenUsage,
           last_progress_message_id: stringifyMessageId(progress.messageId),
+        });
+        await noteRunEventBestEffort(pool, "run.finished", {
+          ...buildRunEventSessionFields(run.session),
+          status: state.status,
+          started_at: run.startedAt,
+          finished_at: finishedAt,
+          duration_ms: computeRunDurationMs(run.startedAt, finishedAt),
+          exit_code: result?.exitCode ?? null,
+          signal: result?.signal ?? null,
+          interrupted: interruptedResult,
+          interrupt_reason: result?.interruptReason || null,
+          abort_reason: result?.abortReason || null,
+          thread_id: state.threadId || null,
+          resume_mode: state.resumeMode,
+          warnings_count: state.warnings.length,
+          reply_documents_count: state.replyDocuments.length,
+          token_usage: state.lastTokenUsage ?? null,
         });
         const exchangeLogResult = await pool.sessionStore.appendExchangeLogEntry(
           run.session,
@@ -566,6 +623,7 @@ export async function executeRunAttempts(
   let nextSessionThreadId = sessionThreadId;
   let resumeRetryCount = 0;
   let recoveredLiveSteerCount = 0;
+  let recoveredInterruptedRunCount = 0;
 
   while (true) {
     if (run.state.interruptRequested && !run.child) {
@@ -594,14 +652,25 @@ export async function executeRunAttempts(
       sessionThreadId: nextSessionThreadId,
     });
 
-    if (
-      shouldRecoverInterruptedLiveSteer(run, result, {
-        recoveredLiveSteerCount,
-      })
-    ) {
-      recoveredLiveSteerCount = Number(run.state.acceptedLiveSteerCount) || 0;
-      nextPrompt = await prepareLiveSteerFallback(pool, run, {
+    const interruptedRecoveryKind = classifyInterruptedRunRecovery(run, result, {
+      recoveredLiveSteerCount,
+      recoveredInterruptedRunCount,
+    });
+    if (interruptedRecoveryKind) {
+      await noteRunEventBestEffort(pool, "run.recovery", {
+        ...buildRunEventSessionFields(run.session),
+        recovery_kind: interruptedRecoveryKind,
+        attempt: recoveredInterruptedRunCount + 1,
+        prior_thread_id: result?.threadId || run.state.threadId || null,
+        accepted_live_steer_count: Number(run.state.acceptedLiveSteerCount) || 0,
+      });
+      recoveredInterruptedRunCount += 1;
+      if (interruptedRecoveryKind === "live-steer-restart") {
+        recoveredLiveSteerCount = Number(run.state.acceptedLiveSteerCount) || 0;
+      }
+      nextPrompt = await prepareInterruptedRunFallback(pool, run, {
         prompt: run.exchangePrompt,
+        recoveryKind: interruptedRecoveryKind,
       });
       nextSessionThreadId = null;
       continue;
@@ -632,31 +701,42 @@ export async function executeRunAttempts(
   }
 }
 
-function shouldRecoverInterruptedLiveSteer(
+function classifyInterruptedRunRecovery(
   run,
   result,
-  { recoveredLiveSteerCount = 0 } = {},
+  {
+    recoveredLiveSteerCount = 0,
+    recoveredInterruptedRunCount = 0,
+  } = {},
 ) {
-  const acceptedLiveSteerCount = Number(run?.state?.acceptedLiveSteerCount) || 0;
-  if (acceptedLiveSteerCount <= recoveredLiveSteerCount) {
-    return false;
-  }
-
   if (run?.state?.interruptRequested) {
-    return false;
+    return null;
   }
 
   const interruptedResult =
     result?.interrupted === true ||
     result?.signal === "SIGINT";
-  return (
-    interruptedResult &&
-    result?.interruptReason === "upstream" &&
-    result?.abortReason === "interrupted"
-  );
+  if (
+    !interruptedResult ||
+    result?.interruptReason !== "upstream" ||
+    result?.abortReason !== "interrupted"
+  ) {
+    return null;
+  }
+
+  if (recoveredInterruptedRunCount >= 1) {
+    return null;
+  }
+
+  const acceptedLiveSteerCount = Number(run?.state?.acceptedLiveSteerCount) || 0;
+  if (acceptedLiveSteerCount > recoveredLiveSteerCount) {
+    return "live-steer-restart";
+  }
+
+  return "upstream-restart";
 }
 
-async function prepareLiveSteerFallback(pool, run, { prompt }) {
+async function prepareInterruptedRunFallback(pool, run, { prompt, recoveryKind }) {
   run.session = await pool.sessionStore.patch(run.session, {
     codex_thread_id: null,
     codex_rollout_path: null,
@@ -667,8 +747,8 @@ async function prepareLiveSteerFallback(pool, run, { prompt }) {
   run.state.rolloutPath = null;
   run.state.contextSnapshot = null;
   run.state.status = "rebuilding";
-  run.state.resumeMode = "live-steer-restart";
-  run.state.latestSummary = "live-steer-restart";
+  run.state.resumeMode = recoveryKind;
+  run.state.latestSummary = recoveryKind;
   run.state.latestSummaryKind = "rebuild";
   run.state.latestProgressMessage = null;
   run.state.latestCommandOutput = null;

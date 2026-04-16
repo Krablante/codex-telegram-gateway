@@ -68,7 +68,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - `src/pty-worker/worker-pool.js` is the thin public shell that keeps the exported `CodexWorkerPool` surface stable
    - `src/pty-worker/worker-pool-transport.js` owns progress bubbles, typing heartbeats, and live steer buffering/flush behavior, including the short retry window before follow-up fallback
    - `src/pty-worker/worker-pool-delivery.js` owns final reply delivery, transient final-send retry/fallback behavior, Telegram file delivery, and Spike final-event emission
-   - `src/pty-worker/worker-pool-lifecycle.js` owns run startup, resume fallback, lifecycle persistence, interrupts, shutdown coordination, and live-steer restart recovery after an upstream abort
+   - `src/pty-worker/worker-pool-lifecycle.js` owns run startup, resume fallback, lifecycle persistence, interrupts, shutdown coordination, and the fresh-thread recovery path for live-steer and ordinary upstream-aborted runs
    - `src/pty-worker/worker-pool-common.js` keeps the shared worker contracts and pure helpers that really cross those slices
 8. The `codex-runner` layer now follows the same shell-plus-domain split:
    - `src/pty-worker/codex-runner.js` is the thin public facade for `runCodexTask`: child lifecycle wiring, turn orchestration, steer buffering, short late-final grace after `turn/completed`, live rollout `task_complete` fallback, and finish/fail coordination

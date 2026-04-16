@@ -38,7 +38,7 @@ Current slices guarantee:
 - `logs/`, `sessions/`, `indexes/`, `settings/`, and `tmp/` can be created on demand
 - `logs/doctor-last-run.json` may be refreshed by `make doctor`
 - `logs/runtime-heartbeat.json` may track the latest service heartbeat, pid, counters, and poll state
-- `logs/runtime-events.ndjson` may append structured service lifecycle, poll/update failure, and session lifecycle events
+- `logs/runtime-events.ndjson` may append structured service lifecycle, poll/update failure, session lifecycle, and per-run `run.started` / `run.recovery` / `run.finished` events with interrupt-reason and recovery-kind metadata
 - `tmp/generations/spike/*.json` may track live Spike generation heartbeats, mode, pid, per-process identity token, and advertised local IPC endpoint during session-aware rollout
 - `omni/logs/runtime-heartbeat.json` and `omni/logs/runtime-events.ndjson` may track the separate Omni poller
 - `indexes/telegram-update-offset.json` may be refreshed by `make run` or `make smoke`

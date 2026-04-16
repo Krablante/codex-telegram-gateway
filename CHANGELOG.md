@@ -6,6 +6,20 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.36] - 2026-04-16
+
+Fixed:
+
+- ordinary runs no longer die immediately as terminal interruptions when upstream aborts the active turn without a user stop; the worker pool now retries once on a fresh thread before surfacing `interrupted`
+
+Observability:
+
+- `runtime-events.ndjson` now records per-run `run.started`, `run.recovery`, and `run.finished` entries with interrupt and recovery metadata so operators can correlate real recovery paths instead of guessing from chat output alone
+
+Tests:
+
+- added regression coverage for ordinary upstream-interrupt restart and for the one-retry cap before a final interrupted outcome
+
 ## [0.3.35] - 2026-04-16
 
 Fixed:

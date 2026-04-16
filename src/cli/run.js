@@ -93,6 +93,7 @@ async function main() {
     config,
     sessionStore,
     serviceState,
+    runtimeObserver,
     sessionCompactor,
     sessionLifecycleManager,
     spikeFinalEventStore,

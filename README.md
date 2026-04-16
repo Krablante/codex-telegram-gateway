@@ -155,7 +155,7 @@ When `CODEX_LIMITS_COMMAND` is used, set the optional JSON `source` field to the
 The bot should be an admin in the forum chat. Topic creation and cleanup flows work best when it can post, edit, delete, pin, and manage topics.
 
 `/menu` also accepts the Telegram-style `/<command>@YourBot` form, shows an in-menu `Status` screen, and recreates the pinned topic panel cleanly when you reopen it so old menu messages and transient pin notices do not pile up.
-If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn right after an already accepted live steer, the gateway now rebuilds that same top-level run on a fresh thread instead of surfacing a false terminal interruption, and accepted steer images are replayed into the recovery attempt.
+If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn right after an already accepted live steer, the gateway now rebuilds that same top-level run on a fresh thread instead of surfacing a false terminal interruption, and accepted steer images are replayed into the recovery attempt. Ordinary upstream-interrupted turns also get one fresh-thread retry before the gateway surfaces a final interrupted reply.
 
 Native Windows:
 

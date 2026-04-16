@@ -30,6 +30,7 @@ export class CodexWorkerPool {
     config,
     sessionStore,
     serviceState,
+    runtimeObserver = null,
     sessionCompactor = null,
     sessionLifecycleManager = null,
     spikeFinalEventStore = null,
@@ -42,6 +43,7 @@ export class CodexWorkerPool {
     this.config = config;
     this.sessionStore = sessionStore;
     this.serviceState = serviceState;
+    this.runtimeObserver = runtimeObserver;
     this.sessionCompactor = sessionCompactor;
     this.sessionLifecycleManager = sessionLifecycleManager;
     this.spikeFinalEventStore = spikeFinalEventStore;
