@@ -6,6 +6,25 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.34] - 2026-04-16
+
+Fixed:
+
+- stalled disconnect recovery and early-start run failures now tear down orphaned live Codex state instead of leaving topics stuck in fake `running`
+- live `codex app-server` launches now force the configured full-access/never-approval runtime args instead of drifting into a sandboxed app-server path
+- upstream interrupted Codex turns now finalize as interrupted instead of being surfaced as ordinary failed runs
+- Telegram Bot API `retry_after` throttles on ordinary reply sends are retried inline, so temporary `429 Too Many Requests` responses stop replaying the same update and duplicating queue confirmations
+
+Docs:
+
+- public AGENTS and Telegram surface docs now recommend keeping MCP/tooling guidance in the persistent global suffix, with `pitlane`, `tavily`, `context7`, and `requests` called out explicitly
+- README notes now record the live full-access app-server behavior, stuck-run cleanup, upstream interrupt finalization, and inline Telegram rate-limit retry path
+- runbook, deployment, testing, architecture, and state-contract docs now use generic public paths/state-root wording instead of private Atlas-specific examples, and the public restart path is documented consistently as `make service-restart-live`
+
+Tests:
+
+- added regression coverage for stalled disconnect recovery, startup run cleanup, forced full-access live app-server args, upstream interrupt finalization, and inline `retry_after` recovery in `TelegramBotApiClient`
+
 ## [0.3.33] - 2026-04-09
 
 Fixed:
