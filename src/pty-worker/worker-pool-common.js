@@ -115,6 +115,17 @@ function buildProgressStep(state, language = "rus") {
   }
 
   if (state.status === "rebuilding") {
+    if (
+      ["upstream-restart", "live-steer-restart"].includes(state.resumeMode)
+      && state.threadId
+    ) {
+      return {
+        heading: isEnglish(language)
+          ? "Continuing the same Codex thread"
+          : "Продолжаю тот же Codex thread",
+        detail: null,
+      };
+    }
     return {
       heading: isEnglish(language) ? "Rebuilding context" : "Восстанавливаю контекст",
       detail: null,

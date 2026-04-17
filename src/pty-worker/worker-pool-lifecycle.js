@@ -660,6 +660,7 @@ export async function executeRunAttempts(
     await noteRunEventBestEffort(pool, "run.attempt", {
       ...buildRunEventSessionFields(run.session),
       attempt: recoveredInterruptedRunCount + 1,
+      requested_thread_id: nextSessionThreadId || null,
       thread_id: result?.threadId || null,
       duration_ms: result?.attemptInsight?.durationMs ?? null,
       primary_thread_started: result?.attemptInsight?.primaryThreadStarted ?? false,
@@ -678,11 +679,17 @@ export async function executeRunAttempts(
       recoveredInterruptedRunCount,
     });
     if (interruptedRecoveryKind) {
+      const priorThreadId =
+        result?.threadId ||
+        run.state.threadId ||
+        run.session?.codex_thread_id ||
+        null;
       await noteRunEventBestEffort(pool, "run.recovery", {
         ...buildRunEventSessionFields(run.session),
         recovery_kind: interruptedRecoveryKind,
         attempt: recoveredInterruptedRunCount + 1,
-        prior_thread_id: result?.threadId || run.state.threadId || null,
+        prior_thread_id: priorThreadId,
+        same_thread_resume: Boolean(priorThreadId),
         accepted_live_steer_count: Number(run.state.acceptedLiveSteerCount) || 0,
       });
       recoveredInterruptedRunCount += 1;
@@ -690,11 +697,13 @@ export async function executeRunAttempts(
         recoveredLiveSteerCount = Number(run.state.acceptedLiveSteerCount) || 0;
       }
       await sleep(UPSTREAM_INTERRUPT_RECOVERY_BACKOFF_MS * recoveredInterruptedRunCount);
-      nextPrompt = await prepareInterruptedRunFallback(pool, run, {
+      const fallback = await prepareInterruptedRunFallback(pool, run, {
         prompt: run.exchangePrompt,
         recoveryKind: interruptedRecoveryKind,
+        priorThreadId,
       });
-      nextSessionThreadId = null;
+      nextPrompt = fallback.prompt;
+      nextSessionThreadId = fallback.sessionThreadId;
       continue;
     }
 
@@ -762,13 +771,21 @@ function classifyInterruptedRunRecovery(
   return "upstream-restart";
 }
 
-async function prepareInterruptedRunFallback(pool, run, { prompt, recoveryKind }) {
+async function prepareInterruptedRunFallback(
+  pool,
+  run,
+  { prompt, recoveryKind, priorThreadId = null },
+) {
+  const resumeThreadId =
+    typeof priorThreadId === "string" && priorThreadId.trim()
+      ? priorThreadId.trim()
+      : null;
   run.session = await pool.sessionStore.patch(run.session, {
-    codex_thread_id: null,
+    codex_thread_id: resumeThreadId,
     codex_rollout_path: null,
     last_context_snapshot: null,
   });
-  run.state.threadId = null;
+  run.state.threadId = resumeThreadId;
   run.state.activeTurnId = null;
   run.state.rolloutPath = null;
   run.state.contextSnapshot = null;
@@ -784,7 +801,17 @@ async function prepareInterruptedRunFallback(pool, run, { prompt, recoveryKind }
   run.state.progress.queueUpdate(
     buildProgressText(run.state, getSessionUiLanguage(run.session)),
   );
-  return pool.buildFreshBriefBootstrapPrompt(run, prompt);
+  if (resumeThreadId) {
+    return {
+      prompt,
+      sessionThreadId: resumeThreadId,
+    };
+  }
+
+  return {
+    prompt: await pool.buildFreshBriefBootstrapPrompt(run, prompt),
+    sessionThreadId: null,
+  };
 }
 
 export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionThreadId }) {

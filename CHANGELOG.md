@@ -6,6 +6,25 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.38] - 2026-04-17
+
+Fixed:
+
+- upstream-aborted runs now retry on the same Codex thread before the gateway falls back to a fresh-thread rebuild, which preserves continuity better on large long-lived topics
+- live-steer recovery keeps replaying accepted image inputs while resuming the same thread instead of forcing an immediate thread reset
+
+Observability:
+
+- `run.attempt` and `run.recovery` telemetry now record `requested_thread_id` and `same_thread_resume` so operators can see when recovery stayed on the original Codex thread
+
+Docs:
+
+- README, architecture, and testing docs now describe the same-thread upstream recovery path instead of the older fresh-thread-first wording
+
+Tests:
+
+- updated worker-pool upstream recovery regression coverage to assert same-thread retries for ordinary and live-steer abort paths
+
 ## [0.3.37] - 2026-04-17
 
 Fixed:

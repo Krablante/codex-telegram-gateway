@@ -142,7 +142,7 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
   assert.match(steerCalls[0][0].text, /И ещё это не забудь\./u);
 
   finishGate.resolve();
-  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
 
   assert.equal(sentMessages.at(-1).text, "Учёл буферизованное steer.");
   assert.equal(sentMessages.at(-1).reply_to_message_id, 601);
@@ -218,12 +218,12 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
             {
               kind: "thread",
               eventType: "thread.started",
-              text: "Codex thread started: recovered-thread",
-              threadId: "recovered-thread",
+              text: "Codex thread started: aborted-thread",
+              threadId: "aborted-thread",
             },
             {
               type: "thread.started",
-              thread_id: "recovered-thread",
+              thread_id: "aborted-thread",
             },
           );
           await onEvent(
@@ -245,7 +245,7 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
           return {
             exitCode: 0,
             signal: null,
-            threadId: "recovered-thread",
+            threadId: "aborted-thread",
             warnings: [],
             resumeReplacement: null,
           };
@@ -297,11 +297,11 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
     resumeReplacement: null,
   });
 
-  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
 
   assert.equal(runCalls.length, 2);
   assert.equal(runCalls[0].sessionThreadId, null);
-  assert.equal(runCalls[1].sessionThreadId, null);
+  assert.equal(runCalls[1].sessionThreadId, "aborted-thread");
   assert.match(runCalls[1].prompt, /И ещё учти follow-up после live steer\./u);
   assert.deepEqual(runCalls[1].imagePaths, [restartImagePath]);
 
@@ -311,7 +311,7 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(reloaded.last_run_status, "completed");
-  assert.equal(reloaded.codex_thread_id, "recovered-thread");
+  assert.equal(reloaded.codex_thread_id, "aborted-thread");
   assert.equal(reloaded.last_agent_reply, "Учёл follow-up и продолжил run.");
 });
 
@@ -383,12 +383,12 @@ test("CodexWorkerPool restarts a normal run after an upstream interrupt before t
             {
               kind: "thread",
               eventType: "thread.started",
-              text: "Codex thread started: recovered-upstream-thread",
-              threadId: "recovered-upstream-thread",
+              text: "Codex thread started: aborted-upstream-thread",
+              threadId: "aborted-upstream-thread",
             },
             {
               type: "thread.started",
-              thread_id: "recovered-upstream-thread",
+              thread_id: "aborted-upstream-thread",
             },
           );
           await onEvent(
@@ -410,7 +410,7 @@ test("CodexWorkerPool restarts a normal run after an upstream interrupt before t
           return {
             exitCode: 0,
             signal: null,
-            threadId: "recovered-upstream-thread",
+            threadId: "aborted-upstream-thread",
             warnings: [],
             resumeReplacement: null,
           };
@@ -439,11 +439,11 @@ test("CodexWorkerPool restarts a normal run after an upstream interrupt before t
     resumeReplacement: null,
   });
 
-  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
 
   assert.equal(runCalls.length, 2);
   assert.equal(runCalls[0].sessionThreadId, null);
-  assert.equal(runCalls[1].sessionThreadId, null);
+  assert.equal(runCalls[1].sessionThreadId, "aborted-upstream-thread");
   assert.match(runCalls[1].prompt, /Поищи ещё мусоры на новом устройстве\./u);
   assert.deepEqual(runCalls[1].imagePaths, []);
   assert.deepEqual(runtimeEvents.map((event) => event.type), [
@@ -455,20 +455,22 @@ test("CodexWorkerPool restarts a normal run after an upstream interrupt before t
   ]);
   assert.equal(runtimeEvents[1].details.final_answer_seen, false);
   assert.equal(runtimeEvents[2].details.recovery_kind, "upstream-restart");
+  assert.equal(runtimeEvents[2].details.same_thread_resume, true);
+  assert.equal(runtimeEvents[3].details.requested_thread_id, "aborted-upstream-thread");
   assert.equal(runtimeEvents[3].details.final_answer_seen, true);
   assert.equal(runtimeEvents[4].details.status, "completed");
-  assert.equal(runtimeEvents[4].details.thread_id, "recovered-upstream-thread");
+  assert.equal(runtimeEvents[4].details.thread_id, "aborted-upstream-thread");
 
   const finalReply = sentMessages.at(-1)?.text || "";
   assert.equal(finalReply, "Продолжил после upstream abort.");
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(reloaded.last_run_status, "completed");
-  assert.equal(reloaded.codex_thread_id, "recovered-upstream-thread");
+  assert.equal(reloaded.codex_thread_id, "aborted-upstream-thread");
   assert.equal(reloaded.last_agent_reply, "Продолжил после upstream abort.");
 });
 
-test("CodexWorkerPool survives two upstream interrupts before a later fresh-thread recovery succeeds", async () => {
+test("CodexWorkerPool survives two upstream interrupts before a later same-thread retry succeeds", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-upstream-restart-twice-"),
   );
@@ -528,7 +530,7 @@ test("CodexWorkerPool survives two upstream interrupts before a later fresh-thre
           finished: Promise.resolve({
             exitCode: null,
             signal: "SIGINT",
-            threadId: `aborted-upstream-thread-${attempt}`,
+            threadId: "sticky-upstream-thread",
             warnings: [],
             interrupted: true,
             interruptReason: "upstream",
@@ -545,12 +547,12 @@ test("CodexWorkerPool survives two upstream interrupts before a later fresh-thre
             {
               kind: "thread",
               eventType: "thread.started",
-              text: "Codex thread started: recovered-upstream-thread-3",
-              threadId: "recovered-upstream-thread-3",
+              text: "Codex thread started: sticky-upstream-thread",
+              threadId: "sticky-upstream-thread",
             },
             {
               type: "thread.started",
-              thread_id: "recovered-upstream-thread-3",
+              thread_id: "sticky-upstream-thread",
             },
           );
           await onEvent(
@@ -572,7 +574,7 @@ test("CodexWorkerPool survives two upstream interrupts before a later fresh-thre
           return {
             exitCode: 0,
             signal: null,
-            threadId: "recovered-upstream-thread-3",
+            threadId: "sticky-upstream-thread",
             warnings: [],
             resumeReplacement: null,
           };
@@ -593,6 +595,9 @@ test("CodexWorkerPool survives two upstream interrupts before a later fresh-thre
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
 
   assert.equal(runCalls.length, 3);
+  assert.equal(runCalls[0].sessionThreadId, null);
+  assert.equal(runCalls[1].sessionThreadId, "sticky-upstream-thread");
+  assert.equal(runCalls[2].sessionThreadId, "sticky-upstream-thread");
   assert.deepEqual(runtimeEvents.map((event) => event.type), [
     "run.started",
     "run.attempt",
@@ -607,15 +612,17 @@ test("CodexWorkerPool survives two upstream interrupts before a later fresh-thre
   assert.equal(runtimeEvents[3].details.attempt, 2);
   assert.equal(runtimeEvents[4].details.attempt, 2);
   assert.equal(runtimeEvents[5].details.attempt, 3);
+  assert.equal(runtimeEvents[3].details.requested_thread_id, "sticky-upstream-thread");
+  assert.equal(runtimeEvents[5].details.requested_thread_id, "sticky-upstream-thread");
   assert.equal(runtimeEvents[6].details.status, "completed");
-  assert.equal(runtimeEvents[6].details.thread_id, "recovered-upstream-thread-3");
+  assert.equal(runtimeEvents[6].details.thread_id, "sticky-upstream-thread");
 
   const finalReply = sentMessages.at(-1)?.text || "";
   assert.equal(finalReply, "Пережил двойной upstream abort.");
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(reloaded.last_run_status, "completed");
-  assert.equal(reloaded.codex_thread_id, "recovered-upstream-thread-3");
+  assert.equal(reloaded.codex_thread_id, "sticky-upstream-thread");
 });
 
 test("CodexWorkerPool keeps a captured final answer when upstream aborts after the final message", async () => {

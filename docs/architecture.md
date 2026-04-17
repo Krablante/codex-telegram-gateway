@@ -105,13 +105,14 @@ This repo now explicitly follows a modular-first handler model.
 - `src/cli/run.js` is now a lighter composition root, but keep signal handling, abort ownership, and shutdown sequencing there instead of smearing that lifecycle across helpers.
 - keep `src/cli/run-background-jobs.js` and `src/cli/run-rollout-controller.js` narrow; they should stay as small closure-based runtime slices, not turn into second-stage monoliths.
 - the session-store boundary is healthier now, but keep new persistence logic split between `session-store-lifecycle.js`, `session-store-files.js`, `session-store-meta.js`, and `session-store-io.js` instead of letting one helper file regrow into the next storage monolith.
-- `src/pty-worker/worker-pool-lifecycle.js` is intentionally the run-lifecycle owner, but new steer or delivery behavior should stay in `worker-pool-transport.js` and `worker-pool-delivery.js` unless it truly belongs to lifecycle coordination.
+   - `src/pty-worker/worker-pool-lifecycle.js` is intentionally the run-lifecycle owner, but new steer or delivery behavior should stay in `worker-pool-transport.js` and `worker-pool-delivery.js` unless it truly belongs to lifecycle coordination
 - `src/telegram/global-control-panel-view.js` and `src/telegram/topic-control-panel-view.js` are still the heaviest view modules; keep new callback/input/lifecycle behavior in their existing sibling modules so the views stay render-focused.
 
 ## Transport behavior
 
 - a normal prompt starts a Codex turn through `app-server`
 - repeated follow-up prompts that land while the run is still active are sent into that same live turn through `turn/steer`; short transient steer failures are retried before the gateway falls back to the next prompt queue
+- if upstream aborts the active turn, the worker pool now first retries the same top-level run on the same Codex thread and only falls back to a fresh-thread rebuild when there is no usable thread to resume; accepted steer image inputs are replayed into live-steer recovery attempts as real `localImage` items
 - button-driven control-panel and status surfaces prefer cached Codex limits immediately and refresh them in the background instead of stalling a menu redraw on a slow limits source
 - button presses now also clear Telegram's callback spinner on a per-batch fast path before the full message/callback business logic finishes, so button pickup stays snappy even when the batch still has heavier work behind it
 - service rollout is now per-topic rather than whole-process drain: a retiring generation keeps only the topics that already had an active run, while the replacement generation becomes the intake leader for everything else
