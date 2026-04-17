@@ -160,3 +160,75 @@ test("handleIncomingMessage steers the active run instead of returning busy when
   assert.equal(steerCalls[0].rawPrompt, "Докинь ещё вот это.");
   assert.match(sent[0].text, /Докину это в текущий run/u);
 });
+
+test("handleIncomingMessage buffers long prompt fragments without reactivating the topic session", async () => {
+  const enqueued = [];
+  let ensuredSessionCount = 0;
+  let ensuredRunnableCount = 0;
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("buffered fragments should not send a reply yet");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "part 1 of a very long prompt",
+      from: { id: 1234567890, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 79,
+    },
+    promptFragmentAssembler: {
+      getStateForMessage() {
+        return {
+          active: false,
+          mode: "auto",
+          messageCount: 0,
+        };
+      },
+      hasPendingForSameTopicMessage() {
+        return false;
+      },
+      shouldBufferMessage() {
+        return true;
+      },
+      enqueue(entry) {
+        enqueued.push(entry);
+      },
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        ensuredSessionCount += 1;
+        return {
+          session_key: "-1001234567890:79",
+          lifecycle_state: "parked",
+          auto_mode: {
+            enabled: false,
+          },
+        };
+      },
+      async ensureRunnableSessionForMessage() {
+        ensuredRunnableCount += 1;
+        throw new Error("buffer-only flow should not reactivate the session");
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        throw new Error("buffer-only flow should not start a run");
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-buffered");
+  assert.equal(ensuredSessionCount, 1);
+  assert.equal(ensuredRunnableCount, 0);
+  assert.equal(enqueued.length, 1);
+});

@@ -221,6 +221,78 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
   assert.equal(touched[0].commandName, "new");
 });
 
+test("handleIncomingMessage reuses the current topic binding for /new without reloading inheritance twice", async () => {
+  const sourceSession = buildSession({
+    session_key: "-1003577434463:77",
+    topic_id: "77",
+    workspace_binding: {
+      repo_root: "/home/example/work",
+      cwd: "/home/example/work",
+      branch: "feature/demo",
+      worktree_path: "/home/example/work",
+    },
+  });
+  let ensuredSessionCount = 0;
+  const created = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {},
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/new Reuse current binding",
+      entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_thread_id: 77,
+    },
+    serviceState: buildServiceState(),
+    sessionService: {
+      async ensureSessionForMessage() {
+        ensuredSessionCount += 1;
+        return sourceSession;
+      },
+      async resolveInheritedBinding() {
+        throw new Error("should reuse the already loaded topic session");
+      },
+      async createTopicSession({ workspaceBinding, inheritedFromSessionKey }) {
+        created.push({ workspaceBinding, inheritedFromSessionKey });
+        return {
+          forumTopic: {
+            name: "Reuse current binding",
+            message_thread_id: 78,
+          },
+          session: buildSession({
+            session_key: "-1003577434463:78",
+            topic_id: "78",
+            workspace_binding: workspaceBinding,
+          }),
+        };
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "new");
+  assert.equal(ensuredSessionCount, 1);
+  assert.deepEqual(created, [
+    {
+      workspaceBinding: sourceSession.workspace_binding,
+      inheritedFromSessionKey: sourceSession.session_key,
+    },
+  ]);
+});
+
 test("handleIncomingMessage creates and pins a local control menu for a new topic", async () => {
   const sent = [];
   const pinned = [];

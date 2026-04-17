@@ -30,6 +30,8 @@ import {
 import { buildFinalCompletedReplyText } from "./worker-pool-delivery.js";
 
 const MAX_THREAD_RESUME_RETRIES = 1;
+const MAX_UPSTREAM_INTERRUPT_RECOVERIES = 2;
+const UPSTREAM_INTERRUPT_RECOVERY_BACKOFF_MS = 500;
 
 function buildRunEventSessionFields(session) {
   return {
@@ -182,6 +184,7 @@ export async function startPromptRun(
       startedAt: new Date().toISOString(),
       progressMessageId: progress.messageId,
       progressTimer: null,
+      runtimeProfileInputs: {},
     };
     run.progressTimer = pool.startProgressLoop(run);
     void pool.sendTypingAction(run);
@@ -218,9 +221,12 @@ export async function startPromptRun(
         state.threadId = result.threadId || state.threadId;
         state.warnings.push(...result.warnings);
         const completedWithReply =
-          result.exitCode === 0 &&
           typeof state.finalAgentMessage === "string" &&
-          state.finalAgentMessage.trim();
+          state.finalAgentMessage.trim() &&
+          (
+            result.exitCode === 0 ||
+            result?.attemptInsight?.sawFinalAnswer === true
+          );
         const interruptedResult =
           state.interruptRequested ||
           result?.interrupted === true ||
@@ -651,6 +657,21 @@ export async function executeRunAttempts(
       imagePaths,
       sessionThreadId: nextSessionThreadId,
     });
+    await noteRunEventBestEffort(pool, "run.attempt", {
+      ...buildRunEventSessionFields(run.session),
+      attempt: recoveredInterruptedRunCount + 1,
+      thread_id: result?.threadId || null,
+      duration_ms: result?.attemptInsight?.durationMs ?? null,
+      primary_thread_started: result?.attemptInsight?.primaryThreadStarted ?? false,
+      commentary_count: result?.attemptInsight?.commentaryCount ?? 0,
+      command_count: result?.attemptInsight?.commandCount ?? 0,
+      final_answer_seen: result?.attemptInsight?.sawFinalAnswer ?? false,
+      last_event_kind: result?.attemptInsight?.lastEventKind || null,
+      last_event_type: result?.attemptInsight?.lastEventType || null,
+      interrupted: result?.interrupted === true || result?.signal === "SIGINT",
+      interrupt_reason: result?.interruptReason || null,
+      abort_reason: result?.abortReason || null,
+    });
 
     const interruptedRecoveryKind = classifyInterruptedRunRecovery(run, result, {
       recoveredLiveSteerCount,
@@ -668,6 +689,7 @@ export async function executeRunAttempts(
       if (interruptedRecoveryKind === "live-steer-restart") {
         recoveredLiveSteerCount = Number(run.state.acceptedLiveSteerCount) || 0;
       }
+      await sleep(UPSTREAM_INTERRUPT_RECOVERY_BACKOFF_MS * recoveredInterruptedRunCount);
       nextPrompt = await prepareInterruptedRunFallback(pool, run, {
         prompt: run.exchangePrompt,
         recoveryKind: interruptedRecoveryKind,
@@ -724,7 +746,11 @@ function classifyInterruptedRunRecovery(
     return null;
   }
 
-  if (recoveredInterruptedRunCount >= 1) {
+  if (result?.attemptInsight?.sawFinalAnswer === true) {
+    return null;
+  }
+
+  if (recoveredInterruptedRunCount >= MAX_UPSTREAM_INTERRUPT_RECOVERIES) {
     return null;
   }
 
@@ -767,12 +793,17 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
     (await pool.sessionStore.load(run.session.chat_id, run.session.topic_id)) ||
     run.session;
   run.session = currentSession;
-  const globalCodexSettings = pool.globalCodexSettingsStore
-    ? await pool.globalCodexSettingsStore.load({ force: true })
-    : null;
-  const availableModels = await loadAvailableCodexModels({
-    configPath: pool.config.codexConfigPath,
-  });
+  if (!Object.hasOwn(run.runtimeProfileInputs, "globalCodexSettings")) {
+    run.runtimeProfileInputs.globalCodexSettings = pool.globalCodexSettingsStore
+      ? await pool.globalCodexSettingsStore.load()
+      : null;
+  }
+  if (!Object.hasOwn(run.runtimeProfileInputs, "availableModels")) {
+    run.runtimeProfileInputs.availableModels = await loadAvailableCodexModels({
+      configPath: pool.config.codexConfigPath,
+    });
+  }
+  const { globalCodexSettings, availableModels } = run.runtimeProfileInputs;
   const runtimeProfile = resolveCodexRuntimeProfile({
     session: currentSession,
     globalSettings: globalCodexSettings,
@@ -782,6 +813,15 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
   });
   state.model = runtimeProfile.model;
   state.reasoningEffort = runtimeProfile.reasoningEffort;
+  const attemptStartedAt = Date.now();
+  const attemptInsight = {
+    primaryThreadStarted: false,
+    commentaryCount: 0,
+    commandCount: 0,
+    sawFinalAnswer: false,
+    lastEventKind: null,
+    lastEventType: null,
+  };
   const task = pool.runTask({
     codexBinPath: pool.config.codexBinPath,
     cwd: run.session.workspace_binding.cwd,
@@ -792,9 +832,14 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
     reasoningEffort: runtimeProfile.reasoningEffort,
     onEvent: async (summary, event) => {
       const primaryThreadEvent = summary.isPrimaryThreadEvent !== false;
+      attemptInsight.lastEventKind = summary.kind || null;
+      attemptInsight.lastEventType = summary.eventType || null;
       let shouldRefreshProgress = false;
 
       if (summary.threadId && primaryThreadEvent) {
+        if (summary.eventType === "thread.started") {
+          attemptInsight.primaryThreadStarted = true;
+        }
         const threadChanged = summary.threadId !== run.session.codex_thread_id;
         state.threadId = summary.threadId;
         if (threadChanged) {
@@ -813,6 +858,7 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
       }
 
       if (summary.kind === "command") {
+        attemptInsight.commandCount += 1;
         state.latestCommand = summary.command || state.latestCommand;
         if (summary.eventType === "item.completed") {
           state.latestCommandOutput = summary.aggregatedOutput
@@ -833,12 +879,14 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
         const messagePhase = summary.messagePhase || "final_answer";
         const normalizedAgentMessage = normalizeTelegramReply(summary.text);
         if (messagePhase === "commentary") {
+          attemptInsight.commentaryCount += 1;
           state.latestSummary = excerpt(normalizedAgentMessage, 500);
           state.latestSummaryKind = "agent_message";
           state.latestProgressMessage = normalizedAgentMessage;
           shouldRefreshProgress = true;
         }
         if (messagePhase === "final_answer" && primaryThreadEvent) {
+          attemptInsight.sawFinalAnswer = true;
           const parsedReply = extractTelegramFileDirectives(summary.text, {
             language: getSessionUiLanguage(run.session),
           });
@@ -880,7 +928,14 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
   });
 
   try {
-    return await finished;
+    const result = await finished;
+    return {
+      ...result,
+      attemptInsight: {
+        ...attemptInsight,
+        durationMs: Date.now() - attemptStartedAt,
+      },
+    };
   } finally {
     if (run.child === child) {
       run.child = null;

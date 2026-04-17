@@ -20,6 +20,7 @@ test("buildUserServiceUnit renders a direct node user systemd wrapper", () => {
     envFilePath: "/state/runtime.env",
     nodePath: "/nvm/bin/node",
     codexBinPath: "/nvm/bin/codex",
+    codexConfigPath: "/home/testuser/.codex/config.toml",
     pathEntries: ["/nvm/bin", "/usr/bin", "/bin"],
     exitType: "cgroup",
   });
@@ -30,6 +31,10 @@ test("buildUserServiceUnit renders a direct node user systemd wrapper", () => {
   assert.match(unit, /Environment="ENV_FILE=\/state\/runtime\.env"/u);
   assert.match(unit, /Environment="NODE=\/nvm\/bin\/node"/u);
   assert.match(unit, /Environment="CODEX_BIN_PATH=\/nvm\/bin\/codex"/u);
+  assert.match(
+    unit,
+    /Environment="CODEX_CONFIG_PATH=\/home\/testuser\/\.codex\/config\.toml"/u,
+  );
   assert.match(unit, /Environment="PATH=\/nvm\/bin:\/usr\/bin:\/bin"/u);
   assert.match(unit, /ExecStart="\/nvm\/bin\/node" "\/repo\/src\/cli\/run\.js"/u);
   assert.match(unit, /Restart=always/u);
@@ -43,6 +48,7 @@ test("buildUserServiceUnit quotes paths with spaces for WorkingDirectory and Exe
     envFilePath: "/state/runtime.env",
     nodePath: "/opt/node versions/node",
     codexBinPath: "/opt/node versions/codex",
+    codexConfigPath: "/home/testuser/.codex/config.toml",
     pathEntries: ["/opt/node versions", "/usr/bin"],
   });
 

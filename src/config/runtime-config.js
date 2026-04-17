@@ -115,6 +115,17 @@ function parseTomlScalar(rawValue) {
   return trimmed;
 }
 
+function parseMcpServerNames(text) {
+  return [
+    ...new Set(
+      Array.from(
+        String(text || "").matchAll(/^\s*\[mcp_servers\.([^\]]+)\]\s*$/gmu),
+        (match) => String(match[1] || "").trim(),
+      ).filter(Boolean),
+    ),
+  ];
+}
+
 export function parseCodexConfigProfile(text, configPath = DEFAULT_CODEX_CONFIG_PATH) {
   const readKey = (key) => {
     const match = text.match(new RegExp(`^${key}\\s*=\\s*(.+)$`, "mu"));
@@ -131,6 +142,7 @@ export function parseCodexConfigProfile(text, configPath = DEFAULT_CODEX_CONFIG_
     reasoningEffort: readKey("model_reasoning_effort"),
     contextWindow: readKey("model_context_window"),
     autoCompactTokenLimit: readKey("model_auto_compact_token_limit"),
+    mcpServerNames: parseMcpServerNames(text),
   };
 }
 
@@ -150,6 +162,7 @@ async function loadCodexConfigProfile(configPath) {
         reasoningEffort: null,
         contextWindow: null,
         autoCompactTokenLimit: null,
+        mcpServerNames: [],
       };
     }
 
@@ -178,6 +191,9 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     rawEnv.CODEX_CONFIG_PATH?.trim() ||
     codexProfile.configPath ||
     DEFAULT_CODEX_CONFIG_PATH;
+  const codexMcpServerNames = Array.isArray(codexProfile.mcpServerNames)
+    ? [...codexProfile.mcpServerNames]
+    : [];
   const codexSessionsRoot =
     rawEnv.CODEX_SESSIONS_ROOT?.trim() || getDefaultCodexSessionsRoot();
   const codexLimitsSessionsRoot =
@@ -260,6 +276,7 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     defaultSessionBindingPath,
     codexBinPath,
     codexConfigPath,
+    codexMcpServerNames,
     codexSessionsRoot,
     codexLimitsSessionsRoot,
     codexLimitsCommand,

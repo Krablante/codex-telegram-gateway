@@ -16,6 +16,7 @@ Optional but commonly useful:
 - `TELEGRAM_ALLOWED_BOT_IDS`
 - `STATE_ROOT`
 - `CODEX_BIN_PATH`
+- `CODEX_CONFIG_PATH`
 - `CODEX_LIMITS_SESSIONS_ROOT`
 - `CODEX_LIMITS_COMMAND`
 - `MAX_PARALLEL_SESSIONS`
@@ -87,6 +88,7 @@ Workspace settings:
 - `WORKSPACE_ROOT` — preferred workspace root for new installs
 - a legacy compatibility alias for `WORKSPACE_ROOT` is still accepted for older installs
 - `DEFAULT_SESSION_BINDING_PATH` — optional default landing path for plain `/new` without `cwd=...`
+- `CODEX_CONFIG_PATH` — optional explicit path to the local Codex config; recommended when you want the runtime and user service pinned to a known MCP/tooling profile
 
 Codex limits settings:
 
@@ -147,7 +149,7 @@ Optional Omni:
 - `codex-telegram-gateway-omni.service`
 
 These user-service flows are Linux-only because they target `systemd --user`.
-`make service-install` now resolves `CODEX_BIN_PATH` without a shell. Absolute paths, repo-relative paths such as `./vendor/bin/codex`, and ordinary PATH-visible names such as `codex` are supported. If resolution still fails, set an absolute `CODEX_BIN_PATH`. On native Windows, the practical default is to leave `CODEX_BIN_PATH` empty so the runtime falls back to `codex.cmd`; if you override it, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
+`make service-install` now resolves `CODEX_BIN_PATH` without a shell and pins `CODEX_CONFIG_PATH` into the generated user unit. Absolute paths, repo-relative paths such as `./vendor/bin/codex`, and ordinary PATH-visible names such as `codex` are supported. If resolution still fails, set an absolute `CODEX_BIN_PATH`. On native Windows, the practical default is to leave `CODEX_BIN_PATH` empty so the runtime falls back to `codex.cmd`; if you override it, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
 
 On native Windows, run the gateway directly with:
 
@@ -198,6 +200,8 @@ make service-restart-omni
 - if the Omni unit is installed but `OMNI_ENABLED=false`, it may idle safely after clearing stale Omni slash commands
 - for Spike on Linux, `make service-rollout` and `make service-restart` use the repo-local session-aware rollout command and return only after the replacement generation has taken leader traffic; `make service-hard-restart` is the explicit blind restart path
 - Spike `service-install` requires `systemd >= 250` because the user unit depends on `ExitType=cgroup`
+- `make admin ARGS='status'` now shows the resolved `CODEX_CONFIG_PATH` and parsed MCP server names, which is the fastest operator check before treating missing `pitlane` or `tavily` access as a runtime bug
+- container-backed MCP tools such as `pitlane` and `large_file` may see the workspace through a `/workspace/...` mirror instead of host paths; teach Codex that mapping or translate paths manually when those tools are in play
 - on native Windows, do not use WSL just to get the bot online unless you already know your WSL networking and file-path setup is healthy
 - on native Windows, the practical install path is `scripts\windows\install.cmd`, which keeps dependency install reproducible and skips non-essential transitive package scripts
 - on native Windows, interrupt/shutdown flows now use a process-tree-aware `taskkill` fallback so nested Codex child processes are less likely to survive a stop

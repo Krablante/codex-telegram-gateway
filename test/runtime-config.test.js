@@ -236,6 +236,44 @@ model_auto_compact_token_limit = 300000
   assert.equal(profile.autoCompactTokenLimit, 300000);
 });
 
+test("parseCodexConfigProfile extracts MCP server names from the Codex config", () => {
+  const profile = parseCodexConfigProfile(`
+model = "gpt-5.4"
+
+[mcp_servers.requests]
+command = "docker"
+
+[mcp_servers.pitlane]
+command = "docker"
+
+[mcp_servers.requests]
+command = "docker"
+`);
+
+  assert.deepEqual(profile.mcpServerNames, ["requests", "pitlane"]);
+});
+
+test("buildRuntimeConfig keeps the parsed Codex config path and MCP server list", () => {
+  const config = buildRuntimeConfig(
+    {
+      TELEGRAM_BOT_TOKEN: "secret-token",
+      TELEGRAM_ALLOWED_USER_ID: "1234567890",
+      TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
+    },
+    {
+      configPath: "/home/testuser/.codex/config.toml",
+      mcpServerNames: ["pitlane", "requests", "tavily"],
+    },
+  );
+
+  assert.equal(config.codexConfigPath, "/home/testuser/.codex/config.toml");
+  assert.deepEqual(config.codexMcpServerNames, [
+    "pitlane",
+    "requests",
+    "tavily",
+  ]);
+});
+
 test("default path helpers switch to Windows-friendly state and workspace roots", () => {
   const stateRoot = getDefaultStateRoot({
     platform: "win32",

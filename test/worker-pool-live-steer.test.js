@@ -448,12 +448,16 @@ test("CodexWorkerPool restarts a normal run after an upstream interrupt before t
   assert.deepEqual(runCalls[1].imagePaths, []);
   assert.deepEqual(runtimeEvents.map((event) => event.type), [
     "run.started",
+    "run.attempt",
     "run.recovery",
+    "run.attempt",
     "run.finished",
   ]);
-  assert.equal(runtimeEvents[1].details.recovery_kind, "upstream-restart");
-  assert.equal(runtimeEvents[2].details.status, "completed");
-  assert.equal(runtimeEvents[2].details.thread_id, "recovered-upstream-thread");
+  assert.equal(runtimeEvents[1].details.final_answer_seen, false);
+  assert.equal(runtimeEvents[2].details.recovery_kind, "upstream-restart");
+  assert.equal(runtimeEvents[3].details.final_answer_seen, true);
+  assert.equal(runtimeEvents[4].details.status, "completed");
+  assert.equal(runtimeEvents[4].details.thread_id, "recovered-upstream-thread");
 
   const finalReply = sentMessages.at(-1)?.text || "";
   assert.equal(finalReply, "Продолжил после upstream abort.");
@@ -462,6 +466,282 @@ test("CodexWorkerPool restarts a normal run after an upstream interrupt before t
   assert.equal(reloaded.last_run_status, "completed");
   assert.equal(reloaded.codex_thread_id, "recovered-upstream-thread");
   assert.equal(reloaded.last_agent_reply, "Продолжил после upstream abort.");
+});
+
+test("CodexWorkerPool survives two upstream interrupts before a later fresh-thread recovery succeeds", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-upstream-restart-twice-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 2035,
+    topicName: "Upstream restart twice",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+
+  const sentMessages = [];
+  const runCalls = [];
+  const runtimeEvents = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runtimeObserver: {
+      appendEvent(type, details) {
+        runtimeEvents.push({ type, details });
+        return Promise.resolve();
+      },
+    },
+    runTask: ({ prompt, imagePaths, sessionThreadId, onEvent }) => {
+      runCalls.push({ prompt, imagePaths, sessionThreadId });
+      const attempt = runCalls.length;
+      const child = { kill() {} };
+      if (attempt < 3) {
+        return {
+          child,
+          finished: Promise.resolve({
+            exitCode: null,
+            signal: "SIGINT",
+            threadId: `aborted-upstream-thread-${attempt}`,
+            warnings: [],
+            interrupted: true,
+            interruptReason: "upstream",
+            abortReason: "interrupted",
+            resumeReplacement: null,
+          }),
+        };
+      }
+
+      return {
+        child,
+        finished: (async () => {
+          await onEvent(
+            {
+              kind: "thread",
+              eventType: "thread.started",
+              text: "Codex thread started: recovered-upstream-thread-3",
+              threadId: "recovered-upstream-thread-3",
+            },
+            {
+              type: "thread.started",
+              thread_id: "recovered-upstream-thread-3",
+            },
+          );
+          await onEvent(
+            {
+              kind: "agent_message",
+              eventType: "item.completed",
+              text: "Пережил двойной upstream abort.",
+              messagePhase: "final_answer",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Пережил двойной upstream abort.",
+              },
+            },
+          );
+
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "recovered-upstream-thread-3",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Добей после двух upstream abort подряд.",
+    message: {
+      message_id: 703,
+      message_thread_id: 2035,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
+
+  assert.equal(runCalls.length, 3);
+  assert.deepEqual(runtimeEvents.map((event) => event.type), [
+    "run.started",
+    "run.attempt",
+    "run.recovery",
+    "run.attempt",
+    "run.recovery",
+    "run.attempt",
+    "run.finished",
+  ]);
+  assert.equal(runtimeEvents[1].details.attempt, 1);
+  assert.equal(runtimeEvents[2].details.attempt, 1);
+  assert.equal(runtimeEvents[3].details.attempt, 2);
+  assert.equal(runtimeEvents[4].details.attempt, 2);
+  assert.equal(runtimeEvents[5].details.attempt, 3);
+  assert.equal(runtimeEvents[6].details.status, "completed");
+  assert.equal(runtimeEvents[6].details.thread_id, "recovered-upstream-thread-3");
+
+  const finalReply = sentMessages.at(-1)?.text || "";
+  assert.equal(finalReply, "Пережил двойной upstream abort.");
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.codex_thread_id, "recovered-upstream-thread-3");
+});
+
+test("CodexWorkerPool keeps a captured final answer when upstream aborts after the final message", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-upstream-final-answer-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 2036,
+    topicName: "Upstream final answer",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+
+  const sentMessages = [];
+  const runtimeEvents = [];
+  let attemptCount = 0;
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runtimeObserver: {
+      appendEvent(type, details) {
+        runtimeEvents.push({ type, details });
+        return Promise.resolve();
+      },
+    },
+    runTask: ({ onEvent }) => {
+      attemptCount += 1;
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onEvent(
+            {
+              kind: "thread",
+              eventType: "thread.started",
+              text: "Codex thread started: interrupted-after-final-thread",
+              threadId: "interrupted-after-final-thread",
+            },
+            {
+              type: "thread.started",
+              thread_id: "interrupted-after-final-thread",
+            },
+          );
+          await onEvent(
+            {
+              kind: "agent_message",
+              eventType: "item.completed",
+              text: "Финальный ответ уже был.",
+              messagePhase: "final_answer",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Финальный ответ уже был.",
+              },
+            },
+          );
+
+          return {
+            exitCode: null,
+            signal: "SIGINT",
+            threadId: "interrupted-after-final-thread",
+            warnings: [],
+            interrupted: true,
+            interruptReason: "upstream",
+            abortReason: "interrupted",
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Сохрани финальный ответ даже если upstream умрёт потом.",
+    message: {
+      message_id: 704,
+      message_thread_id: 2036,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
+
+  assert.equal(attemptCount, 1);
+  assert.deepEqual(runtimeEvents.map((event) => event.type), [
+    "run.started",
+    "run.attempt",
+    "run.finished",
+  ]);
+  assert.equal(runtimeEvents[1].details.final_answer_seen, true);
+  assert.equal(runtimeEvents[2].details.status, "completed");
+
+  const finalReply = sentMessages.at(-1)?.text || "";
+  assert.equal(finalReply, "Финальный ответ уже был.");
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.codex_thread_id, "interrupted-after-final-thread");
 });
 
 test("CodexWorkerPool keeps pending live steer buffered when flush fails", async () => {
@@ -1109,7 +1389,7 @@ test("CodexWorkerPool surfaces non-interrupt run failures instead of interrupted
   assert.match(reloaded.last_agent_reply, /Не смог закончить run\./u);
 });
 
-test("CodexWorkerPool keeps repeated upstream SIGINT runs as interrupted after one automatic restart", async () => {
+test("CodexWorkerPool keeps repeated upstream SIGINT runs as interrupted after two automatic restarts", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
@@ -1181,7 +1461,7 @@ test("CodexWorkerPool keeps repeated upstream SIGINT runs as interrupted after o
 
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
-  assert.equal(attemptCount, 2);
+  assert.equal(attemptCount, 3);
   const finalReply = sentMessages.at(-1)?.text || "";
   assert.doesNotMatch(finalReply, /Не смог закончить run\./u);
   assert.match(finalReply, /Выполнение run было прервано до финального ответа\./u);

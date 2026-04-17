@@ -132,11 +132,14 @@ async function startTopicPromptRun({
     return { handled: true, reason: "general-topic" };
   }
 
-  const lockedSession = await sessionService.ensureRunnableSessionForMessage(message);
+  const previewSession =
+    typeof sessionService.ensureSessionForMessage === "function"
+      ? await sessionService.ensureSessionForMessage(message)
+      : await sessionService.ensureRunnableSessionForMessage(message);
   if (
     config.omniEnabled !== false &&
-    isAutoModeHumanInputLocked(lockedSession) &&
-    !canAutoModeAcceptPromptFromMessage(lockedSession, message)
+    isAutoModeHumanInputLocked(previewSession) &&
+    !canAutoModeAcceptPromptFromMessage(previewSession, message)
   ) {
     return { handled: true, reason: "auto-topic-human-input-blocked" };
   }
@@ -163,10 +166,7 @@ async function startTopicPromptRun({
 
   if (!rawPrompt) {
     if (promptMessages.some((entry) => hasIncomingAttachments(entry))) {
-      const attachmentSession =
-        typeof sessionService.ensureSessionForMessage === "function"
-          ? await sessionService.ensureSessionForMessage(message)
-          : null;
+      const attachmentSession = previewSession ?? null;
       if (attachmentSession) {
         const pendingAttachments = [];
         for (const promptMessage of promptMessages) {
@@ -213,7 +213,13 @@ async function startTopicPromptRun({
     return { handled: false, reason: "empty-prompt" };
   }
 
-  let session = lockedSession;
+  let session = previewSession;
+  if (
+    (!session || session.lifecycle_state !== "active") &&
+    typeof sessionService.ensureRunnableSessionForMessage === "function"
+  ) {
+    session = await sessionService.ensureRunnableSessionForMessage(message);
+  }
   const globalPromptSuffix =
     typeof sessionService.getGlobalPromptSuffix === "function"
       ? await sessionService.getGlobalPromptSuffix()

@@ -88,6 +88,8 @@ scripts\windows\admin.cmd reactivate -1003577434463 12345
 scripts\windows\admin.cmd purge -1003577434463 12345
 ```
 
+`make admin ARGS='status'` теперь ещё показывает реальный `CODEX_CONFIG_PATH` и список MCP server names, распарсенных из этого конфига. Это первый быстрый чек, если кажется, что у Codex внезапно пропал `pitlane`, `tavily` или другой MCP.
+
 ## Сервисы
 
 ```bash
@@ -121,6 +123,7 @@ make service-restart-live
 
 - сначала запускай `make doctor`
 - перед слепым рестартом смотри `make admin ARGS='status'`
+- если кажется, что пропал `pitlane` или `large_file`, сначала проверь MCP-список через `make admin ARGS='status'`, а потом перепроверь, что в prompt/context используется правильный host-to-`/workspace/...` mirror path
 - если сломалась только одна тема, сначала пробуй topic-level `/status`, `/interrupt`, `/purge`
 - если live run ещё активен, сначала используй мягкий `service-restart`; к `service-hard-restart` переходи только если нужен именно жёсткий обрыв всего cgroup
 - если soft rollout упёрся в timeout из-за ещё активной retained topic, сначала дай этой теме завершиться или прерви её, потом повтори `make service-restart-live` вместо raw `systemctl restart`

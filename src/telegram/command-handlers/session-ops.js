@@ -74,9 +74,14 @@ export async function handleNewTopicCommand({
       return { reason: "binding-error", handledSession: null };
     }
   } else {
-    const inherited = await sessionService.resolveInheritedBinding(message);
-    workspaceBinding = inherited.binding;
-    inheritedFromSessionKey = inherited.inheritedFromSessionKey;
+    if (sourceSession) {
+      workspaceBinding = sourceSession.workspace_binding;
+      inheritedFromSessionKey = sourceSession.session_key;
+    } else {
+      const inherited = await sessionService.resolveInheritedBinding(message);
+      workspaceBinding = inherited.binding;
+      inheritedFromSessionKey = inherited.inheritedFromSessionKey;
+    }
   }
 
   const { forumTopic, session } = await sessionService.createTopicSession({

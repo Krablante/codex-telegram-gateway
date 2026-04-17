@@ -153,6 +153,7 @@ Recommended persistent global suffix:
 - keep the existing concise operator style guidance
 - explicitly allow tools, MCP, and GPT-5.4 subagents
 - point Codex at `pitlane` for code navigation, `tavily` for fresh web research, `context7` for library docs, and `requests` for direct HTTP/API fetches
+- for container-backed MCP tools like `pitlane` and `large_file`, teach Codex the workspace mirror when the deploy uses one, for example a host path mapping into `/workspace/...`
 
 ## Runtime Controls
 

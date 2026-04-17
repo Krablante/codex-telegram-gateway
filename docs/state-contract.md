@@ -25,7 +25,7 @@ Current slices guarantee:
 - `sessions/<chat-id>/<topic-id>/meta.json:auto_mode` may carry topic-scoped Omni state including goal capture, locked phases, blocker state, and last Omni/Spike prompt correlation ids
 - `sessions/<chat-id>/<topic-id>/omni-memory.json` may carry small topic-scoped Omni supervisory memory such as a compact goal capsule, the active proof line, remaining goal gap, candidate pivots, bounded side work, and do-not-regress constraints
 - `sessions/<chat-id>/<topic-id>/omni-pending-prompt.json` may store a queued Omni-to-Spike continuation handoff waiting for the next safe prompt start
-- `sessions/<chat-id>/<topic-id>/telegram-topic-context.md` may store the current Telegram routing facts and the lightweight file-delivery contract for Codex
+- `sessions/<chat-id>/<topic-id>/telegram-topic-context.md` may store the current Telegram routing facts, lightweight file-delivery contract, and container-backed MCP path-mapping hints for Codex
 - `sessions/<chat-id>/<topic-id>/exchange-log.jsonl` may store the append-only recovery log with only user prompts and final agent replies
 - `sessions/<chat-id>/<topic-id>/spike-prompt-queue.json` may store the topic-scoped FIFO queue for `/q` prompts, including prompt text, reply target ids, and downloaded attachment descriptors
 - `sessions/<chat-id>/<topic-id>/incoming/` may store direct-prompt and queued-prompt attachments downloaded from Telegram for that topic session
@@ -38,7 +38,7 @@ Current slices guarantee:
 - `logs/`, `sessions/`, `indexes/`, `settings/`, and `tmp/` can be created on demand
 - `logs/doctor-last-run.json` may be refreshed by `make doctor`
 - `logs/runtime-heartbeat.json` may track the latest service heartbeat, pid, counters, and poll state
-- `logs/runtime-events.ndjson` may append structured service lifecycle, poll/update failure, session lifecycle, and per-run `run.started` / `run.recovery` / `run.finished` events with interrupt-reason and recovery-kind metadata
+- `logs/runtime-events.ndjson` may append structured service lifecycle, poll/update failure, session lifecycle, and per-run `run.started` / `run.attempt` / `run.recovery` / `run.finished` events with interrupt-reason, recovery-kind, and attempt-insight metadata
 - `tmp/generations/spike/*.json` may track live Spike generation heartbeats, mode, pid, per-process identity token, and advertised local IPC endpoint during session-aware rollout
 - `omni/logs/runtime-heartbeat.json` and `omni/logs/runtime-events.ndjson` may track the separate Omni poller
 - `indexes/telegram-update-offset.json` may be refreshed by `make run` or `make smoke`

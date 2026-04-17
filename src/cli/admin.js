@@ -153,14 +153,8 @@ function formatSessionLine(session) {
   return parts.join(" ");
 }
 
-async function runStatus({ sessionAdmin, layout, json }) {
-  const sessions = await sessionAdmin.listSessions();
-  const counts = buildSessionCounts(sessions);
-  const heartbeat = await readJsonIfExists(
-    path.join(layout.logs, "runtime-heartbeat.json"),
-  );
-
-  const report = {
+function buildStatusReport({ heartbeat, counts, config }) {
+  return {
     heartbeat: heartbeat
       ? {
           observed_at: heartbeat.observed_at,
@@ -171,8 +165,23 @@ async function runStatus({ sessionAdmin, layout, json }) {
           mode: heartbeat.mode ?? null,
         }
       : null,
+    codex: {
+      config_path: config.codexConfigPath,
+      mcp_servers: Array.isArray(config.codexMcpServerNames)
+        ? config.codexMcpServerNames
+        : [],
+    },
     sessions: counts,
   };
+}
+
+async function runStatus({ sessionAdmin, layout, config, json }) {
+  const sessions = await sessionAdmin.listSessions();
+  const counts = buildSessionCounts(sessions);
+  const heartbeat = await readJsonIfExists(
+    path.join(layout.logs, "runtime-heartbeat.json"),
+  );
+  const report = buildStatusReport({ heartbeat, counts, config });
 
   if (json) {
     console.log(JSON.stringify(report, null, 2));
@@ -194,6 +203,13 @@ async function runStatus({ sessionAdmin, layout, json }) {
   printLine(
     "last_update_id",
     heartbeat?.service_state?.last_update_id ?? "none",
+  );
+  printLine("codex_config_path", config.codexConfigPath || "unknown");
+  printLine(
+    "codex_mcp_servers",
+    Array.isArray(config.codexMcpServerNames) && config.codexMcpServerNames.length > 0
+      ? config.codexMcpServerNames.join(",")
+      : "none",
   );
   printLine("sessions_total", counts.total);
   printLine("sessions_active", counts.active);
@@ -288,6 +304,7 @@ async function main() {
     await runStatus({
       sessionAdmin,
       layout,
+      config,
       json: parsed.json,
     });
     return;

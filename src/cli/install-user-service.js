@@ -96,6 +96,7 @@ async function main() {
     envFilePath: config.envFilePath,
     nodePath,
     codexBinPath,
+    codexConfigPath: config.codexConfigPath,
     pathEntries: buildServicePathEntries({ nodePath }),
     description,
     scriptPath,

@@ -143,6 +143,7 @@ First-time minimum in the runtime env:
 - `TELEGRAM_FORUM_CHAT_ID`
 - `WORKSPACE_ROOT`
 - optional `DEFAULT_SESSION_BINDING_PATH`
+- optional `CODEX_CONFIG_PATH`
 - optional `CODEX_LIMITS_COMMAND` or `CODEX_LIMITS_SESSIONS_ROOT` when limits should come from another Codex host
 
 `DEFAULT_SESSION_BINDING_PATH` only changes where plain `/new Topic Name` starts when no explicit `cwd=...` is provided. If it is unset, ordinary `/new` falls back to `WORKSPACE_ROOT`.
@@ -155,7 +156,7 @@ When `CODEX_LIMITS_COMMAND` is used, set the optional JSON `source` field to the
 The bot should be an admin in the forum chat. Topic creation and cleanup flows work best when it can post, edit, delete, pin, and manage topics.
 
 `/menu` also accepts the Telegram-style `/<command>@YourBot` form, shows an in-menu `Status` screen, and recreates the pinned topic panel cleanly when you reopen it so old menu messages and transient pin notices do not pile up.
-If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn right after an already accepted live steer, the gateway now rebuilds that same top-level run on a fresh thread instead of surfacing a false terminal interruption, and accepted steer images are replayed into the recovery attempt. Ordinary upstream-interrupted turns also get one fresh-thread retry before the gateway surfaces a final interrupted reply.
+If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn right after an already accepted live steer, the gateway now rebuilds that same top-level run on a fresh thread instead of surfacing a false terminal interruption, and accepted steer images are replayed into the recovery attempt. Ordinary upstream-interrupted turns now get up to two bounded fresh-thread recoveries before the gateway surfaces a final interrupted reply, and a final answer that already landed before the abort is kept as `completed` instead of being thrown away.
 
 Native Windows:
 
@@ -249,15 +250,17 @@ scripts\windows\user-e2e.cmd
 - native Windows now supports direct `.env`-based startup without host-specific Linux paths or WSL-only assumptions; `WORKSPACE_ROOT` is preferred, and the legacy compatibility alias is still accepted
 - Windows wrappers intentionally use `npm ci --ignore-scripts`; this repo does not need package install scripts, and skipping them avoids flaky transitive `postinstall` failures on some Windows setups
 - `make user-login` and `scripts\windows\user-login.cmd` now use a small built-in Node terminal prompt layer; the old `input`/`inquirer`/`lodash` stack is no longer in the production dependency graph
-- `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`
+- `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, pins `CODEX_CONFIG_PATH` into the user unit, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`
 - on Linux, `make service-rollout` and `make service-restart` are the soft rollout path for Spike: the command waits until the replacement generation has actually taken leader traffic, while already active run topics keep finishing on the retiring generation; use `make service-hard-restart` only when you really want a blind restart
 - `make service-restart-live` is the canonical live-runtime restart path: it restarts `Omni` and then rolls `Spike` through the safe session-aware rollout flow
+- `make admin ARGS='status'` now also shows the resolved `CODEX_CONFIG_PATH` and parsed MCP server names, so operators can confirm the live Codex profile before assuming tool loss
 - live `codex app-server` launches now pin explicit full-access overrides, so direct CLI use and live Spike runs do not silently diverge on hosts that would otherwise fall back to sandboxed app-server behavior
 - Windows process-tree shutdown now uses `taskkill /t` fallback instead of assuming POSIX-only negative-pid signaling, so interrupted Codex runs are less likely to leave orphaned child processes behind
 - local loopback IPC now retries blocked or reserved loopback ports on native Windows instead of failing the forwarding server on the first bind error
 - if native Windows leaves the websocket alive but the rollout already wrote `task_complete`, Spike can still finish that run from the rollout signal instead of staying stuck in `running`
 - stalled disconnect recovery and early-start failures now reap orphaned live-run state instead of leaving a fake forever-running topic behind
 - upstream interrupted Codex turns now surface as interrupted instead of being misreported as ordinary failures
+- container-backed MCP tools such as `pitlane` and `large_file` often see the workspace through a `/workspace/...` mirror; host workspace paths need to be translated before calling those tools
 - Telegram replies are rendered through a Telegram-safe HTML normalizer; headings, standard and expandable quotes, code, links, and readable nested lists are preserved
 - final Spike replies now retry transient Telegram/network send failures beyond plain `retry after`, and if the final send still never comes back the gateway keeps the answer visible in the existing progress bubble instead of dropping it completely
 - temporary Telegram `retry_after` throttles during ordinary reply sends are now retried inline, so the same update is not replayed just because Telegram briefly rate-limited one response

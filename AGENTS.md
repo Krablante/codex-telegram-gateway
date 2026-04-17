@@ -45,12 +45,14 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 
 - for “restart the live bot”, use `make service-restart-live`; it restarts `Omni` and rolls `Spike` softly
 - never use raw `systemctl restart codex-telegram-gateway.service` for ordinary live updates; that is the blind hard-restart path and can cut an active run
+- `make admin ARGS='status'` is also the fastest operator check for the resolved `CODEX_CONFIG_PATH` and parsed MCP server list before assuming `pitlane` is broken
 
 ## Agent Prompt Guidance
 
 - prompt surfaces here should explicitly allow the runtime to use any available tools, MCP, and GPT-5.4 subagents when that materially helps
 - prefer `pitlane` for codebase navigation, symbol lookup, usages, callers/callees, and execution-path tracing before broad file reads
 - prefer `tavily` for fresh web search/research, `context7` for current library docs, and `requests` for direct HTTP/API fetches
+- for container-backed MCP tools like `pitlane` and `large_file`, teach Codex the host-to-container workspace mirror when your deploy uses one, for example `/host/workspace/...` on the host becoming `/workspace/...` inside the tool
 - keep tool use targeted; do not tell Codex to read large parts of the repo or the web blindly when a narrower MCP call will do
 - keep prompt guidance concise and practical instead of bloated
 

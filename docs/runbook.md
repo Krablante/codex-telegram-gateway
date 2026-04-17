@@ -88,6 +88,8 @@ scripts\windows\admin.cmd reactivate -1003577434463 12345
 scripts\windows\admin.cmd purge -1003577434463 12345
 ```
 
+`make admin ARGS='status'` now also prints the resolved `CODEX_CONFIG_PATH` and the MCP server names parsed from that config. Use it first when Codex suddenly appears to have lost `pitlane`, `tavily`, or another MCP.
+
 ## Services
 
 ```bash
@@ -121,6 +123,7 @@ make service-restart-live
 
 - run `make doctor` first
 - use `make admin ARGS='status'` before blind restarts
+- if `pitlane` or `large_file` seems missing, confirm the MCP list in `make admin ARGS='status'` and then re-check whether your prompt/context is using the correct host-to-`/workspace/...` mirror path
 - if only one topic is wedged, prefer topic-level `/status`, `/interrupt`, `/purge`
 - if a live run is still active, start with the soft `service-restart`; move to `service-hard-restart` only when you explicitly want to cut the whole cgroup
 - if soft rollout times out because one retained topic is still active, finish or interrupt that topic and rerun `make service-restart-live` instead of falling back to raw `systemctl restart`

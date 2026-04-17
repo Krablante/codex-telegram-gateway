@@ -6,6 +6,28 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.37] - 2026-04-17
+
+Fixed:
+
+- long prompt buffering no longer reactivates a parked topic session before a real run actually starts
+- `/new` inside an already open topic now reuses the loaded workspace binding instead of doing redundant inheritance resolution
+- ordinary upstream-interrupted runs now get a bounded two-restart recovery budget, and a final answer that already arrived before the abort is preserved as `completed` instead of being thrown away
+- repeated recovery attempts inside one run now reuse the already loaded Codex runtime profile inputs instead of rereading config and model state every time
+
+Observability:
+
+- `runtime-events.ndjson` now records per-attempt `run.attempt` entries with thread, final-answer, command/commentary, and abort metadata so operators can see why recovery happened instead of guessing from chat output
+- `make admin ARGS='status'` now surfaces the resolved `CODEX_CONFIG_PATH` and parsed MCP server list for faster live diagnostics
+
+Docs:
+
+- README, AGENTS, deployment, runbook, state-contract, testing, and Telegram surface docs now explain the bounded recovery path, Codex config visibility, and generic host-to-container MCP path mirror guidance
+
+Tests:
+
+- added regression coverage for buffer-without-reactivation, `/new` binding reuse, MCP config parsing, user-service config pinning, two-step upstream recovery, late-abort final-answer salvage, and generic topic-context mirror hints
+
 ## [0.3.36] - 2026-04-16
 
 Fixed:
