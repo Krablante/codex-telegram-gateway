@@ -171,7 +171,7 @@ Omni:
 - `/omni_reasoning [show|list|clear|<level>]`
 - `/omni_reasoning global [show|list|clear|<level>]`
 
-`/compact` uses a separate global model/reasoning pair from `General -> /global -> Bot Settings`. That profile is menu-only today and affects only the temporary summarizer that rebuilds `active-brief.md`.
+`/compact` uses a separate global model/reasoning pair from `General -> /global -> Bot Settings`. That profile is menu-only today and affects only the temporary summarizer that rebuilds `active-brief.md`, including still-active user-specific rules and delivery instructions when they are present in the exchange log.
 
 `/status` shows the effective profile after topic/global/default merge and includes the same live limits summary that the root menus use.
 

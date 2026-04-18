@@ -132,7 +132,7 @@ If the previous rollout already shifted leader traffic but a retiring generation
 - if the topic is already gone, use the local admin surface instead of poking Telegram harder
 - on native Windows, use `scripts\windows\admin.cmd ...` instead of trying Linux-only `make admin`
 - correlate `runtime-events.ndjson`, `meta.json`, `exchange-log.jsonl`, and `active-brief.md` before hand-editing state
-- after manual `/compact`, expect the next fresh run to bootstrap from `active-brief.md`
+- after manual `/compact`, expect the bot to refresh `active-brief.md` first, keeping still-active user rules and delivery instructions in that brief, and then let the next fresh run bootstrap from the rebuilt brief
 - for heavier live validation, prefer `make test-live`, `make user-e2e`, and `make user-spike-audit` before trying to reason from one broken topic by hand
 
 ## Recovery Notes

@@ -29,7 +29,7 @@ Current slices guarantee:
 - `sessions/<chat-id>/<topic-id>/exchange-log.jsonl` may store the append-only recovery log with only user prompts and final agent replies
 - `sessions/<chat-id>/<topic-id>/spike-prompt-queue.json` may store the topic-scoped FIFO queue for `/q` prompts, including prompt text, reply target ids, and downloaded attachment descriptors
 - `sessions/<chat-id>/<topic-id>/incoming/` may store direct-prompt and queued-prompt attachments downloaded from Telegram for that topic session
-- `sessions/<chat-id>/<topic-id>/active-brief.md` may store the latest LLM-generated recovery brief derived from that exchange log; the brief is expected to carry enough continuity for a fresh run to understand workspace context, recent state, latest exchange, and open work
+- `sessions/<chat-id>/<topic-id>/active-brief.md` may store the latest LLM-generated recovery brief derived from that exchange log; the brief is expected to carry enough continuity for a fresh run to understand workspace context, active user-specific rules, recent state, latest exchange, and open work
 - `sessions/<chat-id>/<topic-id>/artifacts/` may store generated diff snapshots
 - `emergency/attachments/<chat-id>/private/incoming/` may store private-chat emergency attachments downloaded from Telegram
 - `emergency/runs/` may store one-shot `codex exec` last-message files for the emergency lane

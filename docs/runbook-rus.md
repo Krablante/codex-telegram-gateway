@@ -132,7 +132,7 @@ make service-restart-live
 - если тема уже исчезла, используй local admin surface вместо попыток сильнее давить Telegram
 - на native Windows для этого используй `scripts\windows\admin.cmd ...`, а не Linux-only `make admin`
 - перед ручным редактированием state сверяй `runtime-events.ndjson`, `meta.json`, `exchange-log.jsonl` и `active-brief.md`
-- после ручного `/compact` ожидай, что следующий свежий run будет стартовать из `active-brief.md`
+- после ручного `/compact` ожидай, что бот сначала обновит `active-brief.md`, сохранив в нём ещё актуальные user rules и delivery instructions, и только потом следующий свежий run стартует из rebuilt brief
 - для тяжёлой живой проверки сначала используй `make test-live`, `make user-e2e` и `make user-spike-audit`, а уже потом пытайся руками диагностировать один сломанный topic
 
 ## Нюансы восстановления

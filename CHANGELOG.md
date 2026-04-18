@@ -6,6 +6,22 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.41] - 2026-04-18
+
+Fixed:
+
+- `/compact` brief rebuilds now preserve still-active user-specific rules and delivery instructions from the exchange log more explicitly instead of collapsing everything into generic preferences
+- rebuilt briefs no longer invent placeholder rules when the summarizer leaves that section empty
+
+Docs:
+
+- refreshed README, AGENTS, Telegram surface, runbook, state contract, and testing docs so the public operator contract matches the current compact behavior
+
+Tests:
+
+- public `node --test`: 598 pass, 0 fail, 4 skip
+- public `npm run test:live`: 4 pass, 0 fail
+
 ## [0.3.40] - 2026-04-18
 
 Fixed:

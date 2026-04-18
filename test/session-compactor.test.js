@@ -60,6 +60,9 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
               "session_key: -1003577434463:101",
               "cwd: /home/bloob/atlas",
               "",
+              "## Active rules",
+              "- Send finished APKs through the user's Telegram account into Saved Messages when explicitly requested.",
+              "",
               "## User preferences",
               "- concise",
               "",
@@ -160,10 +163,19 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
     /Write a dense but readable markdown brief that lets a fresh Codex run continue work without rereading the full exchange log\./u,
   );
   assert.match(runCalls[0].prompt, /## Workspace context/u);
+  assert.match(runCalls[0].prompt, /## Active rules/u);
   assert.match(runCalls[0].prompt, /## Current state/u);
   assert.match(
     runCalls[0].prompt,
     /Latest exchange: capture the latest user ask and the latest assistant outcome in concrete terms\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Do not lose explicit user-specific rules that are still active just because they appeared only once earlier in the log\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Preserve concrete delivery, routing, account-usage, artifact-destination, and output-format instructions whenever they are still current\./u,
   );
   assert.match(
     runCalls[0].prompt,
@@ -186,6 +198,10 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   );
 
   assert.match(briefText, /# Active brief/u);
+  assert.match(
+    briefText,
+    /Send finished APKs through the user's Telegram account into Saved Messages/u,
+  );
   assert.match(briefText, /Built sentinel flow/u);
   await assert.rejects(
     fs.access(path.join(sessionStore.getSessionDir(withRun.chat_id, withRun.topic_id), "raw-log.ndjson")),
@@ -311,6 +327,7 @@ test("SessionCompactor writes a stub brief when exchange log is empty", async ()
 
   assert.equal(compacted.exchangeLogEntries, 0);
   assert.equal(compacted.generatedWithCodex, false);
+  assert.match(briefText, /## Active rules/u);
   assert.match(briefText, /No exchange log entries yet/u);
   const updated = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(updated.provider_session_id, null);
@@ -318,6 +335,70 @@ test("SessionCompactor writes a stub brief when exchange log is empty", async ()
   assert.equal(updated.codex_rollout_path, null);
   assert.equal(updated.last_context_snapshot, null);
   assert.equal(updated.last_token_usage, null);
+});
+
+test("SessionCompactor does not invent an active-rules placeholder when the summarizer omits that section", async () => {
+  const sessionStore = await makeStore();
+  const compactor = new SessionCompactor({
+    sessionStore,
+    config: {
+      codexBinPath: "codex",
+    },
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent({
+          kind: "agent_message",
+          text: [
+            "# Active brief",
+            "",
+            "updated_from_reason: command/compact",
+            "session_key: -1003577434463:107",
+            "cwd: /home/bloob/atlas",
+            "",
+            "## User preferences",
+            "- concise",
+            "",
+            "## Current state",
+            "- Ready for a fresh continuation.",
+          ].join("\n"),
+        });
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "compact-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    }),
+  });
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 107,
+    topicName: "Missing active rules compact test",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+
+  await sessionStore.appendExchangeLogEntry(session, {
+    created_at: "2026-04-18T16:30:00.000Z",
+    status: "completed",
+    user_prompt: "Keep my delivery rule in the next chat.",
+    assistant_reply: "Delivery rule noted.",
+  });
+
+  await compactor.compact(session, {
+    reason: "command/compact",
+  });
+
+  const briefText = await fs.readFile(
+    sessionStore.getActiveBriefPath(session.chat_id, session.topic_id),
+    "utf8",
+  );
+
+  assert.doesNotMatch(briefText, /## Active rules/u);
+  assert.doesNotMatch(briefText, /No active user-specific rules captured yet/u);
 });
 
 test("SessionCompactor resets Omni auto-compact counters but preserves active auto mode", async () => {

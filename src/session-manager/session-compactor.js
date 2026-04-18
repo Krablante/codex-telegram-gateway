@@ -10,6 +10,7 @@ const MAX_SUMMARIZER_RETRIES = 1;
 const COMPACTION_APP_SERVER_BOOT_TIMEOUT_MS = 60000;
 const COMPACTION_ROLLOUT_DISCOVERY_TIMEOUT_MS = 30000;
 const COMPACTION_ROLLOUT_STALL_AFTER_CHILD_EXIT_MS = 30000;
+const ACTIVE_RULES_HEADING = "## Active rules";
 
 function buildEmptyBrief(session, { reason, updatedAt }) {
   const lines = [
@@ -28,6 +29,8 @@ function buildEmptyBrief(session, { reason, updatedAt }) {
     "",
     "## Summary",
     "- No exchange log entries yet.",
+    "",
+    ACTIVE_RULES_HEADING,
     "",
     "## User preferences",
     "- None captured yet.",
@@ -61,6 +64,8 @@ function buildCompactionPrompt(session, { reason, exchangeLogEntries, exchangeLo
     "- Start with '# Active brief'.",
     "- Be concrete, practical, and continuity-first.",
     "- Preserve enough context for the next run to understand where it is working, what was happening, what was just said, and what still needs to be done.",
+    "- Do not lose explicit user-specific rules that are still active just because they appeared only once earlier in the log.",
+    "- Preserve concrete delivery, routing, account-usage, artifact-destination, and output-format instructions whenever they are still current.",
     "- Do not mention hidden reasoning, chain-of-thought, tools, or process chatter.",
     "- Do not wrap the answer in code fences.",
     "- Prefer real repo/module names, concrete facts, current focus, recent outcomes, and actionable next steps over vague summaries.",
@@ -73,6 +78,7 @@ function buildCompactionPrompt(session, { reason, exchangeLogEntries, exchangeLo
     "topic_name: ...",
     "cwd: ...",
     "## Workspace context",
+    "## Active rules",
     "## User preferences",
     "## Current state",
     "## Completed work",
@@ -81,7 +87,8 @@ function buildCompactionPrompt(session, { reason, exchangeLogEntries, exchangeLo
     "",
     "Section guidance:",
     "- Workspace context: where work is happening, which repo/path/module matters, and any environment/runtime facts the next run should know immediately.",
-    "- User preferences: durable style, workflow, autonomy, safety, or delivery preferences that keep showing up in the log.",
+    "- Active rules: explicit user-specific instructions that are still in force, especially ones that are not guaranteed by repo docs or agents. Preserve delivery/account rules, artifact destinations, reply-routing expectations, output constraints, and similar operational directives in concrete bullets.",
+    "- User preferences: softer durable style, workflow, autonomy, or communication preferences. Keep this separate from hard rules.",
     "- Current state: what the session was recently doing, latest meaningful outcome, and any active constraints or blockers.",
     "- Completed work: concrete fixes, decisions, or verified outcomes already achieved.",
     "- Open work: unresolved tasks, next likely moves, and unfinished threads that should not be forgotten.",
