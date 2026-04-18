@@ -151,6 +151,9 @@ export function buildRuntimeStateFields() {
   return {
     last_command_name: null,
     last_command_at: null,
+    compaction_in_progress: false,
+    compaction_owner_generation_id: null,
+    compaction_started_at: null,
     last_compacted_at: null,
     last_compaction_reason: null,
     exchange_log_entries: 0,

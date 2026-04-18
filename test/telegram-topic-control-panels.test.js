@@ -5,6 +5,7 @@ import {
   handleIncomingCallbackQuery,
   handleIncomingMessage,
 } from "../src/telegram/command-router.js";
+import { buildCompactQueuedHandoffMessage } from "../src/telegram/command-handlers/topic-commands.js";
 import { handleTopicControlCallbackQuery } from "../src/telegram/topic-control-panel.js";
 import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembler.js";
 import {
@@ -149,6 +150,56 @@ test("handleIncomingCallbackQuery renders status inside the topic control menu",
   assert.equal(edited[0].reply_markup.inline_keyboard[0][1].text, "Back");
   assert.deepEqual(limitsRequests, [{ allowStale: true }]);
   assert.equal(topicControlPanelStore.getState(session).active_screen, "status");
+});
+
+test("handleIncomingCallbackQuery blocks topic-panel /compact while an Omni handoff is queued", async () => {
+  const sent = [];
+  const answered = [];
+  const session = createTopicSession();
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 902 };
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-topic-compact",
+      data: "tcfg:cmd:compact",
+      from: { id: 5825672398, is_bot: false },
+      message: {
+        message_id: 91,
+        chat: { id: -1003577434463 },
+        message_thread_id: 55,
+      },
+    },
+    config,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    promptHandoffStore: {
+      async load() {
+        return {
+          mode: "continuation",
+          prompt: "Queued Omni continuation",
+        };
+      },
+    },
+    serviceState: createServiceState(),
+    sessionService: createTopicSessionService(session),
+    topicControlPanelStore: createTopicControlPanelStore({
+      menu_message_id: 91,
+      active_screen: "root",
+    }),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "topic-control-command-dispatched");
+  assert.equal(answered.length, 1);
+  assert.equal(sent[0].text, buildCompactQueuedHandoffMessage(session));
 });
 
 test("handleIncomingMessage opens and pins the local topic control menu with /menu", async () => {

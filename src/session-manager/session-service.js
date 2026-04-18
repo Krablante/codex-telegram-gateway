@@ -362,8 +362,14 @@ export class SessionService {
     return this.sessionCompactor.compact(session, { reason });
   }
 
-  isCompacting(session) {
-    return this.sessionCompactor?.isCompacting(session) ?? false;
+  async isCompacting(session) {
+    if (!this.sessionCompactor || !session?.chat_id || !session?.topic_id) {
+      return false;
+    }
+
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    return this.sessionCompactor.isCompacting(current);
   }
 
   async updatePromptSuffix(

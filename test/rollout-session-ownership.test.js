@@ -59,6 +59,17 @@ test("shouldForwardSessionToOwner routes active foreign-owned sessions to a diff
     ),
     false,
   );
+  assert.equal(
+    shouldForwardSessionToOwner(
+      {
+        last_run_status: null,
+        session_owner_generation_id: "gen-old",
+        session_owner_mode: "retiring",
+      },
+      "gen-new",
+    ),
+    true,
+  );
 });
 
 test("ownership match helpers distinguish local and foreign owners", () => {

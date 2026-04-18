@@ -88,6 +88,7 @@ export async function startPromptRun(
   }
 
   pool.startingRuns.add(sessionKey);
+  pool.startingRunSessions.set(sessionKey, session);
   let resolveStartingRun;
   const startingRunPromise = new Promise((resolve) => {
     resolveStartingRun = resolve;
@@ -112,6 +113,7 @@ export async function startPromptRun(
     }
 
     pool.startingRuns.delete(sessionKey);
+    pool.startingRunSessions.delete(sessionKey);
     startReserved = false;
   };
   markPromptAccepted(pool.serviceState);

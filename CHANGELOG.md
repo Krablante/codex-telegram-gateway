@@ -6,6 +6,29 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.42] - 2026-04-18
+
+Fixed:
+
+- `/compact` now persists a real in-progress state while the brief rebuild runs, blocks direct prompt starts in that topic during the rebuild, validates the rebuilt brief shape before accepting it, and clears stale run/ownership continuity cleanly when the fresh-start handoff is committed
+- session-aware rollout now keeps ownership on just-starting topics instead of relying only on `last_run_status === "running"`, so retained topics keep forwarding correctly across soft restarts even during the start window
+- topic control-panel `/compact` actions now respect queued Omni handoffs the same way typed `/compact` already did
+- `message_thread_id: 0` is now treated strictly as Telegram `General`, not as a synthetic work-topic session id
+- topic document delivery now preserves `reply_to_message_id` and `contentType`, with the same missing-reply-target fallback as normal topic replies
+- stale configured default models now fall back to a real available model instead of bypassing cached-model validation
+- live steer now recovers from the transient `no active turn to steer` app-server race by refreshing the in-progress turn through `thread/resume` instead of dropping the steer attempt outright
+- Windows live-test entrypoints are more robust: `scripts\\windows\\test-live.cmd` now changes into the repo root before launching the live suite, and the live runner uses an absolute repo-root test path
+- `doctor` now reports both `allowed_user_id` and `allowed_user_ids`
+
+Docs:
+
+- refreshed README, AGENTS, runbooks, testing docs, and state contract for the new `/compact` runtime contract, the better config bootstrap hint, and the Windows live-test wrapper behavior
+
+Tests:
+
+- public `node --test`: 605 pass, 0 fail, 4 skip
+- public `npm run test:live`: 4 pass, 0 fail
+
 ## [0.3.41] - 2026-04-18
 
 Fixed:

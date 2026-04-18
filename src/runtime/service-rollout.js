@@ -41,21 +41,32 @@ export async function markOwnedSessionsRetiring({
   generationId,
 }) {
   const updatedSessions = [];
+  const seenSessionKeys = new Set();
 
-  for (const run of workerPool?.activeRuns?.values?.() ?? []) {
-    const session = run?.session;
-    if (!session?.chat_id || !session?.topic_id) {
-      continue;
+  const claimRetiring = async (session, assign) => {
+    if (!session?.chat_id || !session?.topic_id || seenSessionKeys.has(session.session_key)) {
+      return;
     }
 
+    seenSessionKeys.add(session.session_key);
     const current =
       (await sessionStore.load(session.chat_id, session.topic_id)) || session;
     const updated = await sessionStore.claimSessionOwner(current, {
       generationId,
       mode: "retiring",
     });
-    run.session = updated;
+    assign?.(updated);
     updatedSessions.push(updated);
+  };
+
+  for (const run of workerPool?.activeRuns?.values?.() ?? []) {
+    await claimRetiring(run?.session, (updated) => {
+      run.session = updated;
+    });
+  }
+
+  for (const session of workerPool?.startingRunSessions?.values?.() ?? []) {
+    await claimRetiring(session);
   }
 
   return updatedSessions;

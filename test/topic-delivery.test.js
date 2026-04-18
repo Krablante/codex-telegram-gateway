@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-import { safeSendMessage } from "../src/telegram/topic-delivery.js";
+import {
+  safeSendDocumentToTopic,
+  safeSendMessage,
+} from "../src/telegram/topic-delivery.js";
 
 test("safeSendMessage preserves handled non-parked lifecycle outcomes", async () => {
   const session = {
@@ -72,5 +78,66 @@ test("safeSendMessage retries once without reply_to_message_id when the target i
   assert.deepEqual(result, {
     delivered: true,
     session: null,
+  });
+});
+
+test("safeSendDocumentToTopic forwards content type and retries without reply_to_message_id", async () => {
+  const tmpDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-topic-delivery-"),
+  );
+  const filePath = path.join(tmpDir, "out.txt");
+  await fs.writeFile(filePath, "artifact\n", "utf8");
+  const calls = [];
+  const result = await safeSendDocumentToTopic(
+    {
+      async sendDocument(params) {
+        calls.push(params);
+        if (calls.length === 1) {
+          throw new Error("Bad Request: message to be replied not found");
+        }
+        return { message_id: 6 };
+      },
+    },
+    {
+      chat: { id: -1003577434463 },
+      message_thread_id: 2203,
+    },
+    {
+      filePath,
+      fileName: "out.txt",
+      caption: "artifact",
+      contentType: "text/plain",
+      replyToMessageId: 701,
+    },
+    null,
+    null,
+  );
+
+  assert.deepEqual(calls, [
+    {
+      chat_id: -1003577434463,
+      message_thread_id: 2203,
+      reply_to_message_id: 701,
+      caption: "artifact",
+      document: {
+        filePath,
+        fileName: "out.txt",
+        contentType: "text/plain",
+      },
+    },
+    {
+      chat_id: -1003577434463,
+      message_thread_id: 2203,
+      caption: "artifact",
+      document: {
+        filePath,
+        fileName: "out.txt",
+        contentType: "text/plain",
+      },
+    },
+  ]);
+  assert.deepEqual(result, {
+    delivered: true,
+    sizeBytes: 9,
   });
 });

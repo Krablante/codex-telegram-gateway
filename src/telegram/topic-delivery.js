@@ -12,10 +12,12 @@ async function sendDocumentToTopic(api, message, document) {
     api,
     chatId: message.chat.id,
     messageThreadId: message.message_thread_id,
+    replyToMessageId: document.replyToMessageId,
     document: {
       filePath: document.filePath,
       fileName: document.fileName,
       caption: document.caption,
+      contentType: document.contentType,
     },
   });
 }
@@ -80,10 +82,24 @@ export async function safeSendDocumentToTopic(
   session,
   lifecycleManager,
 ) {
-  try {
-    return await sendDocumentToTopic(api, message, document);
-  } catch (error) {
-    return handleDeliveryError(session, error, lifecycleManager);
+  let currentDocument = { ...document };
+  let allowReplyTargetFallback = Boolean(currentDocument.replyToMessageId);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await sendDocumentToTopic(api, message, currentDocument);
+    } catch (error) {
+      if (allowReplyTargetFallback && isMissingReplyTargetError(error)) {
+        currentDocument = {
+          ...currentDocument,
+          replyToMessageId: null,
+        };
+        allowReplyTargetFallback = false;
+        continue;
+      }
+
+      return handleDeliveryError(session, error, lifecycleManager);
+    }
   }
 }
 

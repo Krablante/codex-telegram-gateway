@@ -137,6 +137,22 @@ async function startTopicPromptRun({
     typeof sessionService.ensureSessionForMessage === "function"
       ? await sessionService.ensureSessionForMessage(message)
       : await sessionService.ensureRunnableSessionForMessage(message);
+  if (await sessionService.isCompacting?.(previewSession)) {
+    const delivery = await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        buildBusyMessage(previewSession, getSessionUiLanguage(previewSession)),
+      ),
+      previewSession,
+      lifecycleManager,
+    );
+    if (delivery.parked) {
+      return { handled: true, reason: "topic-unavailable" };
+    }
+
+    return { handled: true, reason: "compact-in-progress" };
+  }
   if (
     config.omniEnabled !== false &&
     isAutoModeHumanInputLocked(previewSession) &&

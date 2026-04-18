@@ -133,6 +133,7 @@ make service-restart-live
 - на native Windows для этого используй `scripts\windows\admin.cmd ...`, а не Linux-only `make admin`
 - перед ручным редактированием state сверяй `runtime-events.ndjson`, `meta.json`, `exchange-log.jsonl` и `active-brief.md`
 - после ручного `/compact` ожидай, что бот сначала обновит `active-brief.md`, сохранив в нём ещё актуальные user rules и delivery instructions, и только потом следующий свежий run стартует из rebuilt brief
+- пока этот rebuild идёт, обычные prompt'ы в той же теме намеренно блокируются, чтобы не устроить гонку со fresh-start handoff
 - для тяжёлой живой проверки сначала используй `make test-live`, `make user-e2e` и `make user-spike-audit`, а уже потом пытайся руками диагностировать один сломанный topic
 
 ## Нюансы восстановления

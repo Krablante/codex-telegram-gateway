@@ -34,6 +34,7 @@ async function main() {
     state_root: config.stateRoot,
     operator: {
       allowed_user_id: config.telegramAllowedUserId,
+      allowed_user_ids: config.telegramAllowedUserIds,
       forum_chat_id: config.telegramForumChatId,
       expected_topics: config.telegramExpectedTopics,
     },

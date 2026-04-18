@@ -8,7 +8,11 @@ function normalizeId(value, label) {
 }
 
 export function getTopicIdFromMessage(message) {
-  return Number.isInteger(message?.message_thread_id)
+  if (!Number.isInteger(message?.message_thread_id)) {
+    return null;
+  }
+
+  return message.message_thread_id > 0
     ? String(message.message_thread_id)
     : null;
 }

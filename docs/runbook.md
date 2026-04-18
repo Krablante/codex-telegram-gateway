@@ -133,6 +133,7 @@ If the previous rollout already shifted leader traffic but a retiring generation
 - on native Windows, use `scripts\windows\admin.cmd ...` instead of trying Linux-only `make admin`
 - correlate `runtime-events.ndjson`, `meta.json`, `exchange-log.jsonl`, and `active-brief.md` before hand-editing state
 - after manual `/compact`, expect the bot to refresh `active-brief.md` first, keeping still-active user rules and delivery instructions in that brief, and then let the next fresh run bootstrap from the rebuilt brief
+- while that rebuild is running, plain topic prompts are intentionally blocked so they do not race the fresh-start handoff
 - for heavier live validation, prefer `make test-live`, `make user-e2e`, and `make user-spike-audit` before trying to reason from one broken topic by hand
 
 ## Recovery Notes

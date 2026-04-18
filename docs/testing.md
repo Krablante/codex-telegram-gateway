@@ -22,7 +22,7 @@ scripts\windows\admin.cmd status
 scripts\windows\test.cmd
 ```
 
-On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim path. The runtime now falls back to `codex.cmd` by default, the symlinked-worktree coverage uses directory junctions so Developer Mode is not required for that test slice, and guidebook/runbook PDF generation now prefers Unicode-capable system fonts from `%WINDIR%\Fonts` so Cyrillic does not degrade into mojibake.
+On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim path. The runtime now falls back to `codex.cmd` by default, the symlinked-worktree coverage uses directory junctions so Developer Mode is not required for that test slice, `scripts\windows\test-live.cmd` changes into the repo root before spawning the live suite, and guidebook/runbook PDF generation now prefers Unicode-capable system fonts from `%WINDIR%\Fonts` so Cyrillic does not degrade into mojibake.
 
 ## Repo-Level Validation
 

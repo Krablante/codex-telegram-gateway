@@ -64,8 +64,16 @@ export function isSessionOwnedByDifferentGeneration(session, generationId) {
 }
 
 export function shouldForwardSessionToOwner(session, generationId) {
+  const ownerMode = normalizeSessionOwnerMode(session?.session_owner_mode);
+  const runStatus = String(session?.last_run_status ?? "").trim().toLowerCase();
   return (
-    session?.last_run_status === "running"
-    && isSessionOwnedByDifferentGeneration(session, generationId)
+    isSessionOwnedByDifferentGeneration(session, generationId)
+    && (
+      runStatus === "running"
+      || (
+        (ownerMode === "active" || ownerMode === "retiring")
+        && !["completed", "failed", "interrupted"].includes(runStatus)
+      )
+    )
   );
 }

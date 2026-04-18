@@ -299,18 +299,12 @@ function resolveCompatibleModelValue({
     };
   }
 
-  const fallbackModel = normalizeStoredModelOverride(fallbackValue);
+  const fallbackModel =
+    resolveAvailableModelSlug(fallbackValue)
+    ?? normalizeStoredModelOverride(availableModels[0]?.slug);
   if (fallbackModel) {
     return {
       value: fallbackModel,
-      source: "default",
-    };
-  }
-
-  const firstAvailableModel = normalizeStoredModelOverride(availableModels[0]?.slug);
-  if (firstAvailableModel) {
-    return {
-      value: firstAvailableModel,
       source: "default",
     };
   }

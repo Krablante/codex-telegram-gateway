@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const LIVE_TEST_PATH = path.join(REPO_ROOT, "test", "worker-pool.live.test.js");
 
 async function main() {
   const child = spawn(
     process.execPath,
-    ["--test", "test/worker-pool.live.test.js"],
+    ["--test", LIVE_TEST_PATH],
     {
       stdio: "inherit",
+      cwd: REPO_ROOT,
       env: {
         ...process.env,
         CODEX_LIVE_TESTS: "1",

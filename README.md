@@ -131,7 +131,7 @@ Linux/operator path:
 
 ```bash
 cd /path/to/codex-telegram-gateway
-make config
+# make config only verifies that ENV_FILE already points at a readable runtime env
 make doctor
 make run
 ```
@@ -148,6 +148,7 @@ First-time minimum in the runtime env:
 
 `DEFAULT_SESSION_BINDING_PATH` only changes where plain `/new Topic Name` starts when no explicit `cwd=...` is provided. If it is unset, ordinary `/new` falls back to `WORKSPACE_ROOT`.
 If the explicit binding path contains spaces, quote it, for example `/new cwd="C:/Users/Example/Source Repos" Audit topic`.
+Limits snapshot lookup precedence is `CODEX_LIMITS_SESSIONS_ROOT` -> `CODEX_SESSIONS_ROOT` -> `~/.codex/sessions`.
 
 `/limits` is available as a direct command, is folded into `/status`, and is shown on the root `/global` and `/menu` panels. Capped accounts show the current `5h` and `7d` windows; unlimited accounts are rendered explicitly as unlimited.
 `CODEX_LIMITS_COMMAND` now runs without an implicit shell. Prefer a JSON argv array such as `["python3","/opt/read-limits.py"]`; simple argv-only strings like `python3 /opt/read-limits.py` still work for compatibility. If you need pipes, redirection, or inline env assignments, use a wrapper script or make the shell explicit in argv.
@@ -171,7 +172,7 @@ scripts\windows\run.cmd
 
 Use `WORKSPACE_ROOT` and `DEFAULT_SESSION_BINDING_PATH` with Windows paths such as `O:/workspace`.
 
-On native Windows, when `ENV_FILE` is unset the repo first uses `%LOCALAPPDATA%\codex-telegram-gateway\runtime.env` if it already exists, then falls back to repo-local `.env`, and otherwise uses that default state path. Runtime state lives under `%LOCALAPPDATA%\codex-telegram-gateway` by default. The `scripts\windows\*.cmd` wrappers avoid the common PowerShell `npm.ps1` execution-policy trap and keep installs on the reproducible `npm ci --ignore-scripts` path.
+On native Windows, when `ENV_FILE` is unset the repo first uses `%LOCALAPPDATA%\codex-telegram-gateway\runtime.env` if it already exists, then falls back to repo-local `.env`, and otherwise uses that default state path. Runtime state lives under `%LOCALAPPDATA%\codex-telegram-gateway` by default. If you want the repo-local `.env` to win while an older state env already exists, run commands as `set ENV_FILE=.env && ...` (or PowerShell `$env:ENV_FILE='.env'`). The `scripts\windows\*.cmd` wrappers avoid the common PowerShell `npm.ps1` execution-policy trap, change into the repo root before launching Node, and keep installs on the reproducible `npm ci --ignore-scripts` path.
 The repo now ships a real `.env.example`, so the `copy .env.example .env` bootstrap path is not a doc-only placeholder anymore. `CODEX_BIN_PATH` is intentionally left empty there so native Windows can fall through to `codex.cmd`; if you override it manually, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
 
 Install the Codex CLI once before the first run:
@@ -260,6 +261,7 @@ scripts\windows\user-spike-audit.cmd
 - `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, pins `CODEX_CONFIG_PATH` into the user unit, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`
 - on Linux, `make service-rollout` and `make service-restart` are the soft rollout path for Spike: the command waits until the replacement generation has actually taken leader traffic, while already active run topics keep finishing on the retiring generation; use `make service-hard-restart` only when you really want a blind restart
 - `make service-restart-live` is the canonical live-runtime restart path: it restarts `Omni` and then rolls `Spike` through the safe session-aware rollout flow
+- while `/compact` is rebuilding the brief, direct prompt starts for that topic are blocked instead of racing a second Spike run against the fresh-start handoff
 - `make test-live` and `make user-spike-audit` are the quickest deep validations for real Codex continuity and heavy user-account scenarios; native Windows now ships matching wrapper scripts for both
 - `make admin ARGS='status'` now also shows the resolved `CODEX_CONFIG_PATH` and parsed MCP server names, so operators can confirm the live Codex profile before assuming tool loss
 - live `codex app-server` launches now pin explicit full-access overrides, so direct CLI use and live Spike runs do not silently diverge on hosts that would otherwise fall back to sandboxed app-server behavior

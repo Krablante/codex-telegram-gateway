@@ -50,6 +50,54 @@ test("handleIncomingMessage starts codex run for plain text in a topic", async (
   assert.equal(result.reason, "prompt-started");
 });
 
+test("handleIncomingMessage blocks direct prompts while /compact is rebuilding the brief", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "continue from here",
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_thread_id: 771,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return {
+          session_key: "-1003577434463:771",
+          chat_id: "-1003577434463",
+          topic_id: "771",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async isCompacting() {
+        return true;
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        throw new Error("compacting topic should not start a run");
+      },
+    },
+  });
+
+  assert.equal(result.reason, "compact-in-progress");
+  assert.match(sent[0].text, /работаю|still working/i);
+});
+
 test("handleIncomingMessage refuses to auto-reactivate a purged topic for direct prompts", async () => {
   const sent = [];
 

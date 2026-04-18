@@ -54,6 +54,39 @@ test("markOwnedSessionsRetiring updates active run ownership in session storage"
   assert.equal(run.session.session_owner_mode, "retiring");
 });
 
+test("markOwnedSessionsRetiring also marks sessions that are still starting", async () => {
+  const startingSession = {
+    session_key: "-100:2204",
+    chat_id: "-100",
+    topic_id: "2204",
+  };
+  const claims = [];
+  const updated = await markOwnedSessionsRetiring({
+    workerPool: {
+      activeRuns: new Map(),
+      startingRunSessions: new Map([["-100:2204", startingSession]]),
+    },
+    sessionStore: {
+      async load() {
+        return startingSession;
+      },
+      async claimSessionOwner(session, ownership) {
+        claims.push({ session, ownership });
+        return {
+          ...session,
+          session_owner_generation_id: ownership.generationId,
+          session_owner_mode: ownership.mode,
+        };
+      },
+    },
+    generationId: "gen-old",
+  });
+
+  assert.equal(claims.length, 1);
+  assert.equal(updated[0].session_key, "-100:2204");
+  assert.equal(updated[0].session_owner_mode, "retiring");
+});
+
 test("waitForGenerationReady returns once a live generation exposes IPC", async () => {
   let calls = 0;
   const record = await waitForGenerationReady({

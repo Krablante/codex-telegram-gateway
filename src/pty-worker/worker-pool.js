@@ -54,6 +54,7 @@ export class CodexWorkerPool {
     this.activeRuns = new Map();
     this.pendingLiveSteers = new Map();
     this.startingRuns = new Set();
+    this.startingRunSessions = new Map();
     this.startingRunPromises = new Map();
     this.shuttingDown = false;
   }

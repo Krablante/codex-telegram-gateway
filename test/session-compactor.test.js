@@ -60,11 +60,17 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
               "session_key: -1003577434463:101",
               "cwd: /home/bloob/atlas",
               "",
+              "## Workspace context",
+              "- Compact test workspace.",
+              "",
               "## Active rules",
               "- Send finished APKs through the user's Telegram account into Saved Messages when explicitly requested.",
               "",
               "## User preferences",
               "- concise",
+              "",
+              "## Current state",
+              "- Ready for a fresh continuation.",
               "",
               "## Completed work",
               "- Built sentinel flow.",
@@ -167,7 +173,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   assert.match(runCalls[0].prompt, /## Current state/u);
   assert.match(
     runCalls[0].prompt,
-    /Latest exchange: capture the latest user ask and the latest assistant outcome in concrete terms\./u,
+    /Latest exchange: capture the latest user ask and the latest assistant outcome in concrete terms, keeping exact identifiers when they matter for continuity\./u,
   );
   assert.match(
     runCalls[0].prompt,
@@ -176,6 +182,46 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   assert.match(
     runCalls[0].prompt,
     /Preserve concrete delivery, routing, account-usage, artifact-destination, and output-format instructions whenever they are still current\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Session-specific operator rules outrank generic evergreen behavior\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Optimize for handoff fidelity\. A fresh run should be able to continue without rediscovering rules that were already settled\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Latest settled production state overrides older plans, experiments, fallbacks, or superseded architecture ideas\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /When multiple milestones exist, prefer the latest settled build, release, commit, or production direction over earlier accepted checkpoints\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Treat superseded history as background only; do not resurrect it into Active rules, Current state, or Open work\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Keep exact command\/workflow names and exact latest proof identifiers when they materially affect continuity\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Keep only rules still in force by the end of the log\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Prefer the latest settled milestone and active direction over abandoned intermediate plans\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /Bias toward operator instructions, sync\/restart rules, suffix\/reviewer constraints, and style constraints\./u,
+  );
+  assert.match(
+    runCalls[0].prompt,
+    /silently verify that the brief preserves still-active rules, exact latest proof, and the next likely continuation path while excluding superseded policy\./u,
   );
   assert.match(
     runCalls[0].prompt,
@@ -221,6 +267,9 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   assert.equal(updated.codex_rollout_path, null);
   assert.equal(updated.last_context_snapshot, null);
   assert.equal(updated.last_token_usage, null);
+  assert.equal(updated.last_run_status, null);
+  assert.equal(updated.session_owner_generation_id, null);
+  assert.equal(updated.compaction_in_progress, false);
 });
 
 test("SessionCompactor uses the global compact runtime profile for the summarizer", async () => {
@@ -262,8 +311,25 @@ test("SessionCompactor uses the global compact runtime profile for the summarize
               "session_key: -1003577434463:106",
               "cwd: /home/bloob/atlas",
               "",
+              "## Workspace context",
+              "- Compact runtime profile check.",
+              "",
+              "## Active rules",
+              "",
+              "## User preferences",
+              "- concise",
+              "",
+              "## Current state",
+              "- Ready for a fresh run.",
+              "",
               "## Completed work",
               "- Applied compact profile.",
+              "",
+              "## Open work",
+              "- Continue.",
+              "",
+              "## Latest exchange",
+              "- User asked for a compact refresh.",
             ].join("\n"),
           });
           return {
@@ -356,11 +422,25 @@ test("SessionCompactor does not invent an active-rules placeholder when the summ
             "session_key: -1003577434463:107",
             "cwd: /home/bloob/atlas",
             "",
+            "## Workspace context",
+            "- Topic-local delivery rule check.",
+            "",
+            "## Active rules",
+            "",
             "## User preferences",
             "- concise",
             "",
             "## Current state",
             "- Ready for a fresh continuation.",
+            "",
+            "## Completed work",
+            "- Logged the delivery rule.",
+            "",
+            "## Open work",
+            "- Continue.",
+            "",
+            "## Latest exchange",
+            "- User asked to preserve active rules.",
           ].join("\n"),
         });
         return {
@@ -397,7 +477,7 @@ test("SessionCompactor does not invent an active-rules placeholder when the summ
     "utf8",
   );
 
-  assert.doesNotMatch(briefText, /## Active rules/u);
+  assert.match(briefText, /## Active rules\n\n## User preferences/u);
   assert.doesNotMatch(briefText, /No active user-specific rules captured yet/u);
 });
 
@@ -411,19 +491,36 @@ test("SessionCompactor resets Omni auto-compact counters but preserves active au
     runTask: ({ onEvent }) => ({
       child: { kill() {} },
       finished: (async () => {
-        await onEvent({
-          kind: "agent_message",
-          text: [
-            "# Active brief",
-            "",
-            "updated_from_reason: auto-compact:omni-cycle-boundary",
-            "session_key: -1003577434463:105",
-            "cwd: /home/bloob/atlas",
-            "",
-            "## Open work",
-            "- Continue the Omni loop.",
-          ].join("\n"),
-        });
+          await onEvent({
+            kind: "agent_message",
+            text: [
+              "# Active brief",
+              "",
+              "updated_from_reason: auto-compact:omni-cycle-boundary",
+              "session_key: -1003577434463:105",
+              "cwd: /home/bloob/atlas",
+              "",
+              "## Workspace context",
+              "- Omni auto mode remains active.",
+              "",
+              "## Active rules",
+              "",
+              "## User preferences",
+              "- Keep auto mode alive.",
+              "",
+              "## Current state",
+              "- Ready to continue the loop.",
+              "",
+              "## Completed work",
+              "- Refreshed the brief.",
+              "",
+              "## Open work",
+              "- Continue the Omni loop.",
+              "",
+              "## Latest exchange",
+              "- User asked to continue.",
+            ].join("\n"),
+          });
         return {
           exitCode: 0,
           signal: null,
@@ -507,8 +604,16 @@ test("SessionCompactor retries the temporary Codex summarizer once before failin
               "session_key: -1003577434463:104",
               "cwd: /home/bloob/atlas",
               "",
+              "## Workspace context",
+              "- Retry fallback validation.",
+              "",
+              "## Active rules",
+              "",
               "## User preferences",
               "- concise",
+              "",
+              "## Current state",
+              "- Retry succeeded.",
               "",
               "## Completed work",
               "- Retry succeeded.",
@@ -557,6 +662,113 @@ test("SessionCompactor retries the temporary Codex summarizer once before failin
   assert.equal(runCalls.length, 2);
   assert.equal(compacted.exchangeLogEntries, 1);
   assert.match(briefText, /Retry succeeded/u);
+});
+
+test("SessionCompactor retries when the summarizer omits required brief sections", async () => {
+  const sessionStore = await makeStore();
+  const runCalls = [];
+  const compactor = new SessionCompactor({
+    sessionStore,
+    config: {
+      codexBinPath: "codex",
+    },
+    runTask: ({ onEvent }) => {
+      runCalls.push("attempt");
+      if (runCalls.length === 1) {
+        return {
+          child: { kill() {} },
+          finished: (async () => {
+            await onEvent({
+              kind: "agent_message",
+              text: [
+                "# Active brief",
+                "",
+                "updated_from_reason: command/compact",
+                "session_key: -1003577434463:108",
+                "cwd: /home/bloob/atlas",
+              ].join("\n"),
+            });
+            return {
+              exitCode: 0,
+              signal: null,
+              threadId: "compact-thread-1",
+              warnings: [],
+              resumeReplacement: null,
+            };
+          })(),
+        };
+      }
+
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onEvent({
+            kind: "agent_message",
+            text: [
+              "# Active brief",
+              "",
+              "updated_from_reason: command/compact",
+              "session_key: -1003577434463:108",
+              "cwd: /home/bloob/atlas",
+              "",
+              "## Workspace context",
+              "- Retry after invalid brief.",
+              "",
+              "## Active rules",
+              "",
+              "## User preferences",
+              "- concise",
+              "",
+              "## Current state",
+              "- Ready.",
+              "",
+              "## Completed work",
+              "- Retry produced a valid brief.",
+              "",
+              "## Open work",
+              "- Continue.",
+              "",
+              "## Latest exchange",
+              "- User asked to preserve continuity.",
+            ].join("\n"),
+          });
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "compact-thread-2",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 108,
+    topicName: "Invalid brief retry test",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+
+  await sessionStore.appendExchangeLogEntry(session, {
+    created_at: "2026-04-18T20:30:00.000Z",
+    status: "completed",
+    user_prompt: "Keep the fresh brief valid",
+    assistant_reply: "Will do.",
+  });
+
+  const compacted = await compactor.compact(session, {
+    reason: "command/compact",
+  });
+  const briefText = await fs.readFile(
+    sessionStore.getActiveBriefPath(session.chat_id, session.topic_id),
+    "utf8",
+  );
+
+  assert.equal(runCalls.length, 2);
+  assert.equal(compacted.generatedWithCodex, true);
+  assert.match(briefText, /Retry produced a valid brief/u);
 });
 
 test("SessionCompactor skips purged sessions", async () => {

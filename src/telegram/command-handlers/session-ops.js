@@ -225,7 +225,7 @@ export async function handleCompactCommand({
     };
   }
 
-  if (sessionService.isCompacting?.(session)) {
+  if (await sessionService.isCompacting?.(session)) {
     return {
       responseText: buildCompactAlreadyRunningMessage(session, language),
       backgroundCompactPromise: null,

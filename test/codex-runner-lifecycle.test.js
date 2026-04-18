@@ -159,6 +159,99 @@ test("runCodexTask keeps refreshing the active turn id across many steer respons
   assert.equal(finished.exitCode, 0);
 });
 
+test("runCodexTask refreshes the active turn from thread/resume after a transient steer rejection", async () => {
+  const child = createMockChild();
+  const steerExpectedTurnIds = [];
+  let threadResumeCalls = 0;
+  let runtimeActiveTurnId = null;
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/start"() {
+        return {
+          thread: {
+            id: "root-thread",
+          },
+        };
+      },
+      "thread/resume"() {
+        threadResumeCalls += 1;
+        return {
+          thread: {
+            id: "root-thread",
+            turns: [
+              {
+                id: "turn-reattached",
+                status: "inProgress",
+              },
+            ],
+          },
+        };
+      },
+      "turn/start"() {
+        return {
+          turn: {
+            id: "turn-started",
+          },
+        };
+      },
+      "turn/steer"(params) {
+        steerExpectedTurnIds.push(params.expectedTurnId);
+        if (steerExpectedTurnIds.length === 1) {
+          throw new Error("no active turn to steer");
+        }
+
+        return {
+          turn: {
+            id: "turn-steered",
+          },
+        };
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Refresh steer after transient no-active-turn.",
+    onRuntimeState(payload) {
+      runtimeActiveTurnId = payload?.activeTurnId || runtimeActiveTurnId;
+    },
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43130);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+  await waitForCondition(() => runtimeActiveTurnId === "turn-started");
+
+  const steerResult = await run.steer({
+    input: [{ type: "text", text: "follow-up" }],
+  });
+  assert.equal(steerResult.ok, true);
+  assert.equal(steerResult.reason, "steered");
+  assert.equal(steerResult.turnId, "turn-steered");
+  assert.deepEqual(steerExpectedTurnIds, ["turn-started", "turn-reattached"]);
+  assert.equal(threadResumeCalls, 1);
+
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "root-thread",
+      turnId: "turn-steered",
+    },
+  });
+
+  const finished = await run.finished;
+  assert.equal(finished.exitCode, 0);
+});
+
 test("runCodexTask waits for async final message handling before resolving turn completion", async () => {
   const child = createMockChild();
   const ws = createMockWebSocket({

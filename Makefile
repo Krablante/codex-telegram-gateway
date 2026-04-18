@@ -6,7 +6,11 @@ NODE ?= node
 .PHONY: config doctor run run-omni smoke smoke-omni soak test test-live user-login user-status user-e2e user-spike-audit admin service-install service-install-omni service-status service-status-omni service-logs service-logs-omni service-rollout service-restart service-hard-restart service-restart-omni service-restart-live
 
 config:
-	test -f "$(ENV_FILE)"
+	@test -f "$(ENV_FILE)" || { \
+		echo "Missing runtime env: $(ENV_FILE)" >&2; \
+		echo "Set ENV_FILE=/path/to/runtime.env or bootstrap a repo-local .env from .env.example." >&2; \
+		exit 1; \
+	}
 
 doctor: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/doctor.js

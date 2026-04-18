@@ -17,6 +17,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - `pty-worker/` owns the Codex `app-server` transport, live steer, rollout recovery, and worker lifecycle
 - native resume/recovery now follows real Codex history surfaces first: `thread/list`, `provider_session_id`, rollout path, and `session_key` before any compact fallback
 - compact briefs are expected to preserve still-active user-specific rules and delivery instructions from the exchange log without inventing fake placeholders
+- while `/compact` is rebuilding the brief, direct prompt starts for that topic should stay blocked instead of racing a second run against the fresh start
 - `telegram/command-handlers/` owns domain-specific command behavior; keep central routers thin
 - `emergency/` owns the operator-only private-chat fallback built on isolated `codex exec`
 - `rollout/` owns session-aware Spike handoff checks for soft service restarts

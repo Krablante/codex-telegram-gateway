@@ -42,7 +42,7 @@ test("resolveCodexRuntimeProfile ignores stale unavailable overrides and falls b
   assert.equal(profile.modelSource, "default");
 });
 
-test("resolveCodexRuntimeProfile keeps the configured default model even when it is absent from the cached model list", () => {
+test("resolveCodexRuntimeProfile falls back to an available model when the configured default is stale", () => {
   const profile = resolveCodexRuntimeProfile({
     session: null,
     globalSettings: null,
@@ -56,6 +56,6 @@ test("resolveCodexRuntimeProfile keeps the configured default model even when it
     ],
   });
 
-  assert.equal(profile.model, "gpt-6-experimental");
+  assert.equal(profile.model, "gpt-5.4");
   assert.equal(profile.modelSource, "default");
 });

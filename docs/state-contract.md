@@ -6,7 +6,7 @@
 
 ## Mutable surfaces
 
-- `runtime.env` — local runtime secrets and operator fixture, never committed
+- `runtime.env` — local runtime secrets and operator fixture when that path is configured, never committed
 - `sessions/` — per-topic session state
 - `zoo/` — Zoo topic binding, pet registry, snapshots, and analysis scratch state
 - `emergency/` — operator private-chat rescue-lane scratch state
@@ -20,7 +20,7 @@
 
 Current slices guarantee:
 
-- `runtime.env` exists and is readable locally
+- the resolved runtime env path is readable locally before operator commands start
 - `sessions/<chat-id>/<topic-id>/meta.json` may be created for active topic sessions
 - `sessions/<chat-id>/<topic-id>/meta.json:auto_mode` may carry topic-scoped Omni state including goal capture, locked phases, blocker state, and last Omni/Spike prompt correlation ids
 - `sessions/<chat-id>/<topic-id>/omni-memory.json` may carry small topic-scoped Omni supervisory memory such as a compact goal capsule, the active proof line, remaining goal gap, candidate pivots, bounded side work, and do-not-regress constraints
@@ -50,7 +50,7 @@ Current slices guarantee:
 - `settings/general-message-ledger.json` may store the tracked `General` message ids used by `/clear` so the bot can preserve the active menu and remove known clutter without a user-session sweep
 - `settings/rollout-coordination.json` may track the most recent Spike rollout request/in-progress/completed state and the retained topic-session keys
 - each session dir may store `topic-control-panel.json` with the pinned local menu message id, active screen, and pending reply-based input state for `/menu`
-- session metadata may store `ui_language`, `codex_thread_id`, `provider_session_id`, `codex_rollout_path`, `last_context_snapshot`, topic-level prompt suffix settings and routing flags, separate pending attachment buffers for direct Spike prompts and queued `/q` prompts, last prompt/reply, last run status, lifecycle state, `purge_after`, artifact pointers, exchange-log counters, progress message ids, rollout ownership fields such as `session_owner_generation_id`, `session_owner_mode`, `session_owner_claimed_at`, mirrored `spike_run_owner_generation_id`, compaction timestamps, and lightweight Omni auto-compact counters such as `first_omni_prompt_at` and `continuation_count_since_compact`
+- session metadata may store `ui_language`, `codex_thread_id`, `provider_session_id`, `codex_rollout_path`, `last_context_snapshot`, topic-level prompt suffix settings and routing flags, separate pending attachment buffers for direct Spike prompts and queued `/q` prompts, last prompt/reply, last run status, lifecycle state, `purge_after`, artifact pointers, exchange-log counters, progress message ids, rollout ownership fields such as `session_owner_generation_id`, `session_owner_mode`, `session_owner_claimed_at`, mirrored `spike_run_owner_generation_id`, compaction fields such as `compaction_in_progress`, `compaction_started_at`, `compaction_owner_generation_id`, compaction timestamps, and lightweight Omni auto-compact counters such as `first_omni_prompt_at` and `continuation_count_since_compact`
 - `omni/runs/` may store one-shot `codex exec` output files used by Omni evaluations
 - malformed file-backed queue, handoff, panel, Omni memory, or Zoo state may be quarantined and rebuilt empty instead of being silently reused
 - if `zoo/topic.json` is missing or incomplete, the next live Zoo menu callback may rebuild the stored chat/topic/menu binding from Telegram callback context
@@ -63,6 +63,7 @@ Current slices guarantee:
 - when topic `auto_mode` is active, Spike may ignore direct human prompt messages in that topic and accept prompt-starts there only from trusted Omni bot principals
 - if Omni is disabled globally through missing Omni credentials or `OMNI_ENABLED=false`, any persisted topic `auto_mode` state remains on disk but becomes inert for Spike routing until Omni is re-enabled
 - run completion may append to `exchange-log.jsonl`, while explicit `/compact` may refresh `active-brief.md` and clear stored thread/context state so the next run bootstraps itself from the rebuilt brief instead of the old Codex session
+- while that `/compact` rebuild is active, direct prompt starts for the same topic are blocked instead of racing a second Spike run against the brief refresh
 - an explicitly interrupted run may preserve resumable Codex continuity metadata so the next turn can follow the same native session instead of being forced into a fake fresh start
 - `/auto` may also trigger the same compaction path internally at a safe cycle boundary, with a short visible Telegram notice but without changing the manual `/compact` UX
 - if a stored `codex_thread_id` no longer resumes cleanly after the controlled retry, the next run may first repair continuity from `thread/list`, `provider_session_id`, rollout metadata, and `session_key`; only after those bounded repair attempts fail may it clear the thread state, regenerate `active-brief.md` from `exchange-log.jsonl`, and continue from that brief

@@ -34,6 +34,7 @@ const ROLLOUT_STALL_AFTER_CHILD_EXIT_MS = 5000;
 const ROLLOUT_STALL_WITHOUT_CHILD_EXIT_MS = 30000;
 const TRANSPORT_REATTACH_RETRY_DELAY_MS = 50;
 const TRANSPORT_REATTACH_TIMEOUT_MS = 1500;
+const STEER_ACTIVE_TURN_REFRESH_RETRY_DELAYS_MS = [150, 350, 750, 1500];
 const TURN_COMPLETION_FINAL_MESSAGE_GRACE_MS = 1000;
 const THREAD_HISTORY_PAGE_SIZE = 50;
 const THREAD_HISTORY_MAX_PAGES = 200;
@@ -90,7 +91,11 @@ function normalizeOptionalText(value) {
   return normalized || null;
 }
 
-function collectResumeErrorTexts(error) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function collectErrorTexts(error) {
   const values = [
     error?.message,
     error?.data?.message,
@@ -109,12 +114,20 @@ function isIrrecoverableResumeError(error) {
     return true;
   }
 
-  return collectResumeErrorTexts(error).some((message) =>
+  return collectErrorTexts(error).some((message) =>
     message.includes("thread not found") ||
     message.includes("unknown thread") ||
     message.includes("no such thread") ||
     message.includes("missing thread") ||
     message.includes("cannot resume thread"),
+  );
+}
+
+function isNoActiveTurnSteerError(error) {
+  return collectErrorTexts(error).some((message) =>
+    message.includes("no active turn to steer") ||
+    message.includes("no active turn") ||
+    message.includes("expected turn is not active"),
   );
 }
 
@@ -528,6 +541,41 @@ export function runCodexTask({
     sandbox: "danger-full-access",
   };
 
+  const refreshActiveTurnFromThreadResume = async () => {
+    if (!rpc || !latestThreadId) {
+      return null;
+    }
+
+    try {
+      const resumed = await rpc.request("thread/resume", {
+        ...threadParams,
+        threadId: latestThreadId,
+      });
+      latestThreadId = normalizeOptionalText(resumed?.thread?.id) || latestThreadId;
+      primaryThreadId = primaryThreadId || latestThreadId;
+      const resumedOpenTurn = findInProgressTurn(resumed?.thread);
+      const resumedLatestTurn = findLatestTurn(resumed?.thread);
+      activeTurnId =
+        normalizeOptionalText(resumedOpenTurn?.id)
+        || (
+          normalizeOptionalText(resumedLatestTurn?.status) === "inProgress"
+            ? normalizeOptionalText(resumedLatestTurn?.id)
+            : null
+        )
+        || null;
+      await publishRuntimeState({
+        threadId: latestThreadId,
+        activeTurnId,
+        providerSessionId: latestProviderSessionId,
+        rolloutPath,
+        contextSnapshot: latestContextSnapshot,
+      });
+      return activeTurnId;
+    } catch {
+      return null;
+    }
+  };
+
   const startRolloutTaskCompleteWatcher = () => {
     if (rolloutTaskCompleteWatcher) {
       return;
@@ -682,29 +730,55 @@ export function runCodexTask({
     }
 
     const input = pendingSteerInputs.splice(0, pendingSteerInputs.length);
-    const expectedTurnId = activeTurnId;
-    try {
-      const steerResponse = await rpc.request("turn/steer", {
-        threadId: latestThreadId,
-        expectedTurnId,
-        input,
-      });
-      activeTurnId =
-        steerResponse?.turn?.id
-        || steerResponse?.turnId
-        || expectedTurnId;
-    } catch (error) {
-      pendingSteerInputs.unshift(...input);
-      throw error;
+    let lastNoActiveTurnError = null;
+
+    for (let attempt = 0; attempt <= STEER_ACTIVE_TURN_REFRESH_RETRY_DELAYS_MS.length; attempt += 1) {
+      const expectedTurnId = activeTurnId;
+      if (!rpc || !latestThreadId || !expectedTurnId) {
+        if (attempt >= STEER_ACTIVE_TURN_REFRESH_RETRY_DELAYS_MS.length) {
+          break;
+        }
+        await sleep(STEER_ACTIVE_TURN_REFRESH_RETRY_DELAYS_MS[attempt]);
+        await refreshActiveTurnFromThreadResume();
+        continue;
+      }
+
+      try {
+        const steerResponse = await rpc.request("turn/steer", {
+          threadId: latestThreadId,
+          expectedTurnId,
+          input,
+        });
+        activeTurnId =
+          steerResponse?.turn?.id
+          || steerResponse?.turnId
+          || expectedTurnId;
+
+        return {
+          ok: true,
+          reason: "steered",
+          inputCount: input.length,
+          turnId: activeTurnId,
+          threadId: latestThreadId,
+        };
+      } catch (error) {
+        if (!isNoActiveTurnSteerError(error)) {
+          pendingSteerInputs.unshift(...input);
+          throw error;
+        }
+
+        lastNoActiveTurnError = error;
+        activeTurnId = null;
+        if (attempt >= STEER_ACTIVE_TURN_REFRESH_RETRY_DELAYS_MS.length) {
+          break;
+        }
+        await sleep(STEER_ACTIVE_TURN_REFRESH_RETRY_DELAYS_MS[attempt]);
+        await refreshActiveTurnFromThreadResume();
+      }
     }
 
-    return {
-      ok: true,
-      reason: "steered",
-      inputCount: input.length,
-      turnId: activeTurnId,
-      threadId: latestThreadId,
-    };
+    pendingSteerInputs.unshift(...input);
+    throw lastNoActiveTurnError || new Error("no active turn to steer");
   };
 
   const queueSteer = (input = []) => {
