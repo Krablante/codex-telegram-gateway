@@ -6,6 +6,17 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.40] - 2026-04-18
+
+Fixed:
+
+- Windows CI now validates the intended `CODEX_LIMITS_COMMAND` contract correctly: legacy quoted string parsing is tested as POSIX-only behavior, while native Windows continues to require JSON argv syntax
+- the repeated upstream `SIGINT` recovery regression test now uses a timeout budget that matches the real bounded backoff path, so slower Windows runners do not fail a healthy worker-pool lifecycle on timing noise alone
+
+Tests:
+
+- public `node --test`: 597 pass, 0 fail, 4 skip
+
 ## [0.3.39] - 2026-04-18
 
 Fixed:

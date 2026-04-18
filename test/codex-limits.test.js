@@ -221,6 +221,7 @@ test("CodexLimitsService still accepts simple quoted CODEX_LIMITS_COMMAND string
       command: `node "${scriptPath}"`,
       cacheTtlMs: 1000,
       commandTimeoutMs: 5000,
+      platform: "linux",
     });
     const summary = await service.getSummary();
 

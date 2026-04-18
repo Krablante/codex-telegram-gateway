@@ -142,7 +142,7 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
   assert.match(steerCalls[0][0].text, /И ещё это не забудь\./u);
 
   finishGate.resolve();
-  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
   assert.equal(sentMessages.at(-1).text, "Учёл буферизованное steer.");
   assert.equal(sentMessages.at(-1).reply_to_message_id, 601);
@@ -1330,7 +1330,7 @@ test("CodexWorkerPool keeps root thread state when foreign subagent events arriv
   });
 
   assert.equal(started.ok, true);
-  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(reloaded.codex_thread_id, "root-thread");
@@ -1443,7 +1443,7 @@ test("CodexWorkerPool does not let late live events clobber a completed run back
     },
   });
 
-  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
 
   const meta = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(meta.last_run_status, "completed");
