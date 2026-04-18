@@ -19,15 +19,15 @@ test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram de
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 188,
     topicName: "Telegram format test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -82,13 +82,13 @@ test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram de
         await onEvent(
           {
             kind: "agent_message",
-            text: "Файл [`test.js`](/workspace/test.js) удален. Проверил `SIGTERM`.",
+            text: "Файл [`test.js`](/home/bloob/atlas/test.js) удален. Проверил `SIGTERM`.",
           },
           {
             type: "item.completed",
             item: {
               type: "agent_message",
-              text: "Файл [`test.js`](/workspace/test.js) удален. Проверил `SIGTERM`.",
+              text: "Файл [`test.js`](/home/bloob/atlas/test.js) удален. Проверил `SIGTERM`.",
             },
           },
         );
@@ -145,15 +145,15 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
 
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1881,
     topicName: "Directive delivery",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -255,7 +255,7 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
   assert.doesNotMatch(runCalls[0], /```telegram-file/u);
   assert.doesNotMatch(runCalls[0], /File delivery:/u);
   assert.equal(sentDocuments.length, 1);
-  assert.equal(sentDocuments[0].chat_id, -1001234567890);
+  assert.equal(sentDocuments[0].chat_id, -1003577434463);
   assert.equal(sentDocuments[0].message_thread_id, 1881);
   assert.equal(sentDocuments[0].caption, "Server report");
   assert.equal(sentDocuments[0].document.filePath, await fs.realpath(filePath));
@@ -286,7 +286,7 @@ test("CodexWorkerPool sends telegram-file directives from a symlinked worktree p
 
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1881,
     topicName: "Directive delivery",
     createdVia: "command/new",
@@ -391,15 +391,15 @@ test("CodexWorkerPool keeps telegram-file syntax visible when it is only an exam
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1882,
     topicName: "Directive example",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -490,15 +490,15 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1883,
     topicName: "Directive failure",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 

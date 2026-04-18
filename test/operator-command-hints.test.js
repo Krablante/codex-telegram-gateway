@@ -21,6 +21,18 @@ test("operator command hints point Windows operators at wrapper scripts", () => 
     "scripts\\windows\\user-e2e.cmd",
   );
   assert.equal(
+    getOperatorCommandHint("test", { platform: "win32" }),
+    "scripts\\windows\\test.cmd",
+  );
+  assert.equal(
+    getOperatorCommandHint("test-live", { platform: "win32" }),
+    "scripts\\windows\\test-live.cmd",
+  );
+  assert.equal(
+    getOperatorCommandHint("user-spike-audit", { platform: "win32" }),
+    "scripts\\windows\\user-spike-audit.cmd",
+  );
+  assert.equal(
     formatOperatorCommandHints(["doctor", "run"], { platform: "win32" }),
     "`scripts\\windows\\doctor.cmd`, `scripts\\windows\\run.cmd`",
   );

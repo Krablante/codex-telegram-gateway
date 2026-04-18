@@ -18,6 +18,17 @@ function getPathModule(platform) {
   return platform === "win32" ? path.win32 : path.posix;
 }
 
+function getWindowsEnvValue(env, key) {
+  const matchingEntry = Object.entries(env ?? {})
+    .filter(([candidate]) => String(candidate).toLowerCase() === key)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .at(0);
+
+  return typeof matchingEntry?.[1] === "string"
+    ? matchingEntry[1]
+    : "";
+}
+
 export function getExecutableSearchPathValue(
   env = process.env,
   platform = process.platform,
@@ -26,14 +37,7 @@ export function getExecutableSearchPathValue(
     return env?.PATH ?? "";
   }
 
-  const matchingEntry = Object.entries(env ?? {})
-    .filter(([key]) => String(key).toLowerCase() === "path")
-    .sort(([left], [right]) => left.localeCompare(right))
-    .at(0);
-
-  return typeof matchingEntry?.[1] === "string"
-    ? matchingEntry[1]
-    : "";
+  return getWindowsEnvValue(env, "path");
 }
 
 function splitPathValue(pathValue, platform) {
@@ -53,7 +57,7 @@ function getExecutableVariants(executable, platform, env) {
     return [executable];
   }
 
-  const extensions = String(env?.PATHEXT ?? "")
+  const extensions = getWindowsEnvValue(env, "pathext")
     .split(";")
     .map((entry) => entry.trim())
     .filter(Boolean);

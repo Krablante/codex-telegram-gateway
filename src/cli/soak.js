@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { loadRuntimeConfig } from "../config/runtime-config.js";
 import { CodexWorkerPool } from "../pty-worker/worker-pool.js";
 import { createServiceState } from "../runtime/service-state.js";
+import { buildSleepCommandPrompt } from "../runtime/live-command-prompts.js";
 import { GlobalCodexSettingsStore } from "../session-manager/global-codex-settings-store.js";
 import { GlobalPromptSuffixStore } from "../session-manager/global-prompt-suffix-store.js";
 import { SessionCompactor } from "../session-manager/session-compactor.js";
@@ -70,7 +71,7 @@ function buildSyntheticTopicMessage({
 
 function buildSoakPrompt({ token, sleepSecs, topicIndex }) {
   return [
-    `Run exactly this shell command first: sh -lc 'sleep ${sleepSecs}; pwd'`,
+    buildSleepCommandPrompt(sleepSecs),
     `After the command finishes, reply ONLY with ${token}.`,
     `Do not add any extra text.`,
     `This is soak topic ${topicIndex + 1}.`,

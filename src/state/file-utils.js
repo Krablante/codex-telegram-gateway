@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
+import { retryFilesystemOperation } from "../runtime/fs-retry.js";
+
 export function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -70,7 +72,10 @@ export async function writeTextAtomic(
   if (effectiveMode !== null) {
     await ensureFileMode(tempPath, effectiveMode, { platform });
   }
-  await fs.rename(tempPath, filePath);
+  await retryFilesystemOperation(
+    () => fs.rename(tempPath, filePath),
+    { platform },
+  );
   if (effectiveMode !== null) {
     await ensureFileMode(filePath, effectiveMode, { platform });
   }

@@ -48,9 +48,9 @@ test("OmniCoordinator applies Omni v2 memory, pivot handoff, and auto-compact at
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -86,7 +86,7 @@ test("OmniCoordinator applies Omni v2 memory, pivot handoff, and auto-compact at
 
   await harness.coordinator.scanPendingSpikeFinals();
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   const memory = await harness.coordinator.loadOmniMemory(stored);
   assert.deepEqual(compactCalls, ["auto-compact:omni-cycle-boundary"]);
@@ -132,9 +132,9 @@ test("OmniCoordinator can sleep instead of instantly re-pinging Spike on a healt
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -167,7 +167,7 @@ test("OmniCoordinator can sleep instead of instantly re-pinging Spike on a healt
 
   await harness.coordinator.scanPendingSpikeFinals();
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(stored.auto_mode.phase, "sleeping");
   assert.equal(stored.auto_mode.continuation_count, 2);
@@ -197,9 +197,9 @@ test("OmniCoordinator synthesizes a monitoring prompt when Omni returns sleep wi
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -238,7 +238,7 @@ test("OmniCoordinator synthesizes a monitoring prompt when Omni returns sleep wi
 
   await harness.coordinator.scanPendingSpikeFinals();
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(stored.auto_mode.phase, "sleeping");
   assert.equal(stored.auto_mode.last_evaluated_exchange_log_entries, 8);
   assert.match(
@@ -282,9 +282,9 @@ test("OmniCoordinator evaluates with the resolved Omni model and reasoning profi
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionStore.patch(session, {
     omni_model_override: "gpt-5.4-mini",
@@ -359,9 +359,9 @@ test("OmniCoordinator evaluates inside the session workspace instead of the gate
     workspace_binding: buildBinding(biomedicalRoot),
   });
   session = await harness.sessionService.activateAutoMode(session, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -408,9 +408,9 @@ test("OmniCoordinator queues continuation prompts for Spike without visible Omni
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -443,7 +443,7 @@ test("OmniCoordinator queues continuation prompts for Spike without visible Omni
   });
 
   const result = await harness.coordinator.scanPendingSpikeFinals();
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(result, undefined);
   assert.equal(stored.auto_mode.phase, "running");
@@ -464,9 +464,9 @@ test("OmniCoordinator marks invalid decision payloads as failed once instead of 
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -498,7 +498,7 @@ test("OmniCoordinator marks invalid decision payloads as failed once instead of 
   await harness.coordinator.scanPendingSpikeFinals();
   await harness.coordinator.scanPendingSpikeFinals();
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(stored.auto_mode.phase, "failed");
   assert.equal(stored.auto_mode.last_evaluated_exchange_log_entries, 5);
   assert.equal(harness.execPrompts.length, 1);
@@ -518,9 +518,9 @@ test("OmniCoordinator does not re-evaluate after a continuation prompt is alread
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -555,7 +555,7 @@ test("OmniCoordinator does not re-evaluate after a continuation prompt is alread
   await harness.coordinator.scanPendingSpikeFinals();
   await harness.coordinator.scanPendingSpikeFinals();
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(stored.lifecycle_state, "active");
   assert.equal(harness.execPrompts.length, 1);
@@ -574,9 +574,9 @@ test("OmniCoordinator evaluates a newer Spike final even if phase is stale block
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -610,7 +610,7 @@ test("OmniCoordinator evaluates a newer Spike final even if phase is stale block
 
   await harness.coordinator.scanPendingSpikeFinals();
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(stored.auto_mode.phase, "running");
   assert.equal(stored.auto_mode.blocked_reason, null);
@@ -620,6 +620,127 @@ test("OmniCoordinator evaluates a newer Spike final even if phase is stale block
   assert.equal(stored.auto_mode.continuation_count, 1);
   assert.equal(harness.execPrompts.length, 1);
   assert.match(pendingPrompt.prompt, /Continue from the newly completed pass/u);
+});
+
+test("OmniCoordinator short-circuits exact-token goals to done without an Omni round-trip", async () => {
+  const harness = await buildHarness({
+    decisionReply: JSON.stringify({
+      status: "continue",
+      summary: "This should not be used when the exact token already satisfied the goal.",
+      next_prompt: "Unused continuation prompt.",
+      user_message: null,
+      blocked_reason: null,
+    }),
+  });
+  const baseSession = await ensureSession(harness.sessionStore);
+  let session = await harness.sessionService.activateAutoMode(baseSession, {
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
+  });
+  session = await harness.sessionService.captureAutoGoal(
+    session,
+    "Goal: finish only when the worker reply contains exactly LIVE_DONE_TOKEN_77.",
+  );
+  session = await harness.sessionService.captureAutoInitialPrompt(
+    session,
+    "Initial Spike prompt",
+  );
+  session = await harness.sessionService.updateAutoMode(session, {
+    ...session.auto_mode,
+    phase: "running",
+    last_spike_exchange_log_entries: 1,
+    last_evaluated_exchange_log_entries: 1,
+  });
+  session = await harness.sessionStore.patch(session, {
+    last_user_prompt: "Initial Spike prompt",
+    last_agent_reply: "LIVE_DONE_TOKEN_77",
+    exchange_log_entries: 2,
+  });
+  await harness.spikeFinalEventStore.write(session, {
+    exchange_log_entries: 2,
+    status: "completed",
+    finished_at: "2026-04-01T16:40:00.000Z",
+    final_reply_text: "LIVE_DONE_TOKEN_77",
+    telegram_message_ids: ["910"],
+    reply_to_message_id: "700",
+    thread_id: "thread-done-1",
+  });
+
+  await harness.coordinator.scanPendingSpikeFinals();
+
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
+  assert.equal(stored.auto_mode.phase, "done");
+  assert.equal(stored.auto_mode.last_spike_final_message_id, "910");
+  assert.equal(stored.auto_mode.last_spike_exchange_log_entries, 2);
+  assert.equal(stored.auto_mode.last_evaluated_exchange_log_entries, 2);
+  assert.equal(stored.auto_mode.pending_user_input, null);
+  assert.equal(harness.execPrompts.length, 0);
+  assert.match(
+    harness.sent.at(-1).text,
+    /Locked goal satisfied by exact reply token LIVE_DONE_TOKEN_77/u,
+  );
+});
+
+test("OmniCoordinator recovers parked exact-token sessions when a newer completed Spike final lands", async () => {
+  const harness = await buildHarness({
+    decisionReply: JSON.stringify({
+      status: "continue",
+      summary: "This should not be used when the exact token already satisfied the goal.",
+      next_prompt: "Unused continuation prompt.",
+      user_message: null,
+      blocked_reason: null,
+    }),
+  });
+  const baseSession = await ensureSession(harness.sessionStore);
+  let session = await harness.sessionService.activateAutoMode(baseSession, {
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
+  });
+  session = await harness.sessionService.captureAutoGoal(
+    session,
+    "Goal: finish only when the worker reply contains exactly LIVE_DONE_TOKEN_88.",
+  );
+  session = await harness.sessionService.captureAutoInitialPrompt(
+    session,
+    "Initial Spike prompt",
+  );
+  session = await harness.sessionService.updateAutoMode(session, {
+    ...session.auto_mode,
+    phase: "running",
+    last_spike_exchange_log_entries: 1,
+    last_evaluated_exchange_log_entries: 1,
+  });
+  session = await harness.sessionStore.patch(session, {
+    last_user_prompt: "Initial Spike prompt",
+    last_agent_reply: "LIVE_DONE_TOKEN_88",
+    exchange_log_entries: 2,
+  });
+  session = await harness.sessionStore.park(
+    session,
+    "telegram/topic-unavailable",
+    { purge_after: "2026-04-08T00:00:00.000Z" },
+  );
+  await harness.spikeFinalEventStore.write(session, {
+    exchange_log_entries: 2,
+    status: "completed",
+    finished_at: "2026-04-01T16:41:00.000Z",
+    final_reply_text: "LIVE_DONE_TOKEN_88",
+    telegram_message_ids: ["911"],
+    reply_to_message_id: "700",
+    thread_id: "thread-done-2",
+  });
+
+  await harness.coordinator.scanPendingSpikeFinals();
+
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
+  assert.equal(stored.lifecycle_state, "parked");
+  assert.equal(stored.auto_mode.phase, "done");
+  assert.equal(stored.auto_mode.last_spike_final_message_id, "911");
+  assert.equal(stored.auto_mode.last_spike_exchange_log_entries, 2);
+  assert.equal(stored.auto_mode.last_evaluated_exchange_log_entries, 2);
+  assert.equal(harness.execPrompts.length, 0);
 });
 
 test("OmniCoordinator evaluates a newer Spike final even if phase is stale failed", async () => {
@@ -634,9 +755,9 @@ test("OmniCoordinator evaluates a newer Spike final even if phase is stale faile
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -670,7 +791,7 @@ test("OmniCoordinator evaluates a newer Spike final even if phase is stale faile
 
   await harness.coordinator.scanPendingSpikeFinals();
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(stored.auto_mode.phase, "running");
   assert.equal(stored.auto_mode.last_spike_final_message_id, "909");

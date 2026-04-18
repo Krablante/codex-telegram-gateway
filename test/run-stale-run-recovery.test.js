@@ -16,10 +16,14 @@ function createSessionStore(root) {
 }
 
 async function createRunningSession(sessionStore, {
-  chatId = -1001234567890,
+  chatId = -1003577434463,
   topicId = 77,
+  lastUserPrompt = "Fix the gateway continuity.",
   ownerGenerationId = "stale-generation",
   lastAgentReply = null,
+  providerSessionId = "provider-session-stale-123",
+  rolloutPath = "/tmp/stale-rollout.jsonl",
+  threadId = "thread-stale-123",
 } = {}) {
   const session = await sessionStore.ensure({
     chatId,
@@ -35,20 +39,23 @@ async function createRunningSession(sessionStore, {
   });
 
   return sessionStore.patch(session, {
-    codex_thread_id: "thread-stale-123",
-    codex_rollout_path: "/tmp/stale-rollout.jsonl",
+    provider_session_id: providerSessionId,
+    codex_thread_id: threadId,
+    codex_rollout_path: rolloutPath,
     last_context_snapshot: {
-      rolloutPath: "/tmp/stale-rollout.jsonl",
-      threadId: "thread-stale-123",
+      sessionId: providerSessionId,
+      rolloutPath,
+      threadId,
     },
     last_agent_reply: lastAgentReply,
+    last_user_prompt: lastUserPrompt,
     last_run_started_at: "2026-04-05T18:00:00.000Z",
     last_run_status: "running",
     spike_run_owner_generation_id: ownerGenerationId,
   });
 }
 
-test("recoverStaleRunningSessions marks dead-owner running sessions as failed", async (t) => {
+test("recoverStaleRunningSessions keeps recoverable dead-owner runs resumable", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-recovery-"));
   t.after(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -75,24 +82,157 @@ test("recoverStaleRunningSessions marks dead-owner running sessions as failed", 
   const exchangeLog = await sessionStore.loadExchangeLog(reloaded);
   const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
   assert.equal(recovered.length, 1);
-  assert.equal(reloaded.last_run_status, "failed");
+  assert.equal(reloaded.last_run_status, "interrupted");
   assert.equal(reloaded.last_run_finished_at, "2026-04-05T18:10:00.000Z");
   assert.equal(reloaded.session_owner_generation_id, null);
   assert.equal(reloaded.session_owner_mode, null);
   assert.equal(reloaded.spike_run_owner_generation_id, null);
-  assert.equal(reloaded.codex_thread_id, null);
-  assert.equal(reloaded.codex_rollout_path, null);
-  assert.equal(reloaded.last_context_snapshot, null);
-  assert.equal(reloaded.last_agent_reply, STALE_RUN_RECOVERY_TEXT);
-  assert.equal(reloaded.exchange_log_entries, 1);
-  assert.equal(exchangeLog.length, 1);
-  assert.equal(exchangeLog[0].status, "failed");
-  assert.equal(exchangeLog[0].assistant_reply, STALE_RUN_RECOVERY_TEXT);
-  assert.equal(spikeFinalEvent.status, "failed");
-  assert.equal(spikeFinalEvent.exchange_log_entries, 1);
+  assert.equal(reloaded.provider_session_id, "provider-session-stale-123");
+  assert.equal(reloaded.codex_thread_id, "thread-stale-123");
+  assert.equal(reloaded.codex_rollout_path, "/tmp/stale-rollout.jsonl");
+  assert.deepEqual(reloaded.last_context_snapshot, {
+    sessionId: "provider-session-stale-123",
+    rolloutPath: "/tmp/stale-rollout.jsonl",
+    threadId: "thread-stale-123",
+  });
+  assert.equal(reloaded.last_agent_reply, null);
+  assert.equal(reloaded.exchange_log_entries, 0);
+  assert.equal(exchangeLog.length, 0);
+  assert.equal(spikeFinalEvent.status, "interrupted");
+  assert.equal(spikeFinalEvent.exchange_log_entries, 0);
   assert.equal(spikeFinalEvent.finished_at, "2026-04-05T18:10:00.000Z");
-  assert.equal(spikeFinalEvent.final_reply_text, STALE_RUN_RECOVERY_TEXT);
-  assert.equal(spikeFinalEvent.thread_id, null);
+  assert.equal(spikeFinalEvent.final_reply_text, null);
+  assert.equal(spikeFinalEvent.thread_id, "thread-stale-123");
+});
+
+test("recoverStaleRunningSessions completes dead-owner runs when rollout already has the final answer", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-complete-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const codexSessionsRoot = path.join(root, "codex-sessions");
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "18");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-provider-session-stale-123.jsonl",
+  );
+  await fs.writeFile(
+    rolloutPath,
+    `${JSON.stringify({
+      timestamp: "2026-04-05T18:09:57.900Z",
+      type: "session_meta",
+      payload: {
+        id: "provider-session-stale-123",
+      },
+    })}\n${JSON.stringify({
+      timestamp: "2026-04-05T18:09:58.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        model_context_window: 200000,
+      },
+    })}\n${JSON.stringify({
+      timestamp: "2026-04-05T18:09:58.500Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 1200,
+            cached_input_tokens: 100,
+            output_tokens: 240,
+            reasoning_output_tokens: 80,
+            total_tokens: 1540,
+          },
+          model_context_window: 200000,
+        },
+      },
+    })}\n${JSON.stringify({
+      timestamp: "2026-04-05T18:09:58.700Z",
+      type: "event_msg",
+      payload: {
+        type: "agent_message",
+        phase: "commentary",
+        message: "Checking the live continuity path.",
+      },
+    })}\n${JSON.stringify({
+      timestamp: "2026-04-05T18:09:59.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-stale-123",
+        last_agent_message: "The recovered run had already finished cleanly.",
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    lastUserPrompt: "Audit the continuity path.",
+    rolloutPath: null,
+  });
+  const recovered = await recoverStaleRunningSessions({
+    codexSessionsRoot,
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const exchangeLog = await sessionStore.loadExchangeLog(reloaded);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+  assert.equal(recovered.length, 1);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.last_run_finished_at, "2026-04-05T18:10:00.000Z");
+  assert.equal(reloaded.session_owner_generation_id, null);
+  assert.equal(reloaded.spike_run_owner_generation_id, null);
+  assert.equal(reloaded.provider_session_id, "provider-session-stale-123");
+  assert.equal(reloaded.codex_thread_id, "thread-stale-123");
+  assert.equal(reloaded.codex_rollout_path, rolloutPath);
+  assert.equal(
+    reloaded.last_agent_reply,
+    "The recovered run had already finished cleanly.",
+  );
+  assert.equal(reloaded.exchange_log_entries, 1);
+  assert.deepEqual(reloaded.last_context_snapshot, {
+    captured_at: "2026-04-05T18:09:58.500Z",
+    session_id: "provider-session-stale-123",
+    thread_id: "thread-stale-123",
+    model_context_window: 200000,
+    last_token_usage: {
+      input_tokens: 1200,
+      cached_input_tokens: 100,
+      output_tokens: 240,
+      reasoning_tokens: 80,
+      total_tokens: 1540,
+    },
+    rollout_path: rolloutPath,
+  });
+  assert.equal(exchangeLog.length, 1);
+  assert.equal(exchangeLog[0].status, "completed");
+  assert.equal(exchangeLog[0].user_prompt, "Audit the continuity path.");
+  assert.equal(
+    exchangeLog[0].assistant_reply,
+    "The recovered run had already finished cleanly.",
+  );
+  assert.equal(spikeFinalEvent.status, "completed");
+  assert.equal(
+    spikeFinalEvent.final_reply_text,
+    "The recovered run had already finished cleanly.",
+  );
+  assert.equal(spikeFinalEvent.thread_id, "thread-stale-123");
 });
 
 test("recoverStaleRunningSessions keeps live-owned running sessions untouched", async (t) => {

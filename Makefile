@@ -3,7 +3,7 @@
 ENV_FILE ?= .env
 NODE ?= node
 
-.PHONY: config doctor run run-omni smoke smoke-omni soak test test-live user-login user-status user-e2e admin service-install service-install-omni service-status service-status-omni service-logs service-logs-omni service-rollout service-restart service-hard-restart service-restart-omni service-restart-live
+.PHONY: config doctor run run-omni smoke smoke-omni soak test test-live user-login user-status user-e2e user-spike-audit admin service-install service-install-omni service-status service-status-omni service-logs service-logs-omni service-rollout service-restart service-hard-restart service-restart-omni service-restart-live
 
 config:
 	test -f "$(ENV_FILE)"
@@ -18,12 +18,10 @@ run-omni: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-omni.js
 
 smoke: config
-	@systemctl --user is-active --quiet codex-telegram-gateway.service && { echo "codex-telegram-gateway.service is active; refuse smoke run to avoid Telegram poll conflict" >&2; exit 1; } || true
-	TELEGRAM_POLL_TIMEOUT_SECS=1 RUN_ONCE=1 ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run.js
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-smoke.js
 
 smoke-omni: config
-	@systemctl --user is-active --quiet codex-telegram-gateway-omni.service && { echo "codex-telegram-gateway-omni.service is active; refuse smoke run to avoid Telegram poll conflict" >&2; exit 1; } || true
-	TELEGRAM_POLL_TIMEOUT_SECS=1 RUN_ONCE=1 OMNI_SKIP_PENDING_SCAN=1 ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-omni.js
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-smoke.js --omni
 
 soak: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/soak.js
@@ -31,8 +29,8 @@ soak: config
 test:
 	$(NODE) --test
 
-test-live:
-	CODEX_LIVE_TESTS=1 $(NODE) --test test/worker-pool.live.test.js
+test-live: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-live-tests.js
 
 user-login: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/user-login.js
@@ -42,6 +40,9 @@ user-status: config
 
 user-e2e: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/user-live-e2e.js
+
+user-spike-audit: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/user-live-spike-audit.js
 
 admin: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/admin.js $(ARGS)

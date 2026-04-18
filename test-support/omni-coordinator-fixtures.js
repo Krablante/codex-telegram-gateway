@@ -25,12 +25,12 @@ function buildConfig(stateRoot, workspaceRoot) {
     codexBinPath: "codex",
     atlasWorkspaceRoot: workspaceRoot,
     defaultSessionBindingPath: workspaceRoot,
-    telegramForumChatId: "-1001234567890",
-    telegramAllowedUserId: "1234567890",
-    telegramAllowedUserIds: ["1234567890"],
-    telegramAllowedBotIds: ["2234567890"],
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    telegramForumChatId: "-1003577434463",
+    telegramAllowedUserId: "5825672398",
+    telegramAllowedUserIds: ["5825672398"],
+    telegramAllowedBotIds: ["8603043042"],
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   };
 }
 
@@ -89,8 +89,8 @@ export async function buildHarness({
     sessionStore,
     sessionLifecycleManager,
     spikeFinalEventStore,
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
     startExecRun: startExecRun || ((params) => {
       execCalls.push(params);
       execPrompts.push(params.prompt);
@@ -129,7 +129,7 @@ export async function buildHarness({
 export async function ensureSession(sessionStore) {
   const workspaceRoot = sessionStore.__testWorkspaceRoot;
   return sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 77,
     topicName: "Omni coordinator test",
     createdVia: "test",
@@ -146,8 +146,8 @@ export function buildHumanTopicMessage({
   return {
     text,
     entities,
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: messageId,
     message_thread_id: threadId,
   };

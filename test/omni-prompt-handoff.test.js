@@ -13,16 +13,16 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
   };
 }
 
 async function ensureSession(sessionStore) {
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 991,
     topicName: "Omni handoff test",
     createdVia: "test",
@@ -32,8 +32,8 @@ async function ensureSession(sessionStore) {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "2234567890",
-      spike_bot_id: "3234567890",
+      omni_bot_id: "8603043042",
+      spike_bot_id: "8537834861",
     },
   });
   return session;
@@ -62,7 +62,7 @@ test("OmniPromptHandoffStore queues and clears pending prompts", async () => {
 test("buildSyntheticOmniPromptMessage emits a bot-authored forum topic message", () => {
   const message = buildSyntheticOmniPromptMessage(
     {
-      chat_id: "-1001234567890",
+      chat_id: "-1003577434463",
       topic_id: "991",
       topic_name: "Omni handoff test",
     },
@@ -70,11 +70,11 @@ test("buildSyntheticOmniPromptMessage emits a bot-authored forum topic message",
       prompt: "queued prompt",
       synthetic_message_id: 123,
     },
-    "2234567890",
+    "8603043042",
   );
 
   assert.equal(message.message_thread_id, 991);
-  assert.equal(message.from.id, 2234567890);
+  assert.equal(message.from.id, 8603043042);
   assert.equal(message.from.is_bot, true);
   assert.equal(message.is_internal_omni_handoff, true);
   assert.equal(message.text, "queued prompt");
@@ -121,7 +121,7 @@ test("drainPendingOmniPrompts injects queued Omni prompts into Spike handling", 
   assert.equal(results.length, 1);
   assert.equal(captured.length, 1);
   assert.equal(captured[0].text, "queued prompt");
-  assert.equal(captured[0].from.id, 2234567890);
+  assert.equal(captured[0].from.id, 8603043042);
   assert.equal(await handoffStore.load(session), null);
 });
 

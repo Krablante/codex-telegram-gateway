@@ -21,15 +21,15 @@ test("handleIncomingMessage assembles likely split long Telegram prompts into on
   };
   const firstMessage = {
     text: "A".repeat(3200),
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 880,
     message_thread_id: 78,
   };
   const secondMessage = {
     text: " second-fragment",
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 881,
     message_thread_id: 78,
   };
@@ -47,8 +47,8 @@ test("handleIncomingMessage assembles likely split long Telegram prompts into on
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -127,8 +127,8 @@ test("handleIncomingMessage assembles four Telegram-split prompt fragments into 
     },
   ].map((message) => ({
     ...message,
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_thread_id: 79,
   }));
 
@@ -145,8 +145,8 @@ test("handleIncomingMessage assembles four Telegram-split prompt fragments into 
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:79",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:79",
+          chat_id: "-1003577434463",
           topic_id: "79",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -203,8 +203,8 @@ test("handleIncomingMessage keeps buffered prompt flush behind promptStartGuard"
   };
   const message = {
     text: "A".repeat(3200),
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 894,
     message_thread_id: 79,
   };
@@ -232,8 +232,8 @@ test("handleIncomingMessage keeps buffered prompt flush behind promptStartGuard"
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:79",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:79",
+          chat_id: "-1003577434463",
           topic_id: "79",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -279,16 +279,16 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
   };
   const bufferedMessage = {
     text: "A".repeat(3200),
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 900,
     message_thread_id: 80,
   };
   const interruptMessage = {
     text: "/interrupt",
     entities: [{ type: "bot_command", offset: 0, length: 10 }],
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 901,
     message_thread_id: 80,
   };
@@ -307,8 +307,8 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:80",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:80",
+          chat_id: "-1003577434463",
           topic_id: "80",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -316,13 +316,13 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
       },
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:80",
+          session_key: "-1003577434463:80",
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },
@@ -356,13 +356,13 @@ test("handleIncomingMessage cancels a buffered long prompt when /interrupt arriv
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:80",
+          session_key: "-1003577434463:80",
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },
@@ -397,8 +397,8 @@ test("handleIncomingMessage reports busy topic run", async () => {
     config,
     message: {
       text: "run a quick task",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 78,
     },
     serviceState: {
@@ -410,7 +410,7 @@ test("handleIncomingMessage reports busy topic run", async () => {
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
+          session_key: "-1003577434463:78",
         };
       },
     },

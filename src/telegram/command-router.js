@@ -133,6 +133,7 @@ export async function handleIncomingMessage({
   message,
   promptStartGuard = null,
   promptFragmentAssembler = null,
+  promptHandoffStore = null,
   queuePromptAssembler = null,
   serviceState,
   sessionService,
@@ -187,6 +188,7 @@ export async function handleIncomingMessage({
     zooService,
     promptStartGuard,
     promptFragmentAssembler,
+    promptHandoffStore,
     queuePromptAssembler,
     serviceState,
     sessionService,
@@ -362,9 +364,11 @@ export async function handleIncomingMessage({
       return { handled: true, command: command.name, reason: result.reason };
     }
   } else if (command.name === "compact") {
-    const result = handleCompactCommand({
+    const result = await handleCompactCommand({
       session,
       sessionService,
+      promptHandoffStore,
+      workerPool,
       language: getSessionUiLanguage(session),
     });
     responseText = result.responseText;

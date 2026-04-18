@@ -9,16 +9,16 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
   };
 }
 
 async function ensureSession(sessionStore) {
   return sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 551,
     topicName: "Omni memory test",
     createdVia: "test",

@@ -116,7 +116,7 @@ Preferred format in `.env`:
 CODEX_LIMITS_COMMAND='["python3","/opt/read-limits.py"]'
 ```
 
-Simple argv-only strings like `python3 /opt/read-limits.py` still work for compatibility, but shell features such as pipes, redirection, and inline env assignments do not. Use a wrapper script or make the shell explicit in argv when you really need that.
+Simple argv-only strings like `python3 /opt/read-limits.py` still work for compatibility on Linux, but shell features such as pipes, redirection, and inline env assignments do not. On native Windows, use the JSON argv form only; the runtime intentionally does not try to reinterpret POSIX-style command strings there. Use a wrapper script or make the shell explicit in argv when you really need that.
 
 The command should print exactly one JSON object like this:
 

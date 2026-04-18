@@ -14,7 +14,7 @@ test("ZooService respawn menu deletes the previous Zoo menu message", async () =
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -31,9 +31,9 @@ test("ZooService respawn menu deletes the previous Zoo menu message", async () =
     callbackQuery: {
       id: "cb-respawn",
       data: "zoo:m:respawn",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 700,
       },
     },
@@ -60,7 +60,7 @@ test("ZooService does not respawn the menu on transient edit failures", async ()
   };
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -90,13 +90,13 @@ test("ZooService starts idle pet animation on pet screen and stops it on root", 
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/workspace/project-a",
-    repo_root: "/workspace/project-a",
-    cwd: "/workspace/project-a",
+    resolved_path: "/home/bloob/atlas/project-a",
+    repo_root: "/home/bloob/atlas/project-a",
+    cwd: "/home/bloob/atlas/project-a",
     creature_kind: "cat",
   });
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -115,9 +115,9 @@ test("ZooService starts idle pet animation on pet screen and stops it on root", 
     callbackQuery: {
       id: "cb-view",
       data: `zoo:v:${petId}`,
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 700,
       },
     },
@@ -131,9 +131,9 @@ test("ZooService starts idle pet animation on pet screen and stops it on root", 
     callbackQuery: {
       id: "cb-root",
       data: "zoo:n:root",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 700,
       },
     },
@@ -150,13 +150,13 @@ test("ZooService buildMenuPayload does not scan the full stable on a pet screen 
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/workspace/project-a",
-    repo_root: "/workspace/project-a",
-    cwd: "/workspace/project-a",
+    resolved_path: "/home/bloob/atlas/project-a",
+    repo_root: "/home/bloob/atlas/project-a",
+    cwd: "/home/bloob/atlas/project-a",
     creature_kind: "cat",
   });
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "eng",
@@ -183,7 +183,7 @@ test("ZooService buildMenuPayload clears stale selected pet state when the pet i
   const stateRoot = await createStateRoot();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -219,14 +219,14 @@ test("ZooService switches root pages through pagination callbacks", async () => 
     await zooStore.savePet({
       pet_id: `pet-${index + 1}`,
       display_name: `project-${index + 1}`,
-      resolved_path: `/workspace/project-${index + 1}`,
-      repo_root: `/workspace/project-${index + 1}`,
-      cwd: `/workspace/project-${index + 1}`,
+      resolved_path: `/home/bloob/atlas/project-${index + 1}`,
+      repo_root: `/home/bloob/atlas/project-${index + 1}`,
+      cwd: `/home/bloob/atlas/project-${index + 1}`,
       creature_kind: "cat",
     });
   }
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "eng",
@@ -253,9 +253,9 @@ test("ZooService switches root pages through pagination callbacks", async () => 
     callbackQuery: {
       id: "cb-page-2",
       data: "zoo:p:1",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 700,
       },
     },
@@ -283,24 +283,24 @@ test("ZooService auto-reconciles existing duplicate public/private pet names in 
   await zooStore.savePet({
     pet_id: "pet-private",
     display_name: "Codex Telegram Gateway",
-    resolved_path: "/workspace/codex-telegram-gateway",
-    repo_root: "/workspace/codex-telegram-gateway",
-    cwd: "/workspace/codex-telegram-gateway",
-    cwd_relative_to_workspace_root: "codex-telegram-gateway",
+    resolved_path: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+    repo_root: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+    cwd: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+    cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
     creature_kind: "cat",
   });
   await zooStore.savePet({
     pet_id: "pet-public",
     display_name: "codex-telegram-gateway",
-    resolved_path: "/workspace/work/public/personal/automation/codex-telegram-gateway",
-    repo_root: "/workspace/work/public/personal/automation/codex-telegram-gateway",
-    cwd: "/workspace/work/public/personal/automation/codex-telegram-gateway",
+    resolved_path: "/home/bloob/atlas/work/public/personal/automation/codex-telegram-gateway",
+    repo_root: "/home/bloob/atlas/work/public/personal/automation/codex-telegram-gateway",
+    cwd: "/home/bloob/atlas/work/public/personal/automation/codex-telegram-gateway",
     cwd_relative_to_workspace_root:
       "work/public/personal/automation/codex-telegram-gateway",
     creature_kind: "fox",
   });
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "eng",
@@ -361,9 +361,9 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
     callbackQuery: {
       id: "cb-recover",
       data: "zoo:a:start",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 700,
         message_id: 901,
       },
@@ -372,7 +372,7 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
 
   assert.equal(callbackResult.reason, "zoo-add-started");
   const recoveredTopicState = await service.zooStore.loadTopic({ force: true });
-  assert.equal(recoveredTopicState.chat_id, "-1001234567890");
+  assert.equal(recoveredTopicState.chat_id, "-1003577434463");
   assert.equal(recoveredTopicState.topic_id, "700");
   assert.equal(recoveredTopicState.menu_message_id, 901);
   assert.equal(recoveredTopicState.pending_add?.stage, "await_description");
@@ -385,8 +385,8 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
     botUsername: "gatewaybot",
     message: {
       text: "my private telegram to codex gateway",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 700,
       message_id: 5,
     },
@@ -401,7 +401,7 @@ test("ZooService does not let a stale Zoo callback replace the active menu messa
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -419,9 +419,9 @@ test("ZooService does not let a stale Zoo callback replace the active menu messa
     callbackQuery: {
       id: "cb-stale-root",
       data: "zoo:n:root",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 700,
         message_id: 777,
       },
@@ -460,9 +460,9 @@ test("ZooService recovers incomplete Zoo topic state from a live menu callback",
     callbackQuery: {
       id: "cb-incomplete-state",
       data: "zoo:a:start",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 700,
         message_id: 901,
       },
@@ -471,7 +471,7 @@ test("ZooService recovers incomplete Zoo topic state from a live menu callback",
 
   assert.equal(result.reason, "zoo-add-started");
   const topicState = await zooStore.loadTopic({ force: true });
-  assert.equal(topicState.chat_id, "-1001234567890");
+  assert.equal(topicState.chat_id, "-1003577434463");
   assert.equal(topicState.topic_id, "700");
   assert.equal(topicState.menu_message_id, 901);
   assert.equal(topicState.pending_add?.stage, "await_description");

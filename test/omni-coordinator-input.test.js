@@ -19,9 +19,9 @@ test("OmniCoordinator resumes a blocked topic with fresh human input", async () 
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -58,7 +58,7 @@ test("OmniCoordinator resumes a blocked topic with fresh human input", async () 
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(result.reason, "auto-blocked-resume");
   assert.equal(stored.auto_mode.phase, "running");
@@ -78,9 +78,9 @@ test("OmniCoordinator ignores non-/auto commands so they do not pollute pending 
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -99,7 +99,7 @@ test("OmniCoordinator ignores non-/auto commands so they do not pollute pending 
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.handled, false);
   assert.equal(result.reason, "non-omni-command");
   assert.equal(stored.auto_mode.pending_user_input, null);
@@ -111,9 +111,9 @@ test("OmniCoordinator ignores commands targeted at another bot so they do not be
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -132,7 +132,7 @@ test("OmniCoordinator ignores commands targeted at another bot so they do not be
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.handled, false);
   assert.equal(result.reason, "foreign-bot-command");
   assert.equal(stored.auto_mode.pending_user_input, null);
@@ -176,9 +176,9 @@ test("OmniCoordinator answers direct /omni questions without waking Spike or cha
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -208,7 +208,7 @@ test("OmniCoordinator answers direct /omni questions without waking Spike or cha
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.handled, true);
   assert.equal(result.reason, "omni-query-answered");
   assert.equal(stored.auto_mode.phase, "sleeping");
@@ -240,9 +240,9 @@ test("OmniCoordinator answers plain-text questions during active /auto without w
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -271,7 +271,7 @@ test("OmniCoordinator answers plain-text questions during active /auto without w
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.handled, true);
   assert.equal(result.reason, "omni-query-answered");
   assert.equal(stored.auto_mode.phase, "sleeping");
@@ -301,9 +301,9 @@ test("OmniCoordinator still answers /omni after auto flips off if recent auto co
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -341,9 +341,9 @@ test("OmniCoordinator ignores plain human prompts after auto reaches a terminal 
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -366,7 +366,7 @@ test("OmniCoordinator ignores plain human prompts after auto reaches a terminal 
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.handled, false);
   assert.equal(result.reason, "auto-terminal-phase");
   assert.equal(stored.auto_mode.pending_user_input, null);
@@ -378,9 +378,9 @@ test("OmniCoordinator accepts fresh human input after a recoverable failed phase
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -402,7 +402,7 @@ test("OmniCoordinator accepts fresh human input after a recoverable failed phase
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.handled, true);
   assert.equal(result.reason, "auto-input-queued");
   assert.equal(
@@ -426,9 +426,9 @@ test("OmniCoordinator can resume an interrupted Spike final after fresh human in
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -465,7 +465,7 @@ test("OmniCoordinator can resume an interrupted Spike final after fresh human in
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(result.reason, "auto-blocked-resume");
   assert.equal(stored.auto_mode.phase, "running");

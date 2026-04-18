@@ -1,53 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-function normalizeUsageCount(value) {
-  if (!Number.isFinite(value) || value < 0) {
-    return null;
-  }
+import {
+  normalizeTokenUsage,
+  normalizeUsageCount,
+} from "../codex-runtime/token-usage.js";
 
-  return Math.trunc(value);
-}
-
-export function normalizeTokenUsage(usage) {
-  if (!usage || typeof usage !== "object") {
-    return null;
-  }
-
-  const inputTokens = normalizeUsageCount(usage.input_tokens);
-  const cachedInputTokens = normalizeUsageCount(
-    usage.cached_input_tokens ?? usage.input_tokens_details?.cached_tokens,
-  );
-  const outputTokens = normalizeUsageCount(usage.output_tokens);
-  const reasoningTokens = normalizeUsageCount(
-    usage.reasoning_output_tokens ??
-      usage.output_tokens_details?.reasoning_tokens ??
-      usage.reasoning_tokens,
-  );
-  const totalTokens = normalizeUsageCount(
-    usage.total_tokens ??
-      (inputTokens === null && outputTokens === null
-        ? null
-        : (inputTokens ?? 0) + (outputTokens ?? 0)),
-  );
-
-  if (
-    inputTokens === null &&
-    cachedInputTokens === null &&
-    outputTokens === null &&
-    reasoningTokens === null &&
-    totalTokens === null
-  ) {
-    return null;
-  }
-
-  return {
-    input_tokens: inputTokens,
-    cached_input_tokens: cachedInputTokens,
-    output_tokens: outputTokens,
-    reasoning_tokens: reasoningTokens,
-    total_tokens: totalTokens,
-  };
+function normalizeOptionalText(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
 }
 
 export function normalizeContextSnapshot(snapshot) {
@@ -69,6 +30,18 @@ export function normalizeContextSnapshot(snapshot) {
       : typeof snapshot.capturedAt === "string"
         ? snapshot.capturedAt
         : null;
+  const sessionId =
+    typeof snapshot.session_id === "string"
+      ? snapshot.session_id
+      : typeof snapshot.sessionId === "string"
+        ? snapshot.sessionId
+        : null;
+  const threadId =
+    typeof snapshot.thread_id === "string"
+      ? snapshot.thread_id
+      : typeof snapshot.threadId === "string"
+        ? snapshot.threadId
+        : null;
   const rolloutPath =
     typeof snapshot.rollout_path === "string"
       ? snapshot.rollout_path
@@ -76,12 +49,20 @@ export function normalizeContextSnapshot(snapshot) {
         ? snapshot.rolloutPath
         : null;
 
-  if (lastTokenUsage === null && modelContextWindow === null) {
+  if (
+    lastTokenUsage === null &&
+    modelContextWindow === null &&
+    sessionId === null &&
+    threadId === null &&
+    rolloutPath === null
+  ) {
     return null;
   }
 
   return {
     captured_at: capturedAt,
+    session_id: sessionId,
+    thread_id: threadId,
     model_context_window: modelContextWindow,
     last_token_usage: lastTokenUsage,
     rollout_path: rolloutPath,
@@ -108,16 +89,20 @@ async function fileExists(filePath) {
   }
 }
 
-async function findRolloutPathInDay(dayPath, threadId) {
+async function findRolloutPathInDay(dayPath, suffix) {
   const entries = await fs.readdir(dayPath, { withFileTypes: true });
   const file = entries.find(
     (entry) =>
-      entry.isFile() && entry.name.endsWith(`${threadId}.jsonl`),
+      entry.isFile() && entry.name.endsWith(`${suffix}.jsonl`),
   );
   return file ? path.join(dayPath, file.name) : null;
 }
 
-async function findRolloutPathByThreadId(sessionsRoot, threadId) {
+async function findRolloutPathBySuffix(sessionsRoot, suffix) {
+  if (!suffix) {
+    return null;
+  }
+
   let years = [];
   try {
     years = await fs.readdir(sessionsRoot, { withFileTypes: true });
@@ -150,7 +135,7 @@ async function findRolloutPathByThreadId(sessionsRoot, threadId) {
       for (const day of dayDirs) {
         const rolloutPath = await findRolloutPathInDay(
           path.join(monthPath, day.name),
-          threadId,
+          suffix,
         );
         if (rolloutPath) {
           return rolloutPath;
@@ -164,10 +149,14 @@ async function findRolloutPathByThreadId(sessionsRoot, threadId) {
 
 export async function readLatestContextSnapshot({
   threadId,
+  providerSessionId = null,
   sessionsRoot,
   knownRolloutPath = null,
 }) {
-  if (!threadId || !sessionsRoot) {
+  const normalizedThreadId = normalizeOptionalText(threadId);
+  const normalizedProviderSessionId = normalizeOptionalText(providerSessionId);
+
+  if ((!normalizedThreadId && !normalizedProviderSessionId) || !sessionsRoot) {
     return {
       rolloutPath: null,
       snapshot: null,
@@ -177,7 +166,10 @@ export async function readLatestContextSnapshot({
   const rolloutPath =
     knownRolloutPath && (await fileExists(knownRolloutPath))
       ? knownRolloutPath
-      : await findRolloutPathByThreadId(sessionsRoot, threadId);
+      : await findRolloutPathBySuffix(
+          sessionsRoot,
+          normalizedProviderSessionId,
+        ) || await findRolloutPathBySuffix(sessionsRoot, normalizedThreadId);
 
   if (!rolloutPath) {
     return {
@@ -194,12 +186,21 @@ export async function readLatestContextSnapshot({
 
   let taskStartedWindow = null;
   let latestSnapshot = null;
+  let discoveredSessionId = normalizedProviderSessionId;
 
   for (const line of lines) {
     let event = null;
     try {
       event = JSON.parse(line);
     } catch {
+      continue;
+    }
+
+    if (event.type === "session_meta") {
+      const nextSessionId = normalizeOptionalText(event.payload?.id);
+      if (nextSessionId) {
+        discoveredSessionId = nextSessionId;
+      }
       continue;
     }
 
@@ -221,6 +222,8 @@ export async function readLatestContextSnapshot({
 
     const snapshot = normalizeContextSnapshot({
       captured_at: event.timestamp ?? null,
+      session_id: discoveredSessionId,
+      thread_id: normalizedThreadId,
       model_context_window:
         event.payload.info.model_context_window ?? taskStartedWindow,
       last_token_usage: event.payload.info.last_token_usage,
@@ -233,7 +236,17 @@ export async function readLatestContextSnapshot({
 
   if (!latestSnapshot && taskStartedWindow !== null) {
     latestSnapshot = normalizeContextSnapshot({
+      session_id: discoveredSessionId,
+      thread_id: normalizedThreadId,
       model_context_window: taskStartedWindow,
+      rollout_path: rolloutPath,
+    });
+  }
+
+  if (!latestSnapshot && (discoveredSessionId || normalizedThreadId || rolloutPath)) {
+    latestSnapshot = normalizeContextSnapshot({
+      session_id: discoveredSessionId,
+      thread_id: normalizedThreadId,
       rollout_path: rolloutPath,
     });
   }

@@ -10,10 +10,10 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
   };
 }
 
@@ -30,7 +30,7 @@ async function makeHarness() {
       envFilePath: "/state/runtime.env",
       repoRoot: "/repo",
       stateRoot: "/state",
-      telegramForumChatId: "-1001234567890",
+      telegramForumChatId: "-1003577434463",
     },
     serviceState: {
       startedAt: null,
@@ -76,14 +76,14 @@ test("SessionAdmin lists sessions and builds lifecycle counts", async () => {
   const { sessionStore, sessionAdmin } = await makeHarness();
 
   const active = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 201,
     topicName: "Active",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
   const parkedBase = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 202,
     topicName: "Parked",
     createdVia: "test",
@@ -94,13 +94,14 @@ test("SessionAdmin lists sessions and builds lifecycle counts", async () => {
     retention_pin: true,
   });
   const purgedBase = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 203,
     topicName: "Purged",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
-  await sessionStore.purge(purgedBase, "test/purge");
+  const purgedParked = await sessionStore.park(purgedBase, "test/purge");
+  await sessionStore.purge(purgedParked, "test/purge");
 
   const sessions = await sessionAdmin.listSessions();
   const counts = buildSessionCounts(sessions);
@@ -125,7 +126,7 @@ test("SessionAdmin pin/unpin/reactivate/purge updates state and audit trails", a
   const { logsDir, sessionStore, sessionAdmin } = await makeHarness();
 
   const created = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 204,
     topicName: "Retention",
     createdVia: "test",
@@ -142,6 +143,7 @@ test("SessionAdmin pin/unpin/reactivate/purge updates state and audit trails", a
     "admin/pin",
   );
   assert.equal(pinned.retention_pin, true);
+  assert.equal(pinned.purge_after, null);
 
   const unpinned = await sessionAdmin.setRetentionPin(
     parked.chat_id,
@@ -191,7 +193,7 @@ test("SessionAdmin pin/unpin/reactivate/purge updates state and audit trails", a
 test("SessionAdmin refuses to purge a session that still reports a running run", async () => {
   const { sessionAdmin, sessionStore } = await makeHarness();
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 903,
     topicName: "Running session",
     createdVia: "test",

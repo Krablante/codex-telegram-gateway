@@ -145,21 +145,12 @@ export async function performServiceRollout({
 
   const currentGenerationId = liveLeader.lease.generation_id;
   const state = await rolloutCoordinationStore.load({ force: true });
-
-  if (
+  const rolloutAlreadyShifted =
     state.status === "in_progress"
     && state.target_generation_id
-    && state.target_generation_id === currentGenerationId
-  ) {
-    return {
-      mode: "already-shifted",
-      leaderGenerationId: currentGenerationId,
-      leaderPid: liveLeader.lease.pid,
-      rolloutStatus: state.status,
-    };
-  }
+    && state.target_generation_id === currentGenerationId;
 
-  if (state.status !== "in_progress") {
+  if (state.status !== "in_progress" || rolloutAlreadyShifted) {
     await rolloutCoordinationStore.requestRollout({
       currentGenerationId,
       requestedBy: "service-rollout",

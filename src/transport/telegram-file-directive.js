@@ -1,5 +1,5 @@
 export const TELEGRAM_FILE_DIRECTIVE_FENCE = "telegram-file";
-const EXAMPLE_FILE_PATH = "/absolute/path/to/file";
+const EXAMPLE_FILE_PATH = "<absolute-host-path-to-file>";
 
 function normalizeDirectiveValue(value) {
   const normalized = String(value || "").trim();
@@ -72,8 +72,8 @@ function parseDirectiveBody(body, language = "rus") {
   if (!document.filePath) {
     warnings.push(
       language === "eng"
-        ? "Could not send file: the ```telegram-file``` block needs path: /absolute/path/to/file."
-        : "Не смог отправить файл: в блоке ```telegram-file``` нужен path: /absolute/path/to/file.",
+        ? "Could not send file: the ```telegram-file``` block needs path: <absolute-host-path-to-file>."
+        : "Не смог отправить файл: в блоке ```telegram-file``` нужен path: <absolute-host-path-to-file>.",
     );
     return {
       active: true,
@@ -98,10 +98,11 @@ export function buildTelegramFileDirectiveInstructions() {
     "To attach a local file to the current Telegram topic, add a fenced block anywhere in the final reply.",
     "Example below is inert until you add action: send:",
     `\`\`\`${TELEGRAM_FILE_DIRECTIVE_FENCE}`,
-    "path: /tmp/report.txt",
+    `path: ${EXAMPLE_FILE_PATH}`,
     "filename: report.txt",
     "caption: optional caption",
     "```",
+    "Use a real absolute host path only in the live block you want executed.",
     "Add action: send only in the real block you want executed.",
     "Only blocks with action: send are executed.",
     "Blocks without that action stay visible as plain examples.",

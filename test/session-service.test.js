@@ -11,10 +11,10 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
   };
 }
 
@@ -27,8 +27,8 @@ test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
     runtimeObserver: {
       async noteSessionLifecycle(event) {
@@ -38,7 +38,7 @@ test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 301,
     topicName: "Purge audit",
     createdVia: "test",
@@ -52,6 +52,41 @@ test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   assert.equal(lifecycleEvents[0].reason, "command/purge");
 });
 
+test("SessionService purgeSession does not mutate owner-held sessions before rejecting", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
+    },
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 303,
+    topicName: "Owned purge reject",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  const owned = await sessionStore.patch(session, {
+    session_owner_generation_id: "spike-gen-1",
+    session_owner_mode: "active",
+  });
+
+  await assert.rejects(
+    service.purgeSession(owned),
+    /still active and not purge-eligible/u,
+  );
+
+  const reloaded = await sessionStore.load(owned.chat_id, owned.topic_id);
+  assert.equal(reloaded.lifecycle_state, "active");
+  assert.equal(reloaded.session_owner_generation_id, "spike-gen-1");
+});
+
 test("SessionService resolveContextSnapshot backfills rollout snapshot into session metadata", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -63,21 +98,22 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
       codexContextWindow: 290000,
       codexSessionsRoot,
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 302,
     topicName: "Context snapshot",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
   const threadedSession = await sessionStore.patch(session, {
+    provider_session_id: "session-context-1",
     codex_thread_id: "thread-context-1",
   });
 
@@ -85,11 +121,18 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
   await fs.mkdir(rolloutDir, { recursive: true });
   const rolloutPath = path.join(
     rolloutDir,
-    "rollout-2026-03-23T23-14-18-thread-context-1.jsonl",
+    "rollout-2026-03-23T23-14-18-session-context-1.jsonl",
   );
   await fs.writeFile(
     rolloutPath,
     [
+      JSON.stringify({
+        timestamp: "2026-03-23T23:14:17.500Z",
+        type: "session_meta",
+        payload: {
+          id: "session-context-1",
+        },
+      }),
       JSON.stringify({
         timestamp: "2026-03-23T23:14:18.000Z",
         type: "event_msg",
@@ -142,6 +185,7 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
     threadedSession.chat_id,
     threadedSession.topic_id,
   );
+  assert.equal(reloaded.provider_session_id, "session-context-1");
   assert.equal(reloaded.codex_rollout_path, rolloutPath);
   assert.deepEqual(reloaded.last_token_usage, {
     input_tokens: 18220,
@@ -152,6 +196,8 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
   });
   assert.deepEqual(reloaded.last_context_snapshot, {
     captured_at: "2026-03-23T23:14:19.000Z",
+    session_id: "session-context-1",
+    thread_id: "thread-context-1",
     model_context_window: 275500,
     last_token_usage: {
       input_tokens: 18220,
@@ -159,6 +205,108 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
       output_tokens: 42,
       reasoning_tokens: 30,
       total_tokens: 18262,
+    },
+    rollout_path: rolloutPath,
+  });
+});
+
+test("SessionService resolveContextSnapshot resolves rollout state from provider session id without stored thread id", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-rollouts-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
+      codexContextWindow: 290000,
+      codexSessionsRoot,
+    },
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 3021,
+    topicName: "Provider-only context snapshot",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  const providerSession = await sessionStore.patch(session, {
+    provider_session_id: "session-context-provider-only",
+    codex_thread_id: null,
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "03", "24");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-03-24T10-00-00-session-context-provider-only.jsonl",
+  );
+  await fs.writeFile(
+    rolloutPath,
+    [
+      JSON.stringify({
+        timestamp: "2026-03-24T10:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "session-context-provider-only",
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-03-24T10:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "task_started",
+          model_context_window: 199999,
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-03-24T10:00:02.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            last_token_usage: {
+              input_tokens: 11,
+              cached_input_tokens: 2,
+              output_tokens: 3,
+              reasoning_output_tokens: 1,
+              total_tokens: 14,
+            },
+            model_context_window: 199999,
+          },
+        },
+      }),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const resolved = await service.resolveContextSnapshot(providerSession);
+  assert.equal(resolved.snapshot.session_id, "session-context-provider-only");
+  assert.equal(resolved.snapshot.thread_id, null);
+  assert.equal(resolved.snapshot.model_context_window, 199999);
+
+  const reloaded = await sessionStore.load(
+    providerSession.chat_id,
+    providerSession.topic_id,
+  );
+  assert.equal(reloaded.codex_rollout_path, rolloutPath);
+  assert.deepEqual(reloaded.last_context_snapshot, {
+    captured_at: "2026-03-24T10:00:02.000Z",
+    session_id: "session-context-provider-only",
+    thread_id: null,
+    model_context_window: 199999,
+    last_token_usage: {
+      input_tokens: 11,
+      cached_input_tokens: 2,
+      output_tokens: 3,
+      reasoning_tokens: 1,
+      total_tokens: 14,
     },
     rollout_path: rolloutPath,
   });
@@ -172,13 +320,13 @@ test("SessionService updatePromptSuffix and clearPromptSuffix persist topic-leve
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 303,
     topicName: "Prompt suffix",
     createdVia: "test",
@@ -205,13 +353,13 @@ test("SessionService updatePromptSuffixTopicState persists topic suffix routing 
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 304,
     topicName: "Prompt suffix routing",
     createdVia: "test",
@@ -241,8 +389,8 @@ test("SessionService updateGlobalPromptSuffix and clearGlobalPromptSuffix persis
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
     globalPromptSuffixStore,
   });
@@ -275,8 +423,8 @@ test("SessionService persists global and topic Codex runtime settings with topic
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
       codexModel: "gpt-5.4",
       codexReasoningEffort: "medium",
     },
@@ -284,7 +432,7 @@ test("SessionService persists global and topic Codex runtime settings with topic
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 306,
     topicName: "Codex runtime settings",
     createdVia: "test",
@@ -413,8 +561,8 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
       codexConfigPath,
       codexModel: "gpt-5.4",
       codexReasoningEffort: "high",
@@ -423,7 +571,7 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 307,
     topicName: "Codex runtime compatibility",
     createdVia: "test",
@@ -697,8 +845,8 @@ test("SessionService keeps Omni reasoning high by default while preserving expli
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
       codexModel: "gpt-5.4",
       codexReasoningEffort: "xhigh",
     },
@@ -706,7 +854,7 @@ test("SessionService keeps Omni reasoning high by default while preserving expli
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 308,
     topicName: "Omni runtime defaults",
     createdVia: "test",
@@ -749,13 +897,13 @@ test("SessionService scheduleAutoSleep ignores stale disabled snapshots and keep
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
   });
 
   const staleSession = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 307,
     topicName: "Auto stale sleep",
     createdVia: "test",
@@ -763,9 +911,9 @@ test("SessionService scheduleAutoSleep ignores stale disabled snapshots and keep
   });
 
   let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
   liveSession = await service.captureAutoInitialPrompt(
@@ -800,13 +948,13 @@ test("SessionService markAutoDecision ignores stale disabled snapshots when reco
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
   });
 
   const staleSession = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 308,
     topicName: "Auto stale done",
     createdVia: "test",
@@ -814,9 +962,9 @@ test("SessionService markAutoDecision ignores stale disabled snapshots when reco
   });
 
   let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
   liveSession = await service.captureAutoInitialPrompt(
@@ -843,22 +991,22 @@ test("SessionService preserves overlapping auto-mode updates across concurrent c
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 309,
     topicName: "Auto overlap",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
   session = await service.activateAutoMode(session, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await service.captureAutoGoal(session, "Ship Omni auto mode safely.");
   session = await service.captureAutoInitialPrompt(
@@ -945,13 +1093,13 @@ test("SessionService buffers and clears pending prompt attachments", async () =>
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 305,
     topicName: "Pending attachments",
     createdVia: "test",
@@ -990,13 +1138,13 @@ test("SessionService keeps queued attachments separate from direct prompt attach
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/workspace",
-      defaultSessionBindingPath: "/workspace",
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 306,
     topicName: "Scoped pending attachments",
     createdVia: "test",

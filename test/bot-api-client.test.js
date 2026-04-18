@@ -132,3 +132,40 @@ test("TelegramBotApiClient retries retry_after responses inside one sendMessage 
   assert.equal(calls[0].text, "hello");
   assert.deepEqual(calls[0], calls[1]);
 });
+
+test("TelegramBotApiClient fails after exhausting the retry_after budget", async () => {
+  let attempts = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    return {
+      ok: false,
+      status: 429,
+      statusText: "Too Many Requests",
+      async json() {
+        return {
+          ok: false,
+          description: "Too Many Requests: retry after 10",
+          parameters: {
+            retry_after: 10,
+          },
+        };
+      },
+    };
+  };
+
+  try {
+    const client = new TelegramBotApiClient({ token: "TOKEN" });
+    await assert.rejects(
+      client.sendMessage({
+        chat_id: 1,
+        text: "hello",
+      }),
+      /exhausted retry_after budget/u,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(attempts, 4);
+});

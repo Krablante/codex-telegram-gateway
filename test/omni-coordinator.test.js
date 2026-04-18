@@ -18,7 +18,7 @@ test("OmniCoordinator arms /auto and waits for the goal", async () => {
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.reason, "auto-armed");
   assert.equal(stored.auto_mode.enabled, true);
   assert.equal(stored.auto_mode.phase, "await_goal");
@@ -30,9 +30,9 @@ test("OmniCoordinator captures the goal, explains the next step, and forwards th
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
 
   const goalResult = await harness.coordinator.handleHumanMessage(
@@ -41,7 +41,7 @@ test("OmniCoordinator captures the goal, explains the next step, and forwards th
       messageId: 101,
     }),
   );
-  let stored = await harness.sessionStore.load("-1001234567890", "77");
+  let stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(goalResult.reason, "auto-goal-captured");
   assert.equal(stored.auto_mode.phase, "await_initial_prompt");
   assert.equal(stored.auto_mode.literal_goal_text, "Ship Omni auto mode safely.");
@@ -55,7 +55,7 @@ test("OmniCoordinator captures the goal, explains the next step, and forwards th
     }),
   );
 
-  stored = await harness.sessionStore.load("-1001234567890", "77");
+  stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(promptResult.reason, "auto-initial-prompt-sent");
   assert.equal(stored.auto_mode.phase, "running");
@@ -80,9 +80,9 @@ test("OmniCoordinator evaluates a Spike final event once and continues without r
   });
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -117,7 +117,7 @@ test("OmniCoordinator evaluates a Spike final event once and continues without r
 
   await harness.coordinator.scanPendingSpikeFinals();
 
-  let stored = await harness.sessionStore.load("-1001234567890", "77");
+  let stored = await harness.sessionStore.load("-1003577434463", "77");
   let pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(stored.auto_mode.phase, "running");
   assert.equal(stored.auto_mode.continuation_count, 1);
@@ -134,7 +134,7 @@ test("OmniCoordinator evaluates a Spike final event once and continues without r
 
   await harness.coordinator.scanPendingSpikeFinals();
 
-  stored = await harness.sessionStore.load("-1001234567890", "77");
+  stored = await harness.sessionStore.load("-1003577434463", "77");
   pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(stored.auto_mode.continuation_count, 1);
   assert.equal(harness.execPrompts.length, 1);

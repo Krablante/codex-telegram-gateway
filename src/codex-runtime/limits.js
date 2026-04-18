@@ -7,6 +7,7 @@ import { spawnRuntimeCommand } from "../runtime/spawn-command.js";
 
 const DEFAULT_CACHE_TTL_MS = 30 * 1000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 1000;
+const COMMAND_TIMEOUT_KILL_GRACE_MS = 250;
 const MAX_CANDIDATE_FILES = 200;
 const UNSUPPORTED_SHELL_OPERATOR_TOKENS = new Set([
   "|",
@@ -632,10 +633,16 @@ function usesInlineEnvAssignments(tokens) {
   return false;
 }
 
-function parseCommandArgv(command) {
+function parseCommandArgv(command, { platform = process.platform } = {}) {
   const commandText = normalizeText(command);
   if (!commandText) {
     throw new Error("Codex limits command is empty");
+  }
+
+  if (platform === "win32" && !commandText.startsWith("[")) {
+    throw new Error(
+      "Codex limits command on Windows must use JSON array argv syntax; legacy string parsing is POSIX-only.",
+    );
   }
 
   const argv = commandText.startsWith("[")
@@ -664,10 +671,11 @@ function parseCommandArgv(command) {
   };
 }
 
-async function runCommand(command, timeoutMs) {
-  const { file, args } = parseCommandArgv(command);
+async function runCommand(command, timeoutMs, platform = process.platform) {
+  const { file, args } = parseCommandArgv(command, { platform });
   return new Promise((resolve, reject) => {
     const child = spawnRuntimeCommand(file, args, {
+      platform,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -678,8 +686,14 @@ async function runCommand(command, timeoutMs) {
         return;
       }
       settled = true;
-      signalChildProcessTree(child, "SIGTERM");
-      reject(new Error(`Codex limits command timed out after ${timeoutMs}ms`));
+      void (async () => {
+        try {
+          signalChildProcessTree(child, "SIGTERM");
+          await new Promise((resolveGrace) => setTimeout(resolveGrace, COMMAND_TIMEOUT_KILL_GRACE_MS));
+          signalChildProcessTree(child, "SIGKILL");
+        } catch {}
+        reject(new Error(`Codex limits command timed out after ${timeoutMs}ms`));
+      })();
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
@@ -745,8 +759,12 @@ function normalizeCommandSnapshotPayload(raw) {
   };
 }
 
-async function readSnapshotFromCommand(command, timeoutMs) {
-  const output = await runCommand(command, timeoutMs);
+async function readSnapshotFromCommand(
+  command,
+  timeoutMs,
+  platform = process.platform,
+) {
+  const output = await runCommand(command, timeoutMs, platform);
   if (!output) {
     return null;
   }
@@ -776,6 +794,7 @@ export class CodexLimitsService {
     cacheTtlMs = DEFAULT_CACHE_TTL_MS,
     commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
     now = () => Date.now(),
+    platform = process.platform,
   } = {}) {
     this.sessionsRoot = normalizeText(sessionsRoot);
     this.command = normalizeText(command);
@@ -787,6 +806,7 @@ export class CodexLimitsService {
         ? commandTimeoutMs
         : DEFAULT_COMMAND_TIMEOUT_MS;
     this.now = now;
+    this.platform = platform;
     this.cachedRecord = null;
     this.inFlightPromise = null;
   }
@@ -849,7 +869,11 @@ export class CodexLimitsService {
     let value = null;
     try {
       if (this.command) {
-        value = await readSnapshotFromCommand(this.command, this.commandTimeoutMs);
+        value = await readSnapshotFromCommand(
+          this.command,
+          this.commandTimeoutMs,
+          this.platform,
+        );
       } else if (this.sessionsRoot) {
         value = await readSnapshotFromSessionsRoot(this.sessionsRoot);
       }

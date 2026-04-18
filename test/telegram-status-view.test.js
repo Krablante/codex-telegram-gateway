@@ -58,11 +58,11 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
       codexAutoCompactTokenLimit: 300000,
     },
     {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_thread_id: 7,
     },
     {
-      session_key: "-1001234567890:7",
+      session_key: "-1003577434463:7",
       topic_name: "Test topic 1",
       lifecycle_state: "active",
       codex_thread_id: "thread-1",
@@ -77,10 +77,10 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
         total_tokens: 228400,
       },
       workspace_binding: {
-        repo_root: "/workspace",
-        cwd: "/workspace",
+        repo_root: "/home/bloob/atlas",
+        cwd: "/home/bloob/atlas",
         branch: "main",
-        worktree_path: "/workspace",
+        worktree_path: "/home/bloob/atlas",
       },
     },
     {
@@ -97,7 +97,7 @@ test("buildStatusMessage reports session state, binding, and run state", () => {
 
   assert.match(text, /тема: Test topic 1/u);
   assert.match(text, /run: running/u);
-  assert.match(text, /папка: \/workspace/u);
+  assert.match(text, /папка: \/home\/bloob\/atlas/u);
   assert.match(text, /модель: gpt-5\.4/u);
   assert.match(text, /reasoning: Extra High \(xhigh\)/u);
   assert.match(text, /context window: 320000/u);
@@ -120,19 +120,19 @@ test("buildStatusMessage hides Omni lines when Omni is globally disabled", () =>
       codexAutoCompactTokenLimit: 300000,
     },
     {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_thread_id: 7,
     },
     {
-      session_key: "-1001234567890:7",
+      session_key: "-1003577434463:7",
       topic_name: "Test topic 1",
       lifecycle_state: "active",
       last_run_status: "idle",
       workspace_binding: {
-        repo_root: "/workspace",
-        cwd: "/workspace",
+        repo_root: "/home/bloob/atlas",
+        cwd: "/home/bloob/atlas",
         branch: "main",
-        worktree_path: "/workspace",
+        worktree_path: "/home/bloob/atlas",
       },
     },
     null,
@@ -151,21 +151,21 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
       codexAutoCompactTokenLimit: 300000,
     },
     {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_thread_id: 7,
     },
     {
-      session_key: "-1001234567890:7",
+      session_key: "-1003577434463:7",
       topic_name: "Test topic 2",
       lifecycle_state: "active",
       codex_thread_id: "thread-2",
       last_run_status: "completed",
       last_token_usage: null,
       workspace_binding: {
-        repo_root: "/workspace",
-        cwd: "/workspace",
+        repo_root: "/home/bloob/atlas",
+        cwd: "/home/bloob/atlas",
         branch: "main",
-        worktree_path: "/workspace",
+        worktree_path: "/home/bloob/atlas",
       },
     },
     null,
@@ -180,7 +180,7 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
         total_tokens: 18262,
       },
       rollout_path:
-        "/home/testuser/.codex/sessions/2026/03/23/rollout-2026-03-23T23-14-18-thread-2.jsonl",
+        "/home/bloob/.codex/sessions/2026/03/23/rollout-2026-03-23T23-14-18-thread-2.jsonl",
     },
   );
 

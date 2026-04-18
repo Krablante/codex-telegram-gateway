@@ -1,6 +1,6 @@
 {
   "name": "codex-telegram-gateway",
-  "version": "0.3.38",
+  "version": "0.3.39",
   "description": "Telegram forum-topic gateway for the real Codex CLI runtime.",
   "keywords": [
     "telegram",
@@ -30,12 +30,13 @@
     "runbook:build": "node scripts/generate-runbook-pdf.mjs",
     "run": "node src/cli/run.js",
     "run:omni": "node src/cli/run-omni.js",
-    "smoke": "bash -lc 'systemctl --user is-active --quiet codex-telegram-gateway.service && { echo \"codex-telegram-gateway.service is active; refuse smoke run to avoid Telegram poll conflict\" >&2; exit 1; } || true; TELEGRAM_POLL_TIMEOUT_SECS=1 RUN_ONCE=1 node src/cli/run.js'",
-    "smoke:omni": "bash -lc 'systemctl --user is-active --quiet codex-telegram-gateway-omni.service && { echo \"codex-telegram-gateway-omni.service is active; refuse smoke run to avoid Telegram poll conflict\" >&2; exit 1; } || true; TELEGRAM_POLL_TIMEOUT_SECS=1 RUN_ONCE=1 OMNI_SKIP_PENDING_SCAN=1 node src/cli/run-omni.js'",
+    "smoke": "node src/cli/run-smoke.js",
+    "smoke:omni": "node src/cli/run-smoke.js --omni",
     "soak": "node src/cli/soak.js",
     "test": "node --test",
-    "test:live": "CODEX_LIVE_TESTS=1 node --test test/worker-pool.live.test.js",
+    "test:live": "node src/cli/run-live-tests.js",
     "user:e2e": "node src/cli/user-live-e2e.js",
+    "user:spike-audit": "node src/cli/user-live-spike-audit.js",
     "user:login": "node src/cli/user-login.js",
     "user:status": "node src/cli/user-status.js"
   },

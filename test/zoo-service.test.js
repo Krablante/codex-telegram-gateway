@@ -26,8 +26,8 @@ test("ZooService /zoo creates the dedicated topic and menu", async () => {
     message: {
       text: "/zoo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
   });
 
@@ -49,7 +49,7 @@ test("ZooService rejects normal prompts inside the Zoo topic", async () => {
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -69,8 +69,8 @@ test("ZooService rejects normal prompts inside the Zoo topic", async () => {
     botUsername: "gatewaybot",
     message: {
       text: "hello there",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 700,
       message_id: 1,
     },

@@ -8,10 +8,10 @@ import {
 } from "../src/telegram/command-router.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -88,8 +88,8 @@ test("handleIncomingMessage lets zooService short-circuit /zoo before normal ses
     message: {
       text: "/zoo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -131,9 +131,9 @@ test("handleIncomingCallbackQuery lets zooService short-circuit before panel cal
     callbackQuery: {
       id: "cb1",
       data: "zoo:v:pet1",
-      from: { id: 1234567890, is_bot: false },
+      from: { id: 5825672398, is_bot: false },
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 777,
       },
     },

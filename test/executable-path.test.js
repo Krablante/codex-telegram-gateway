@@ -61,7 +61,7 @@ test("buildExecutableCandidatePaths expands PATHEXT variants on win32", () => {
   const candidates = buildExecutableCandidatePaths("codex", {
     cwd: "C:\\workspace",
     platform: "win32",
-    preferredDirectories: ["C:\\Users\\example\\AppData\\Roaming\\npm"],
+    preferredDirectories: ["C:\\Users\\bloob\\AppData\\Roaming\\npm"],
     pathValue: "C:\\Windows\\System32",
     env: {
       PATHEXT: ".EXE;.CMD",
@@ -69,12 +69,30 @@ test("buildExecutableCandidatePaths expands PATHEXT variants on win32", () => {
   });
 
   assert.deepEqual(candidates, [
-    "C:\\Users\\example\\AppData\\Roaming\\npm\\codex",
-    "C:\\Users\\example\\AppData\\Roaming\\npm\\codex.EXE",
-    "C:\\Users\\example\\AppData\\Roaming\\npm\\codex.CMD",
+    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex",
+    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.EXE",
+    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.CMD",
     "C:\\Windows\\System32\\codex",
     "C:\\Windows\\System32\\codex.EXE",
     "C:\\Windows\\System32\\codex.CMD",
+  ]);
+});
+
+test("buildExecutableCandidatePaths treats Windows PATHEXT keys case-insensitively", () => {
+  const candidates = buildExecutableCandidatePaths("codex", {
+    cwd: "C:\\workspace",
+    platform: "win32",
+    preferredDirectories: ["C:\\Users\\bloob\\AppData\\Roaming\\npm"],
+    pathValue: "",
+    env: {
+      pathext: ".EXE;.CMD",
+    },
+  });
+
+  assert.deepEqual(candidates, [
+    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex",
+    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.EXE",
+    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.CMD",
   ]);
 });
 
@@ -82,11 +100,11 @@ test("getExecutableSearchPathValue treats Windows Path keys case-insensitively",
   assert.equal(
     getExecutableSearchPathValue(
       {
-        Path: "C:\\Users\\example\\AppData\\Roaming\\npm",
+        Path: "C:\\Users\\bloob\\AppData\\Roaming\\npm",
       },
       "win32",
     ),
-    "C:\\Users\\example\\AppData\\Roaming\\npm",
+    "C:\\Users\\bloob\\AppData\\Roaming\\npm",
   );
 });
 

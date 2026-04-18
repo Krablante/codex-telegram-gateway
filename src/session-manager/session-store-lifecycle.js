@@ -109,7 +109,7 @@ export async function ensureSession(
         updated_at: now,
       };
 
-      if (reactivate && existing.lifecycle_state !== "active") {
+      if (reactivate && existing.lifecycle_state === "parked") {
         updated = {
           ...updated,
           lifecycle_state: "active",
@@ -120,21 +120,6 @@ export async function ensureSession(
           reactivated_at: now,
           lifecycle_reactivated_reason: createdVia,
         };
-
-        if (existing.lifecycle_state === "purged") {
-          updated = {
-            ...updated,
-            ...buildRuntimeStateFields(),
-            lifecycle_state: "active",
-            retention_pin: existing.retention_pin ?? false,
-            workspace_binding: cloneJson(
-              existing.workspace_binding || workspaceBinding,
-            ),
-            ui_language: normalizeUiLanguage(existing.ui_language),
-            reactivated_at: now,
-            lifecycle_reactivated_reason: createdVia,
-          };
-        }
       }
 
       await saveUnlocked(store, updated);
@@ -232,11 +217,24 @@ export async function clearSessionOwner(store, meta) {
 }
 
 export async function parkSession(store, meta, reason, extraPatch = {}) {
-  return patchWithCurrent(store, meta, {
-    lifecycle_state: "parked",
-    parked_at: new Date().toISOString(),
-    parked_reason: reason,
-    ...cloneJson(extraPatch),
+  const extra = cloneJson(extraPatch);
+  return patchWithCurrent(store, meta, (current) => {
+    const alreadyParkedForReason =
+      current.lifecycle_state === "parked" && current.parked_reason === reason;
+    const parkedAt =
+      alreadyParkedForReason && current.parked_at
+        ? current.parked_at
+        : new Date().toISOString();
+
+    return {
+      lifecycle_state: "parked",
+      parked_at: parkedAt,
+      parked_reason: reason,
+      ...extra,
+      ...(alreadyParkedForReason && current.purge_after
+        ? { purge_after: current.purge_after }
+        : {}),
+    };
   });
 }
 
@@ -279,12 +277,50 @@ export async function removeLegacyMemoryFiles(store, meta) {
 }
 
 export async function purgeSession(store, meta, reason) {
-  const current =
-    (await store.load(meta.chat_id, meta.topic_id)) || meta;
-  const sessionDir = store.getSessionDir(current.chat_id, current.topic_id);
-  const purgedStub = buildPurgedStub(current, reason);
-  await fs.rm(sessionDir, { recursive: true, force: true });
-  await fs.mkdir(sessionDir, { recursive: true });
-  await store.save(purgedStub);
-  return purgedStub;
+  return withMetaLock(store, meta.chat_id, meta.topic_id, async () => {
+    const current =
+      (await readMetaJson(store.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
+    if (current.lifecycle_state === "purged") {
+      return current;
+    }
+    if (current.retention_pin) {
+      throw new Error(`Session ${current.session_key} is pinned and not purge-eligible.`);
+    }
+    if (
+      current.last_run_status === "running" ||
+      current.session_owner_generation_id
+    ) {
+      throw new Error(`Session ${current.session_key} is still active and not purge-eligible.`);
+    }
+
+    const purgeTarget =
+      current.lifecycle_state === "parked"
+        ? current
+        : {
+          ...current,
+          lifecycle_state: "parked",
+          parked_at: current.parked_at ?? new Date().toISOString(),
+          parked_reason: current.parked_reason ?? reason,
+        };
+
+    const sessionDir = store.getSessionDir(current.chat_id, current.topic_id);
+    const lockDirName = path.basename(
+      store.getMetaLockPath(current.chat_id, current.topic_id),
+    );
+    const entries = await fs.readdir(sessionDir, { withFileTypes: true });
+    await Promise.all(
+      entries
+        .filter((entry) => entry.name !== lockDirName)
+        .map((entry) =>
+          fs.rm(path.join(sessionDir, entry.name), {
+            recursive: true,
+            force: true,
+          }),
+        ),
+    );
+
+    const purgedStub = buildPurgedStub(purgeTarget, reason);
+    await saveUnlocked(store, purgedStub);
+    return purgedStub;
+  });
 }

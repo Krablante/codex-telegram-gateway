@@ -53,13 +53,13 @@ test("RolloutCoordinationStore persists requested and active rollout state under
     currentGenerationId: "gen-new",
     targetGenerationId: "gen-new",
     retiringGenerationId: "gen-old",
-    retainedSessionKeys: ["-1001234567890:2203", "-1001234567890:2203", " -1001234567890:2204 "],
+    retainedSessionKeys: ["-1003577434463:2203", "-1003577434463:2203", " -1003577434463:2204 "],
   });
   assert.equal(active.status, "in_progress");
   assert.equal(active.retiring_generation_id, "gen-old");
   assert.deepEqual(active.retained_session_keys, [
-    "-1001234567890:2203",
-    "-1001234567890:2204",
+    "-1003577434463:2203",
+    "-1003577434463:2204",
   ]);
   assert.ok(active.started_at);
 

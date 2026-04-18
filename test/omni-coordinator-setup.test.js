@@ -11,9 +11,9 @@ test("OmniCoordinator seeds topic-scoped Omni memory when the goal is captured",
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
 
   await harness.coordinator.handleHumanMessage(
@@ -23,7 +23,7 @@ test("OmniCoordinator seeds topic-scoped Omni memory when the goal is captured",
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const memory = await harness.coordinator.loadOmniMemory(stored);
   assert.equal(memory.goal_capsule, null);
   assert.deepEqual(memory.goal_constraints, []);
@@ -114,9 +114,9 @@ test("OmniCoordinator parks setup replies instead of throwing on unavailable top
   });
   const baseSession = await ensureSession(harness.sessionStore);
   await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
 
   const result = await harness.coordinator.handleHumanMessage(
@@ -126,7 +126,7 @@ test("OmniCoordinator parks setup replies instead of throwing on unavailable top
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(result.reason, "topic-unavailable");
   assert.equal(stored.auto_mode.phase, "await_initial_prompt");
   assert.equal(lifecycleCalls.length, 1);
@@ -170,9 +170,9 @@ test("OmniCoordinator ignores bare wait flush shortcuts during auto setup", asyn
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -186,7 +186,7 @@ test("OmniCoordinator ignores bare wait flush shortcuts during auto setup", asyn
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(result.reason, "auto-initial-prompt-flush-ignored");
   assert.equal(stored.auto_mode.phase, "await_initial_prompt");
@@ -200,9 +200,9 @@ test("OmniCoordinator combines buffered split setup messages before processing",
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
 
   const goalResult = await harness.coordinator.handleBufferedHumanMessages([
@@ -216,7 +216,7 @@ test("OmniCoordinator combines buffered split setup messages before processing",
     }),
   ]);
 
-  let stored = await harness.sessionStore.load("-1001234567890", "77");
+  let stored = await harness.sessionStore.load("-1003577434463", "77");
   assert.equal(goalResult.reason, "auto-goal-captured");
   assert.match(
     stored.auto_mode.literal_goal_text,
@@ -234,7 +234,7 @@ test("OmniCoordinator combines buffered split setup messages before processing",
     }),
   ]);
 
-  stored = await harness.sessionStore.load("-1001234567890", "77");
+  stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(promptResult.reason, "auto-initial-prompt-sent");
   assert.match(
@@ -253,9 +253,9 @@ test("OmniCoordinator acknowledges the initial prompt handoff to Spike", async (
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);
   let session = await harness.sessionService.activateAutoMode(baseSession, {
-    activatedByUserId: "1234567890",
-    omniBotId: "2234567890",
-    spikeBotId: "3234567890",
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
   });
   session = await harness.sessionService.captureAutoGoal(
     session,
@@ -269,7 +269,7 @@ test("OmniCoordinator acknowledges the initial prompt handoff to Spike", async (
     }),
   );
 
-  const stored = await harness.sessionStore.load("-1001234567890", "77");
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
   const pendingPrompt = await harness.promptHandoffStore.load(stored);
   assert.equal(result.reason, "auto-initial-prompt-sent");
   assert.equal(stored.auto_mode.phase, "running");

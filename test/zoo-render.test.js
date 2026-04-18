@@ -156,7 +156,7 @@ test("buildZooRootText renders pending add-project confirmation inside the menu"
       pending_add: {
         stage: "await_confirmation",
         busy: false,
-        candidate_path: "/workspace/project-a",
+        candidate_path: "/home/bloob/atlas/project-a",
         candidate_reason: "Похоже на нужный приватный gateway.",
         candidate_question: "Это нужный проект? Ответь Да или Нет.",
       },
@@ -164,7 +164,7 @@ test("buildZooRootText renders pending add-project confirmation inside the menu"
   });
 
   assert.match(text, /добавление проекта:/u);
-  assert.match(text, /\/workspace\/project-a/u);
+  assert.match(text, /\/home\/bloob\/atlas\/project-a/u);
   assert.match(text, /Ответь Да или Нет/u);
 });
 

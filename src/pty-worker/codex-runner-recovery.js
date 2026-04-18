@@ -64,7 +64,10 @@ export function summarizeRolloutLine(
       kind: "agent_message",
       eventType: "rollout.agent_message",
       text: event.payload.message || "",
-      messagePhase: event.payload.phase || "final_answer",
+      messagePhase:
+        typeof event.payload.phase === "string" && event.payload.phase.trim()
+          ? event.payload.phase
+          : null,
       threadId: primaryThreadId,
     };
   }
@@ -188,8 +191,11 @@ export async function watchRolloutForTaskComplete({
   getActiveTurnId,
   getHasPrimaryFinalAnswer,
   getPrimaryThreadId,
+  getProviderSessionId,
   getLatestThreadId,
   getRolloutPath,
+  setContextSnapshot,
+  setProviderSessionId,
   setRolloutPath,
   getRolloutObservedOffset,
   rememberSummary,
@@ -214,10 +220,17 @@ export async function watchRolloutForTaskComplete({
     if (!resolvedRolloutPath) {
       const resolved = await readLatestContextSnapshot({
         threadId: getPrimaryThreadId() || getLatestThreadId(),
+        providerSessionId: getProviderSessionId?.() ?? null,
         sessionsRoot: codexSessionsRoot,
         knownRolloutPath: resolvedRolloutPath,
       });
       resolvedRolloutPath = resolved.rolloutPath || resolvedRolloutPath;
+      if (resolved.snapshot) {
+        setContextSnapshot?.(resolved.snapshot);
+        if (resolved.snapshot.session_id) {
+          setProviderSessionId?.(resolved.snapshot.session_id);
+        }
+      }
       if (resolvedRolloutPath) {
         setRolloutPath?.(resolvedRolloutPath);
       } else {
@@ -250,7 +263,10 @@ export async function watchRolloutForTaskComplete({
         primaryThreadId,
         activeTurnId: getActiveTurnId?.() ?? null,
       });
-      if (summary?.eventType !== "rollout.task_complete") {
+      const terminalSummary =
+        summary?.eventType === "rollout.task_complete"
+        || summary?.messagePhase === "final_answer";
+      if (!terminalSummary) {
         continue;
       }
 
@@ -289,8 +305,11 @@ export async function followRolloutAfterDisconnect({
   getRecoveryChildExit,
   getActiveTurnId,
   getPrimaryThreadId,
+  getProviderSessionId,
   getLatestThreadId,
   getRolloutPath,
+  setContextSnapshot,
+  setProviderSessionId,
   setRolloutPath,
   getRolloutObservedOffset,
   isInterruptRequested,
@@ -311,10 +330,17 @@ export async function followRolloutAfterDisconnect({
   while (!resolvedRolloutPath) {
     const resolved = await readLatestContextSnapshot({
       threadId: getPrimaryThreadId() || getLatestThreadId(),
+      providerSessionId: getProviderSessionId?.() ?? null,
       sessionsRoot: codexSessionsRoot,
       knownRolloutPath: resolvedRolloutPath,
     });
     resolvedRolloutPath = resolved.rolloutPath || resolvedRolloutPath;
+    if (resolved.snapshot) {
+      setContextSnapshot?.(resolved.snapshot);
+      if (resolved.snapshot.session_id) {
+        setProviderSessionId?.(resolved.snapshot.session_id);
+      }
+    }
     if (resolvedRolloutPath) {
       setRolloutPath?.(resolvedRolloutPath);
       break;
@@ -333,11 +359,20 @@ export async function followRolloutAfterDisconnect({
 
   while (!getSettled()) {
     const previousOffset = offset;
-    const delta = await readRolloutDelta({
-      filePath: resolvedRolloutPath,
-      offset,
-      carryover,
-    });
+    let delta = null;
+    try {
+      delta = await readRolloutDelta({
+        filePath: resolvedRolloutPath,
+        offset,
+        carryover,
+      });
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        await sleep(rolloutPollIntervalMs);
+        continue;
+      }
+      throw error;
+    }
     offset = delta.nextOffset;
     carryover = delta.carryover;
     if (offset > previousOffset) {
@@ -362,10 +397,7 @@ export async function followRolloutAfterDisconnect({
         continue;
       }
 
-      if (
-        summary.eventType === "turn.aborted"
-        && (summary.abortReason === "interrupted" || isInterruptRequested?.())
-      ) {
+      if (summary.eventType === "turn.aborted") {
         await onTurnAborted?.(summary);
         return {
           completed: true,

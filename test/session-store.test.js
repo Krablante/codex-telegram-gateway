@@ -8,10 +8,10 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
   };
 }
 
@@ -22,24 +22,24 @@ test("SessionStore creates and updates session meta", async () => {
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 55,
     topicName: "Slice 3 test",
     createdVia: "command/new",
     workspaceBinding: buildBinding(),
   });
 
-  assert.equal(created.session_key, "-1001234567890:55");
+  assert.equal(created.session_key, "-1003577434463:55");
   assert.equal(created.topic_name, "Slice 3 test");
   assert.equal(created.ui_language, "rus");
   assert.equal(created.auto_mode.enabled, false);
   assert.equal(created.auto_mode.phase, "off");
 
-  const loaded = await store.load("-1001234567890", "55");
-  assert.equal(loaded.session_key, "-1001234567890:55");
+  const loaded = await store.load("-1003577434463", "55");
+  assert.equal(loaded.session_key, "-1003577434463:55");
   assert.equal(loaded.auto_mode.enabled, false);
   const topicContextText = await fs.readFile(
-    store.getTopicContextPath("-1001234567890", "55"),
+    store.getTopicContextPath("-1003577434463", "55"),
     "utf8",
   );
   assert.match(topicContextText, /topic_id: 55/u);
@@ -54,14 +54,14 @@ test("SessionStore creates and updates session meta", async () => {
   assert.ok(touched.last_command_at);
 });
 
-test("SessionStore tracks exchange log, artifacts, purge stubs, and reactivation", async () => {
+test("SessionStore tracks exchange log, artifacts, purge stubs, and does not resurrect purged sessions", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 77,
     topicName: "Slice 5 test",
     createdVia: "command/new",
@@ -105,20 +105,46 @@ test("SessionStore tracks exchange log, artifacts, purge stubs, and reactivation
     fs.access(path.join(store.getArtifactsDir(created.chat_id, created.topic_id), artifact.artifact.file_name)),
   );
 
-  const reactivated = await store.ensure({
-    chatId: -1001234567890,
+  const reloadedPurged = await store.ensure({
+    chatId: -1003577434463,
     topicId: 77,
     createdVia: "topic/reactivate",
     workspaceBinding: buildBinding(),
     reactivate: true,
   });
-  assert.equal(reactivated.lifecycle_state, "active");
-  assert.equal(reactivated.last_command_name, null);
-  assert.equal(reactivated.artifact_count, 0);
-  assert.equal(reactivated.purged_at, null);
-  assert.equal(reactivated.ui_language, "eng");
-  assert.ok(reactivated.reactivated_at);
-  assert.equal(reactivated.lifecycle_reactivated_reason, "topic/reactivate");
+  assert.equal(reloadedPurged.lifecycle_state, "purged");
+  assert.equal(reloadedPurged.last_command_name, "purge");
+  assert.equal(reloadedPurged.artifact_count, 0);
+  assert.ok(reloadedPurged.purged_at);
+  assert.equal(reloadedPurged.ui_language, "eng");
+  assert.equal(reloadedPurged.reactivated_at, undefined);
+});
+
+test("SessionStore preserves original parked retention when the same park reason repeats", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const store = new SessionStore(sessionsRoot);
+
+  const created = await store.ensure({
+    chatId: -1003577434463,
+    topicId: 78,
+    topicName: "Idempotent park",
+    createdVia: "command/new",
+    workspaceBinding: buildBinding(),
+  });
+
+  const first = await store.park(created, "telegram/topic-unavailable", {
+    purge_after: "2026-04-18T01:00:00.000Z",
+  });
+  const second = await store.park(first, "telegram/topic-unavailable", {
+    purge_after: "2026-04-19T01:00:00.000Z",
+  });
+
+  assert.equal(second.lifecycle_state, "parked");
+  assert.equal(second.parked_reason, "telegram/topic-unavailable");
+  assert.equal(second.parked_at, first.parked_at);
+  assert.equal(second.purge_after, "2026-04-18T01:00:00.000Z");
 });
 
 test("SessionStore loads compact state from active brief and exchange log", async () => {
@@ -128,7 +154,7 @@ test("SessionStore loads compact state from active brief and exchange log", asyn
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 88,
     topicName: "Compact state test",
     createdVia: "command/new",
@@ -160,7 +186,7 @@ test("SessionStore preserves cache-only model overrides across reload", async ()
   const store = new SessionStore(sessionsRoot);
 
   let session = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 90,
     topicName: "Model persistence",
     createdVia: "command/new",
@@ -183,7 +209,7 @@ test("SessionStore mirrors legacy spike run ownership into normalized session ow
   const store = new SessionStore(sessionsRoot);
 
   let session = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 91,
     topicName: "Ownership normalization",
     createdVia: "command/new",
@@ -213,7 +239,7 @@ test("SessionStore supports explicit session owner claims and clears mirrored ow
   const store = new SessionStore(sessionsRoot);
 
   let session = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 92,
     topicName: "Ownership claim API",
     createdVia: "command/new",
@@ -244,7 +270,7 @@ test("SessionStore strips legacy memory files on request", async () => {
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 89,
     topicName: "Legacy cleanup",
     createdVia: "command/new",
@@ -285,18 +311,18 @@ test("SessionStore skips malformed meta files and quarantines them", async () =>
   const store = new SessionStore(sessionsRoot);
 
   const valid = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 99,
     topicName: "Valid session",
     createdVia: "command/new",
     workspaceBinding: buildBinding(),
   });
 
-  const corruptDir = store.getSessionDir("-1001234567890", "100");
+  const corruptDir = store.getSessionDir("-1003577434463", "100");
   await fs.mkdir(corruptDir, { recursive: true });
   await fs.writeFile(path.join(corruptDir, "meta.json"), "{", "utf8");
 
-  assert.equal(await store.load("-1001234567890", "100"), null);
+  assert.equal(await store.load("-1003577434463", "100"), null);
   const quarantined = await fs.readdir(corruptDir);
   assert.equal(
     quarantined.some((entry) => entry.startsWith("meta.json.corrupt-")),
@@ -315,7 +341,7 @@ test("SessionStore quarantines malformed exchange logs instead of treating them 
   const store = new SessionStore(sessionsRoot);
 
   const created = await store.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 111,
     topicName: "Corrupt exchange log",
     createdVia: "command/new",
@@ -347,7 +373,7 @@ test("SessionStore serializes concurrent meta patches across writers", async () 
   const storeB = new SessionStore(sessionsRoot);
 
   const created = await storeA.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 120,
     topicName: "Concurrent patch test",
     createdVia: "command/new",
@@ -404,7 +430,7 @@ test("SessionStore patchWithCurrent computes each patch from the latest locked s
   const storeB = new SessionStore(sessionsRoot);
 
   let session = await storeA.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 121,
     topicName: "Current patch test",
     createdVia: "command/new",
@@ -475,7 +501,7 @@ test("SessionStore writeArtifact preserves artifact_count across concurrent writ
   const storeB = new SessionStore(sessionsRoot);
 
   const session = await storeA.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 122,
     topicName: "Artifact race test",
     createdVia: "command/new",

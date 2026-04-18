@@ -51,6 +51,12 @@ function quoteUnitValue(value) {
   return `"${escaped}"`;
 }
 
+function escapeDirectiveValue(value) {
+  return String(value)
+    .replace(/\\/gu, "\\\\")
+    .replace(/ /gu, "\\ ");
+}
+
 export function buildServicePathEntries({
   nodePath,
   currentPath = process.env.PATH || process.env.Path || "",
@@ -106,7 +112,7 @@ export function buildUserServiceUnit({
     "[Service]",
     "Type=simple",
     ...(exitType ? [`ExitType=${exitType}`] : []),
-    `WorkingDirectory=${quoteUnitValue(repoRoot)}`,
+    `WorkingDirectory=${escapeDirectiveValue(repoRoot)}`,
     quoteEnvironment("ENV_FILE", envFilePath),
     quoteEnvironment("NODE", nodePath),
     quoteEnvironment("CODEX_BIN_PATH", codexBinPath),
@@ -118,7 +124,7 @@ export function buildUserServiceUnit({
     "KillMode=control-group",
     "KillSignal=SIGINT",
     "SuccessExitStatus=130 SIGINT",
-    "TimeoutStopSec=20",
+    "TimeoutStopSec=infinity",
     "",
     "[Install]",
     "WantedBy=default.target",

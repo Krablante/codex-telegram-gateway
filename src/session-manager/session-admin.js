@@ -69,6 +69,7 @@ export class SessionAdmin {
     const nextPinned = Boolean(pinned);
     const patch = {
       retention_pin: nextPinned,
+      ...(nextPinned ? { purge_after: null } : {}),
     };
 
     if (!nextPinned && session.lifecycle_state === "parked") {
@@ -117,25 +118,17 @@ export class SessionAdmin {
 
   async purgeSession(chatId, topicId, reason = "admin/purge") {
     const session = await this.getSession(chatId, topicId);
-    if (session.lifecycle_state === "purged") {
-      return session;
-    }
     if (session.last_run_status === "running") {
       throw new Error(
         `Cannot purge active session ${session.session_key}; interrupt the run first.`,
       );
     }
-
-    const parked =
-      session.lifecycle_state === "parked"
-        ? session
-        : await this.sessionStore.park(session, reason);
-    const purged = await this.sessionStore.purge(parked, reason);
+    const purged = await this.sessionStore.purge(session, reason);
     await this.runtimeObserver?.noteSessionLifecycle({
       action: "purged",
       session: purged,
       reason,
-      previousState: parked.lifecycle_state,
+      previousState: session.lifecycle_state,
       nextState: purged.lifecycle_state,
       trigger: "admin-cli",
     });

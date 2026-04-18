@@ -494,6 +494,9 @@ export function buildReplyMessageParams(message, text) {
   if (isNumericMessageThreadId(message.message_thread_id)) {
     params.message_thread_id = message.message_thread_id;
   }
+  if (Number.isInteger(message?.message_id) && message.message_id > 0) {
+    params.reply_to_message_id = message.message_id;
+  }
 
   return params;
 }

@@ -13,7 +13,7 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   const store = new ZooStore(stateRoot);
 
   const topic = await store.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "777",
     topic_name: "Zoo",
     selected_pet_id: null,
@@ -22,13 +22,13 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   assert.equal(topic.topic_id, "777");
   assert.equal(topic.root_page, 2);
 
-  const petId = buildPetIdFromPath("/workspace/project-a");
+  const petId = buildPetIdFromPath("/home/bloob/atlas/project-a");
   const pet = await store.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/workspace/project-a",
-    repo_root: "/workspace/project-a",
-    cwd: "/workspace/project-a",
+    resolved_path: "/home/bloob/atlas/project-a",
+    repo_root: "/home/bloob/atlas/project-a",
+    cwd: "/home/bloob/atlas/project-a",
     cwd_relative_to_workspace_root: "project-a",
     character_name: "Rainbow Dash",
     temperament_id: "paladin",
@@ -46,7 +46,7 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   const snapshot = await store.saveLatestSnapshot(petId, {
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/workspace/project-a",
+    resolved_path: "/home/bloob/atlas/project-a",
     creature_kind: "rabbit",
     mood: "alert",
     stats: {

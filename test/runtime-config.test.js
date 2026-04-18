@@ -30,15 +30,15 @@ function restoreEnvVar(name, value) {
 test("parseEnvText reads comments, exports, and quoted values", () => {
   const env = parseEnvText(`
 # comment
-export TELEGRAM_ALLOWED_USER_ID=1234567890
+export TELEGRAM_ALLOWED_USER_ID=5825672398
 TELEGRAM_BOT_TOKEN="secret-token"
-TELEGRAM_FORUM_CHAT_ID='-1001234567890'
+TELEGRAM_FORUM_CHAT_ID='-1003577434463'
 TELEGRAM_EXPECTED_TOPICS=General, Test topic 1 , Test topic 2
 `);
 
-  assert.equal(env.TELEGRAM_ALLOWED_USER_ID, "1234567890");
+  assert.equal(env.TELEGRAM_ALLOWED_USER_ID, "5825672398");
   assert.equal(env.TELEGRAM_BOT_TOKEN, "secret-token");
-  assert.equal(env.TELEGRAM_FORUM_CHAT_ID, "-1001234567890");
+  assert.equal(env.TELEGRAM_FORUM_CHAT_ID, "-1003577434463");
   assert.equal(
     env.TELEGRAM_EXPECTED_TOPICS,
     "General, Test topic 1 , Test topic 2",
@@ -46,10 +46,10 @@ TELEGRAM_EXPECTED_TOPICS=General, Test topic 1 , Test topic 2
 });
 
 test("parseEnvText strips a leading UTF-8 BOM so Windows-edited env files still load", () => {
-  const env = parseEnvText("\uFEFFTELEGRAM_BOT_TOKEN=secret-token\r\nTELEGRAM_ALLOWED_USER_ID=1234567890");
+  const env = parseEnvText("\uFEFFTELEGRAM_BOT_TOKEN=secret-token\r\nTELEGRAM_ALLOWED_USER_ID=5825672398");
 
   assert.equal(env.TELEGRAM_BOT_TOKEN, "secret-token");
-  assert.equal(env.TELEGRAM_ALLOWED_USER_ID, "1234567890");
+  assert.equal(env.TELEGRAM_ALLOWED_USER_ID, "5825672398");
 });
 
 test("getDefaultCodexBinPath prefers codex.cmd on Windows", () => {
@@ -61,13 +61,13 @@ test("buildRuntimeConfig validates ids and splits expected topics", () => {
   const config = buildRuntimeConfig({
     ENV_FILE: "/tmp/runtime.env",
     TELEGRAM_BOT_TOKEN: "secret-token",
-    TELEGRAM_ALLOWED_USER_ID: "1234567890",
-    TELEGRAM_ALLOWED_BOT_IDS: "2234567890,3234567890",
-    TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
+    TELEGRAM_ALLOWED_USER_ID: "5825672398",
+    TELEGRAM_ALLOWED_BOT_IDS: "8603043042,8537834861",
+    TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
     TELEGRAM_EXPECTED_TOPICS: "General, Test topic 1, Test topic 2",
     TELEGRAM_POLL_TIMEOUT_SECS: "5",
-    ATLAS_WORKSPACE_ROOT: "/workspace",
-    DEFAULT_SESSION_BINDING_PATH: "/workspace",
+    ATLAS_WORKSPACE_ROOT: "/home/bloob/atlas",
+    DEFAULT_SESSION_BINDING_PATH: "/home/bloob/atlas",
     CODEX_SESSIONS_ROOT: "/tmp/codex-sessions",
     CODEX_LIMITS_SESSIONS_ROOT: "/tmp/codex-limits",
     CODEX_LIMITS_COMMAND: "python3 /tmp/read-limits.py",
@@ -78,13 +78,13 @@ test("buildRuntimeConfig validates ids and splits expected topics", () => {
     CODEX_CONTEXT_WINDOW: "320000",
     CODEX_AUTO_COMPACT_TOKEN_LIMIT: "300000",
     OMNI_BOT_TOKEN: "omni-token",
-    OMNI_BOT_ID: "2234567890",
-    SPIKE_BOT_ID: "3234567890",
+    OMNI_BOT_ID: "8603043042",
+    SPIKE_BOT_ID: "8537834861",
   });
 
   assert.equal(config.envFilePath, "/tmp/runtime.env");
-  assert.equal(config.atlasWorkspaceRoot, "/workspace");
-  assert.equal(config.defaultSessionBindingPath, "/workspace");
+  assert.equal(config.atlasWorkspaceRoot, "/home/bloob/atlas");
+  assert.equal(config.defaultSessionBindingPath, "/home/bloob/atlas");
   assert.equal(config.codexBinPath, getDefaultCodexBinPath());
   assert.equal(config.codexSessionsRoot, "/tmp/codex-sessions");
   assert.equal(config.codexLimitsSessionsRoot, "/tmp/codex-limits");
@@ -95,13 +95,13 @@ test("buildRuntimeConfig validates ids and splits expected topics", () => {
   assert.equal(config.codexReasoningEffort, "xhigh");
   assert.equal(config.codexContextWindow, 320000);
   assert.equal(config.codexAutoCompactTokenLimit, 300000);
-  assert.equal(config.telegramAllowedUserId, "1234567890");
-  assert.deepEqual(config.telegramAllowedUserIds, ["1234567890"]);
+  assert.equal(config.telegramAllowedUserId, "5825672398");
+  assert.deepEqual(config.telegramAllowedUserIds, ["5825672398"]);
   assert.deepEqual(config.telegramAllowedBotIds, [
-    "2234567890",
-    "3234567890",
+    "8603043042",
+    "8537834861",
   ]);
-  assert.equal(config.telegramForumChatId, "-1001234567890");
+  assert.equal(config.telegramForumChatId, "-1003577434463");
   assert.equal(config.telegramPollTimeoutSecs, 5);
   assert.equal(config.maxParallelSessions, 10);
   assert.equal(config.parkedSessionRetentionHours, 168);
@@ -112,128 +112,8 @@ test("buildRuntimeConfig validates ids and splits expected topics", () => {
     "Test topic 2",
   ]);
   assert.equal(config.omniBotToken, "omni-token");
-  assert.equal(config.omniBotId, "2234567890");
-  assert.equal(config.spikeBotId, "3234567890");
-});
-
-test("buildRuntimeConfig accepts WORKSPACE_ROOT as the preferred workspace alias", () => {
-  const config = buildRuntimeConfig({
-    TELEGRAM_BOT_TOKEN: "secret-token",
-    TELEGRAM_ALLOWED_USER_ID: "1234567890",
-    TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-    WORKSPACE_ROOT: "O:/workspace",
-    DEFAULT_SESSION_BINDING_PATH: "O:/workspace/main-repo",
-  });
-
-  assert.equal(config.atlasWorkspaceRoot, "O:/workspace");
-  assert.equal(config.defaultSessionBindingPath, "O:/workspace/main-repo");
-});
-
-test("buildRuntimeConfig rejects malformed ids", () => {
-  assert.throws(
-    () =>
-      buildRuntimeConfig({
-        TELEGRAM_BOT_TOKEN: "secret-token",
-        TELEGRAM_ALLOWED_USER_ID: "not-a-number",
-        TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-      }),
-    /TELEGRAM_ALLOWED_USER_ID/u,
-  );
-});
-
-test("buildRuntimeConfig supports multi-user allowlists without the legacy single user key", () => {
-  const config = buildRuntimeConfig({
-    TELEGRAM_BOT_TOKEN: "secret-token",
-    TELEGRAM_ALLOWED_USER_IDS: "1234567890,123456789",
-    TELEGRAM_ALLOWED_BOT_IDS: "2234567890",
-    TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-  });
-
-  assert.deepEqual(config.telegramAllowedUserIds, [
-    "1234567890",
-    "123456789",
-  ]);
-  assert.equal(config.telegramAllowedUserId, "1234567890");
-  assert.deepEqual(config.telegramAllowedBotIds, ["2234567890"]);
-});
-
-test("buildRuntimeConfig auto-adds Omni bot id to the trusted bot allowlist", () => {
-  const config = buildRuntimeConfig({
-    TELEGRAM_BOT_TOKEN: "secret-token",
-    TELEGRAM_ALLOWED_USER_ID: "1234567890",
-    TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-    OMNI_BOT_TOKEN: "omni-token",
-    OMNI_BOT_ID: "2234567890",
-  });
-
-  assert.deepEqual(config.telegramAllowedBotIds, ["2234567890"]);
-});
-
-test("buildRuntimeConfig disables Omni by default when it is not configured", () => {
-  const config = buildRuntimeConfig({
-    TELEGRAM_BOT_TOKEN: "secret-token",
-    TELEGRAM_ALLOWED_USER_ID: "1234567890",
-    TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-  });
-
-  assert.equal(config.omniEnabled, false);
-  assert.equal(config.omniBotToken, null);
-  assert.equal(config.omniBotId, null);
-});
-
-test("buildRuntimeConfig allows explicitly disabling Omni even when credentials exist", () => {
-  const config = buildRuntimeConfig({
-    TELEGRAM_BOT_TOKEN: "secret-token",
-    TELEGRAM_ALLOWED_USER_ID: "1234567890",
-    TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-    OMNI_ENABLED: "false",
-    OMNI_BOT_TOKEN: "omni-token",
-    OMNI_BOT_ID: "2234567890",
-  });
-
-  assert.equal(config.omniEnabled, false);
-  assert.deepEqual(config.telegramAllowedBotIds, []);
-});
-
-test("buildRuntimeConfig requires OMNI_BOT_ID when OMNI_BOT_TOKEN is set", () => {
-  assert.throws(
-    () =>
-      buildRuntimeConfig({
-        TELEGRAM_BOT_TOKEN: "secret-token",
-        TELEGRAM_ALLOWED_USER_ID: "1234567890",
-        TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-        OMNI_BOT_TOKEN: "omni-token",
-      }),
-    /OMNI_BOT_ID/u,
-  );
-});
-
-test("buildRuntimeConfig requires Omni credentials when OMNI_ENABLED is forced on", () => {
-  assert.throws(
-    () =>
-      buildRuntimeConfig({
-        TELEGRAM_BOT_TOKEN: "secret-token",
-        TELEGRAM_ALLOWED_USER_ID: "1234567890",
-        TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
-        OMNI_ENABLED: "true",
-      }),
-    /Omni is enabled/u,
-  );
-});
-
-test("parseCodexConfigProfile reads model and context numbers from codex toml", () => {
-  const profile = parseCodexConfigProfile(`
-model = "gpt-5.4"
-model_reasoning_effort = "xhigh"
-model_context_window = 320000
-model_auto_compact_token_limit = 300000
-`, "/home/testuser/.codex/config.toml");
-
-  assert.equal(profile.configPath, "/home/testuser/.codex/config.toml");
-  assert.equal(profile.model, "gpt-5.4");
-  assert.equal(profile.reasoningEffort, "xhigh");
-  assert.equal(profile.contextWindow, 320000);
-  assert.equal(profile.autoCompactTokenLimit, 300000);
+  assert.equal(config.omniBotId, "8603043042");
+  assert.equal(config.spikeBotId, "8537834861");
 });
 
 test("parseCodexConfigProfile extracts MCP server names from the Codex config", () => {
@@ -257,16 +137,16 @@ test("buildRuntimeConfig keeps the parsed Codex config path and MCP server list"
   const config = buildRuntimeConfig(
     {
       TELEGRAM_BOT_TOKEN: "secret-token",
-      TELEGRAM_ALLOWED_USER_ID: "1234567890",
-      TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
+      TELEGRAM_ALLOWED_USER_ID: "5825672398",
+      TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
     },
     {
-      configPath: "/home/testuser/.codex/config.toml",
+      configPath: "/home/bloob/.codex/config.toml",
       mcpServerNames: ["pitlane", "requests", "tavily"],
     },
   );
 
-  assert.equal(config.codexConfigPath, "/home/testuser/.codex/config.toml");
+  assert.equal(config.codexConfigPath, "/home/bloob/.codex/config.toml");
   assert.deepEqual(config.codexMcpServerNames, [
     "pitlane",
     "requests",
@@ -274,11 +154,131 @@ test("buildRuntimeConfig keeps the parsed Codex config path and MCP server list"
   ]);
 });
 
+test("buildRuntimeConfig accepts WORKSPACE_ROOT as the preferred workspace alias", () => {
+  const config = buildRuntimeConfig({
+    TELEGRAM_BOT_TOKEN: "secret-token",
+    TELEGRAM_ALLOWED_USER_ID: "5825672398",
+    TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+    WORKSPACE_ROOT: "O:/workspace",
+    DEFAULT_SESSION_BINDING_PATH: "O:/workspace/main-repo",
+  });
+
+  assert.equal(config.atlasWorkspaceRoot, "O:/workspace");
+  assert.equal(config.defaultSessionBindingPath, "O:/workspace/main-repo");
+});
+
+test("buildRuntimeConfig rejects malformed ids", () => {
+  assert.throws(
+    () =>
+      buildRuntimeConfig({
+        TELEGRAM_BOT_TOKEN: "secret-token",
+        TELEGRAM_ALLOWED_USER_ID: "not-a-number",
+        TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+      }),
+    /TELEGRAM_ALLOWED_USER_ID/u,
+  );
+});
+
+test("buildRuntimeConfig supports multi-user allowlists without the legacy single user key", () => {
+  const config = buildRuntimeConfig({
+    TELEGRAM_BOT_TOKEN: "secret-token",
+    TELEGRAM_ALLOWED_USER_IDS: "5825672398,123456789",
+    TELEGRAM_ALLOWED_BOT_IDS: "8603043042",
+    TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+  });
+
+  assert.deepEqual(config.telegramAllowedUserIds, [
+    "5825672398",
+    "123456789",
+  ]);
+  assert.equal(config.telegramAllowedUserId, "5825672398");
+  assert.deepEqual(config.telegramAllowedBotIds, ["8603043042"]);
+});
+
+test("buildRuntimeConfig auto-adds Omni bot id to the trusted bot allowlist", () => {
+  const config = buildRuntimeConfig({
+    TELEGRAM_BOT_TOKEN: "secret-token",
+    TELEGRAM_ALLOWED_USER_ID: "5825672398",
+    TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+    OMNI_BOT_TOKEN: "omni-token",
+    OMNI_BOT_ID: "8603043042",
+  });
+
+  assert.deepEqual(config.telegramAllowedBotIds, ["8603043042"]);
+});
+
+test("buildRuntimeConfig disables Omni by default when it is not configured", () => {
+  const config = buildRuntimeConfig({
+    TELEGRAM_BOT_TOKEN: "secret-token",
+    TELEGRAM_ALLOWED_USER_ID: "5825672398",
+    TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+  });
+
+  assert.equal(config.omniEnabled, false);
+  assert.equal(config.omniBotToken, null);
+  assert.equal(config.omniBotId, null);
+});
+
+test("buildRuntimeConfig allows explicitly disabling Omni even when credentials exist", () => {
+  const config = buildRuntimeConfig({
+    TELEGRAM_BOT_TOKEN: "secret-token",
+    TELEGRAM_ALLOWED_USER_ID: "5825672398",
+    TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+    OMNI_ENABLED: "false",
+    OMNI_BOT_TOKEN: "omni-token",
+    OMNI_BOT_ID: "8603043042",
+  });
+
+  assert.equal(config.omniEnabled, false);
+  assert.deepEqual(config.telegramAllowedBotIds, []);
+});
+
+test("buildRuntimeConfig requires OMNI_BOT_ID when OMNI_BOT_TOKEN is set", () => {
+  assert.throws(
+    () =>
+      buildRuntimeConfig({
+        TELEGRAM_BOT_TOKEN: "secret-token",
+        TELEGRAM_ALLOWED_USER_ID: "5825672398",
+        TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+        OMNI_BOT_TOKEN: "omni-token",
+      }),
+    /OMNI_BOT_ID/u,
+  );
+});
+
+test("buildRuntimeConfig requires Omni credentials when OMNI_ENABLED is forced on", () => {
+  assert.throws(
+    () =>
+      buildRuntimeConfig({
+        TELEGRAM_BOT_TOKEN: "secret-token",
+        TELEGRAM_ALLOWED_USER_ID: "5825672398",
+        TELEGRAM_FORUM_CHAT_ID: "-1003577434463",
+        OMNI_ENABLED: "true",
+      }),
+    /Omni is enabled/u,
+  );
+});
+
+test("parseCodexConfigProfile reads model and context numbers from codex toml", () => {
+  const profile = parseCodexConfigProfile(`
+model = "gpt-5.4"
+model_reasoning_effort = "xhigh"
+model_context_window = 320000
+model_auto_compact_token_limit = 300000
+`, "/home/bloob/.codex/config.toml");
+
+  assert.equal(profile.configPath, "/home/bloob/.codex/config.toml");
+  assert.equal(profile.model, "gpt-5.4");
+  assert.equal(profile.reasoningEffort, "xhigh");
+  assert.equal(profile.contextWindow, 320000);
+  assert.equal(profile.autoCompactTokenLimit, 300000);
+});
+
 test("default path helpers switch to Windows-friendly state and workspace roots", () => {
   const stateRoot = getDefaultStateRoot({
     platform: "win32",
-    homeDirectory: "C:/Users/example",
-    localAppData: "C:/Users/example/AppData/Local",
+    homeDirectory: "C:/Users/konstantin",
+    localAppData: "C:/Users/konstantin/AppData/Local",
   });
   const workspaceRoot = getDefaultWorkspaceRoot({
     platform: "win32",
@@ -291,7 +291,7 @@ test("default path helpers switch to Windows-friendly state and workspace roots"
   assert.equal(
     path.win32.normalize(stateRoot),
     path.win32.join(
-      "C:/Users/example/AppData/Local",
+      "C:/Users/konstantin/AppData/Local",
       "codex-telegram-gateway",
     ),
   );
@@ -304,7 +304,7 @@ test("default path helpers switch to Windows-friendly state and workspace roots"
   assert.equal(
     path.win32.normalize(envFilePath),
     path.win32.join(
-      "C:/Users/example/AppData/Local",
+      "C:/Users/konstantin/AppData/Local",
       "codex-telegram-gateway",
       "runtime.env",
     ),
@@ -343,8 +343,8 @@ test("loadRuntimeConfig reads a repo-local .env when ENV_FILE is unset", async (
     path.join(repoRoot, ".env"),
     [
       "TELEGRAM_BOT_TOKEN=secret-token",
-      "TELEGRAM_ALLOWED_USER_ID=1234567890",
-      "TELEGRAM_FORUM_CHAT_ID=-1001234567890",
+      "TELEGRAM_ALLOWED_USER_ID=5825672398",
+      "TELEGRAM_FORUM_CHAT_ID=-1003577434463",
       "WORKSPACE_ROOT=O:/workspace",
       "",
     ].join("\n"),

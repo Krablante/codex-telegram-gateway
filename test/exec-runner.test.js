@@ -5,7 +5,7 @@ import { buildCodexExecArgs } from "../src/codex-exec/exec-runner.js";
 
 test("buildCodexExecArgs appends model and reasoning overrides", () => {
   assert.deepEqual(buildCodexExecArgs({
-    repoRoot: "/workspace",
+    repoRoot: "/home/bloob/atlas",
     outputPath: "/tmp/last-message.txt",
     model: "gpt-5.4-mini",
     reasoningEffort: "medium",
@@ -13,7 +13,7 @@ test("buildCodexExecArgs appends model and reasoning overrides", () => {
     "exec",
     "--dangerously-bypass-approvals-and-sandbox",
     "-C",
-    "/workspace",
+    "/home/bloob/atlas",
     "--json",
     "-o",
     "/tmp/last-message.txt",

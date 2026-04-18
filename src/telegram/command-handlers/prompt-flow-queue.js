@@ -5,6 +5,7 @@ import { buildReplyMessageParams } from "../command-parsing.js";
 import { hasIncomingAttachments } from "../incoming-attachments.js";
 import { safeSendMessage } from "../topic-delivery.js";
 import { getTopicIdFromMessage } from "../../session-manager/session-key.js";
+import { buildPurgedSessionMessage } from "./topic-commands.js";
 import {
   buildNoSessionTopicMessage,
   buildPromptFromMessages,
@@ -90,6 +91,22 @@ async function queueTopicPrompt({
   }
 
   let session = await sessionService.ensureRunnableSessionForMessage(message);
+  if (session?.lifecycle_state === "purged") {
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        buildPurgedSessionMessage(session, getSessionUiLanguage(session)),
+      ),
+      session,
+      lifecycleManager,
+    );
+    return {
+      handled: true,
+      reason: "purged-session",
+      handledSession: session,
+    };
+  }
   if (config.omniEnabled !== false && session.auto_mode?.enabled) {
     await safeSendMessage(
       api,

@@ -7,7 +7,8 @@ import {
   loadAvailableCodexModels,
   resolveCodexRuntimeProfile,
 } from "../session-manager/codex-runtime-settings.js";
-import { buildCompactResumePrompt, summarizeCompactState } from "./compact-resume.js";
+import { buildCompactResumePrompt } from "./compact-resume.js";
+import { normalizeTokenUsage } from "../codex-runtime/token-usage.js";
 import {
   appendPromptPart,
   buildExchangeLogEntry,
@@ -20,7 +21,6 @@ import {
   excerpt,
   isEnglish,
   isTransientTransportError,
-  normalizeTokenUsage,
   outputTail,
   resolveReplyToMessageId,
   signalChildProcessGroup,
@@ -32,6 +32,12 @@ import { buildFinalCompletedReplyText } from "./worker-pool-delivery.js";
 const MAX_THREAD_RESUME_RETRIES = 1;
 const MAX_UPSTREAM_INTERRUPT_RECOVERIES = 2;
 const UPSTREAM_INTERRUPT_RECOVERY_BACKOFF_MS = 500;
+const SHUTDOWN_DRAIN_POLL_MS = 25;
+
+function normalizeOptionalText(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+}
 
 function buildRunEventSessionFields(session) {
   return {
@@ -110,11 +116,31 @@ export async function startPromptRun(
   };
   markPromptAccepted(pool.serviceState);
   let run = null;
+  let lifecycleAttached = false;
+  let resolveLifecycleGate = null;
+  let lifecycleGateSettled = false;
+  const settleLifecycleGate = (value) => {
+    if (lifecycleGateSettled || typeof resolveLifecycleGate !== "function") {
+      return;
+    }
+
+    lifecycleGateSettled = true;
+    resolveLifecycleGate(value);
+  };
 
   const state = {
     sessionKey,
     status: "starting",
-    threadId: session.codex_thread_id ?? null,
+    providerSessionId:
+      session.provider_session_id
+      ?? session.last_context_snapshot?.session_id
+      ?? session.last_context_snapshot?.sessionId
+      ?? null,
+    threadId:
+      session.codex_thread_id
+      ?? session.last_context_snapshot?.thread_id
+      ?? session.last_context_snapshot?.threadId
+      ?? null,
     activeTurnId: null,
     rolloutPath: session.codex_rollout_path ?? null,
     contextSnapshot: session.last_context_snapshot ?? null,
@@ -130,7 +156,12 @@ export async function startPromptRun(
     interruptRequested: false,
     interruptSignalSent: false,
     finalizing: false,
-    resumeMode: session.codex_thread_id ? "thread-resume" : null,
+    resumeMode:
+      session.codex_thread_id
+      || session.last_context_snapshot?.thread_id
+      || session.last_context_snapshot?.threadId
+        ? "thread-resume"
+        : null,
     lastTokenUsage: session.last_token_usage ?? null,
     latestCommand: null,
     progress: null,
@@ -172,12 +203,30 @@ export async function startPromptRun(
       getSessionUiLanguage(session),
     );
 
+    if (pool.shuttingDown) {
+      releaseStartReservation();
+      settleStartingRun();
+      await progress.dismiss().catch(() => false);
+      await pool.sessionStore.patch(session, {
+        last_user_prompt: exchangePrompt,
+        last_run_status: "interrupted",
+        spike_run_owner_generation_id: null,
+        last_progress_message_id: null,
+      });
+      return {
+        ok: false,
+        reason: "shutting-down",
+      };
+    }
+
     run = {
       sessionKey,
       session,
       child: null,
       controller: null,
-      lifecyclePromise: null,
+      lifecyclePromise: new Promise((resolve) => {
+        resolveLifecycleGate = resolve;
+      }),
       exchangePrompt,
       includeTopicContext,
       state,
@@ -211,7 +260,7 @@ export async function startPromptRun(
 
     let resultPersisted = false;
     let spikeFinalEventEmitted = false;
-    run.lifecyclePromise = pool.executeRunLifecycle(run, {
+    const lifecyclePromise = pool.executeRunLifecycle(run, {
       prompt,
       attachments,
       includeTopicContext,
@@ -229,8 +278,15 @@ export async function startPromptRun(
           );
         const interruptedResult =
           state.interruptRequested ||
+          (
+            result?.preserveContinuity === true &&
+            result?.abortReason === "resume_unavailable"
+          ) ||
           result?.interrupted === true ||
           result?.signal === "SIGINT";
+        const resumePendingResult =
+          result?.preserveContinuity === true &&
+          result?.abortReason === "resume_unavailable";
         state.status = completedWithReply
           ? "completed"
           : interruptedResult
@@ -272,7 +328,7 @@ export async function startPromptRun(
           state.status === "completed"
             ? state.finalAgentMessage ||
               (isEnglish(getSessionUiLanguage(run.session)) ? "Done." : "Готово.")
-            : state.status === "interrupted"
+            : state.status === "interrupted" && !resumePendingResult
               ? buildInterruptedText(getSessionUiLanguage(run.session), {
                 requestedByUser: state.interruptRequested,
                 interruptReason: result?.interruptReason || null,
@@ -284,16 +340,41 @@ export async function startPromptRun(
             : finalReplyText;
         state.finalAgentMessage = finalReplyText;
         state.finalAgentMessageSource = finalReplyDeliveryText;
-        const clearStoredThreadState = state.status === "interrupted";
+        const clearStoredThreadState =
+          state.status === "failed" && result?.preserveContinuity !== true;
+        const persistedThreadId = clearStoredThreadState
+          ? null
+          : state.threadId || run.session.codex_thread_id || null;
+        const persistedProviderSessionId = clearStoredThreadState
+          ? null
+          : state.providerSessionId
+            || run.session.provider_session_id
+            || state.contextSnapshot?.session_id
+            || null;
+        const persistedRolloutPath = clearStoredThreadState
+          ? null
+          : state.rolloutPath
+            || state.contextSnapshot?.rollout_path
+            || run.session.codex_rollout_path
+            || null;
+        const persistedContextSnapshot = clearStoredThreadState
+          ? null
+          : state.contextSnapshot
+            || run.session.last_context_snapshot
+            || null;
 
         run.session = await pool.sessionStore.patch(run.session, {
-          codex_thread_id: clearStoredThreadState ? null : state.threadId,
-          ...(clearStoredThreadState
+          ...(persistedProviderSessionId
             ? {
-                codex_rollout_path: null,
-                last_context_snapshot: null,
+                runtime_provider: "codex",
+                provider_session_id: persistedProviderSessionId,
               }
-            : {}),
+            : clearStoredThreadState
+              ? { provider_session_id: null }
+              : {}),
+          codex_thread_id: persistedThreadId,
+          codex_rollout_path: persistedRolloutPath,
+          last_context_snapshot: persistedContextSnapshot,
           last_user_prompt: run.exchangePrompt,
           last_agent_reply: finalReplyText,
           last_run_status: state.status,
@@ -439,6 +520,9 @@ export async function startPromptRun(
       .catch((error) => {
         console.error(`run lifecycle failed for ${sessionKey}: ${error.message}`);
       });
+    lifecycleAttached = true;
+    run.lifecyclePromise = lifecyclePromise;
+    settleLifecycleGate(lifecyclePromise);
 
     return {
       ok: true,
@@ -448,7 +532,8 @@ export async function startPromptRun(
       topicId: message.message_thread_id,
     };
   } catch (error) {
-    if (run && !run.lifecyclePromise) {
+    settleLifecycleGate();
+    if (run && !lifecycleAttached) {
       pool.stopProgressLoop(run);
       if (pool.activeRuns.get(sessionKey) === run) {
         pool.activeRuns.delete(sessionKey);
@@ -487,13 +572,29 @@ export function interrupt(pool, sessionKey) {
   );
 
   const nativeInterruptRequested =
-    typeof run.controller?.interrupt === "function" &&
-    run.state.threadId &&
-    run.state.activeTurnId;
+    typeof run.controller?.interrupt === "function";
   if (nativeInterruptRequested) {
-    void run.controller.interrupt({
-      threadId: run.state.threadId,
-      turnId: run.state.activeTurnId,
+    const nativeInterruptResult = Promise.resolve(run.controller.interrupt({
+      threadId: run.state.threadId || undefined,
+      turnId: run.state.activeTurnId || undefined,
+    })).catch(() => false);
+    void nativeInterruptResult.then((requested) => {
+      if (
+        requested !== false ||
+        pool.activeRuns.get(sessionKey) !== run ||
+        !run.child ||
+        run.state.interruptSignalSent
+      ) {
+        return;
+      }
+
+      run.state.interruptSignalSent = true;
+      signalChildProcessGroup(run.child, "SIGINT");
+      setTimeout(() => {
+        if (pool.activeRuns.get(sessionKey) === run && run.child) {
+          signalChildProcessGroup(run.child, "SIGKILL");
+        }
+      }, 5000).unref();
     });
   }
 
@@ -530,36 +631,63 @@ export function interrupt(pool, sessionKey) {
   return true;
 }
 
-export async function shutdown(pool) {
-  for (const [sessionKey] of pool.activeRuns.entries()) {
-    pool.interrupt(sessionKey);
-  }
+async function waitForShutdownDrain(pool, timeoutMs = null) {
+  const hasDeadline = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  const deadline = hasDeadline ? Date.now() + timeoutMs : null;
 
-  const startingPromises = [...pool.startingRunPromises.values()];
-  if (startingPromises.length > 0) {
-    await Promise.allSettled(startingPromises);
-  }
+  while (true) {
+    if (pool.activeRuns.size === 0 && pool.startingRuns.size === 0) {
+      return true;
+    }
 
-  for (const [sessionKey] of pool.activeRuns.entries()) {
-    pool.interrupt(sessionKey);
-  }
+    if (deadline !== null && Date.now() >= deadline) {
+      return false;
+    }
 
-  for (const run of pool.activeRuns.values()) {
-    while (
-      pool.activeRuns.get(run.sessionKey) === run &&
-      !run.lifecyclePromise
-    ) {
-      await sleep(25);
+    const nextWaitMs = deadline === null
+      ? SHUTDOWN_DRAIN_POLL_MS
+      : Math.max(1, Math.min(SHUTDOWN_DRAIN_POLL_MS, deadline - Date.now()));
+    const waitPromises = [
+      ...pool.startingRunPromises.values(),
+      ...[...pool.activeRuns.values()]
+        .map((run) => run.lifecyclePromise)
+        .filter(Boolean),
+    ];
+    if (waitPromises.length > 0) {
+      await Promise.race([
+        Promise.allSettled(waitPromises),
+        sleep(nextWaitMs),
+      ]);
+    } else {
+      await sleep(nextWaitMs);
     }
   }
+}
 
-  const lifecyclePromises = [...pool.activeRuns.values()]
-    .map((run) => run.lifecyclePromise)
-    .filter(Boolean);
+export async function shutdown(
+  pool,
+  { drainTimeoutMs = 0, interruptActiveRuns = true } = {},
+) {
+  pool.shuttingDown = true;
 
-  if (lifecyclePromises.length > 0) {
-    await Promise.allSettled(lifecyclePromises);
+  if (drainTimeoutMs > 0) {
+    const drained = await waitForShutdownDrain(pool, drainTimeoutMs);
+    if (drained || !interruptActiveRuns) {
+      return;
+    }
+  } else if (!interruptActiveRuns) {
+    await waitForShutdownDrain(pool, null);
+    return;
   }
+
+  for (const [sessionKey] of pool.activeRuns.entries()) {
+    pool.interrupt(sessionKey);
+  }
+
+  const settleWindowMs = drainTimeoutMs > 0
+    ? drainTimeoutMs
+    : null;
+  await waitForShutdownDrain(pool, settleWindowMs);
 }
 
 export async function executeRunLifecycle(
@@ -577,19 +705,54 @@ export async function executeRunLifecycle(
     getSessionUiLanguage(run.session),
   );
   const sessionThreadId =
-    run.session.last_run_status === "interrupted"
-      ? null
-      : run.session.codex_thread_id ?? null;
-  const initialPrompt = sessionThreadId
-    ? promptWithAttachments
-    : await pool.buildFreshBriefBootstrapPrompt(run, promptWithAttachments);
+    run.session.codex_thread_id
+    ?? run.session.last_context_snapshot?.thread_id
+    ?? run.session.last_context_snapshot?.threadId
+    ?? null;
+  const freshBriefBootstrap = shouldStartFreshFromCompact(run.session);
+  const initialPrompt = freshBriefBootstrap
+    ? await pool.buildFreshBriefBootstrapPrompt(run, promptWithAttachments)
+    : promptWithAttachments;
 
   return pool.executeRunAttempts(run, {
     prompt: initialPrompt,
     sessionThreadId,
+    skipThreadHistoryLookup: freshBriefBootstrap,
     attachments,
     includeTopicContext,
   });
+}
+
+function parseTimestampMs(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function shouldStartFreshFromCompact(session) {
+  const lastCompactedAtMs = parseTimestampMs(session?.last_compacted_at);
+  if (!lastCompactedAtMs || !String(session?.last_compaction_reason || "").trim()) {
+    return false;
+  }
+
+  const hasContinuitySurface = Boolean(
+    session?.codex_thread_id
+    || session?.provider_session_id
+    || session?.codex_rollout_path
+    || session?.last_context_snapshot?.thread_id
+    || session?.last_context_snapshot?.threadId
+    || session?.last_context_snapshot?.session_id,
+  );
+  if (hasContinuitySurface) {
+    return false;
+  }
+
+  const lastRunStartedAtMs = parseTimestampMs(session?.last_run_started_at);
+  return !lastRunStartedAtMs || lastRunStartedAtMs <= lastCompactedAtMs;
 }
 
 export async function buildFreshBriefBootstrapPrompt(pool, run, prompt) {
@@ -619,6 +782,7 @@ export async function executeRunAttempts(
     prompt,
     attachments = [],
     sessionThreadId,
+    skipThreadHistoryLookup = false,
     includeTopicContext = true,
   },
 ) {
@@ -627,6 +791,7 @@ export async function executeRunAttempts(
     .filter((attachment) => attachment?.is_image && attachment?.file_path)
     .map((attachment) => attachment.file_path);
   let nextSessionThreadId = sessionThreadId;
+  let nextSkipThreadHistoryLookup = skipThreadHistoryLookup;
   let resumeRetryCount = 0;
   let recoveredLiveSteerCount = 0;
   let recoveredInterruptedRunCount = 0;
@@ -656,7 +821,55 @@ export async function executeRunAttempts(
         : nextPrompt,
       imagePaths,
       sessionThreadId: nextSessionThreadId,
+      skipThreadHistoryLookup: nextSkipThreadHistoryLookup,
     });
+    const resultContextSnapshot = result?.contextSnapshot || null;
+    const nextProviderSessionId =
+      result?.providerSessionId
+      || resultContextSnapshot?.session_id
+      || null;
+    const nextRolloutPath =
+      result?.rolloutPath
+      || resultContextSnapshot?.rollout_path
+      || null;
+    if (nextProviderSessionId || nextRolloutPath || resultContextSnapshot) {
+      const patch = {};
+      if (
+        nextProviderSessionId &&
+        nextProviderSessionId !== run.session.provider_session_id
+      ) {
+        patch.runtime_provider = "codex";
+        patch.provider_session_id = nextProviderSessionId;
+      }
+      if (
+        nextRolloutPath &&
+        nextRolloutPath !== run.session.codex_rollout_path
+      ) {
+        patch.codex_rollout_path = nextRolloutPath;
+      }
+      if (
+        resultContextSnapshot &&
+        JSON.stringify(run.session.last_context_snapshot ?? null)
+          !== JSON.stringify(resultContextSnapshot)
+      ) {
+        patch.last_context_snapshot = resultContextSnapshot;
+      }
+      if (
+        resultContextSnapshot?.last_token_usage &&
+        JSON.stringify(run.session.last_token_usage ?? null)
+          !== JSON.stringify(resultContextSnapshot.last_token_usage)
+      ) {
+        patch.last_token_usage = resultContextSnapshot.last_token_usage;
+      }
+      if (Object.keys(patch).length > 0) {
+        run.session = await pool.sessionStore.patch(run.session, patch);
+      }
+      run.state.providerSessionId =
+        nextProviderSessionId || run.state.providerSessionId;
+      run.state.rolloutPath = nextRolloutPath || run.state.rolloutPath;
+      run.state.contextSnapshot =
+        resultContextSnapshot || run.state.contextSnapshot;
+    }
     await noteRunEventBestEffort(pool, "run.attempt", {
       ...buildRunEventSessionFields(run.session),
       attempt: recoveredInterruptedRunCount + 1,
@@ -679,10 +892,17 @@ export async function executeRunAttempts(
       recoveredInterruptedRunCount,
     });
     if (interruptedRecoveryKind) {
+      const persistedSessionThreadId = normalizeOptionalText(
+        run.session?.codex_thread_id,
+      );
       const priorThreadId =
-        result?.threadId ||
-        run.state.threadId ||
-        run.session?.codex_thread_id ||
+        normalizeOptionalText(result?.threadId) ||
+        (
+          persistedSessionThreadId
+          && normalizeOptionalText(run.state.threadId) === persistedSessionThreadId
+            ? persistedSessionThreadId
+            : null
+        ) ||
         null;
       await noteRunEventBestEffort(pool, "run.recovery", {
         ...buildRunEventSessionFields(run.session),
@@ -704,11 +924,23 @@ export async function executeRunAttempts(
       });
       nextPrompt = fallback.prompt;
       nextSessionThreadId = fallback.sessionThreadId;
+      nextSkipThreadHistoryLookup = fallback.skipThreadHistoryLookup ?? false;
       continue;
     }
 
     if (!result.resumeReplacement || run.state.interruptRequested) {
       return result;
+    }
+
+    const replacementThreadId = normalizeOptionalText(
+      result.resumeReplacement?.replacementThreadId,
+    );
+    if (replacementThreadId && replacementThreadId !== nextSessionThreadId) {
+      nextSessionThreadId = replacementThreadId;
+      run.state.threadId = replacementThreadId;
+      run.session = await pool.sessionStore.patch(run.session, {
+        codex_thread_id: replacementThreadId,
+      });
     }
 
     if (
@@ -724,11 +956,9 @@ export async function executeRunAttempts(
       continue;
     }
 
-    nextPrompt = await pool.prepareResumeFallback(run, {
-      prompt,
+    return pool.prepareResumeFallback(run, {
       resumeReplacement: result.resumeReplacement,
     });
-    nextSessionThreadId = null;
   }
 }
 
@@ -744,13 +974,15 @@ function classifyInterruptedRunRecovery(
     return null;
   }
 
+  const transportResumePending =
+    result?.resumeReplacement?.reason === "transport-disconnect";
   const interruptedResult =
     result?.interrupted === true ||
     result?.signal === "SIGINT";
   if (
     !interruptedResult ||
     result?.interruptReason !== "upstream" ||
-    result?.abortReason !== "interrupted"
+    (!transportResumePending && result?.abortReason !== "interrupted")
   ) {
     return null;
   }
@@ -768,7 +1000,9 @@ function classifyInterruptedRunRecovery(
     return "live-steer-restart";
   }
 
-  return "upstream-restart";
+  return transportResumePending
+    ? "transport-resume"
+    : "upstream-restart";
 }
 
 async function prepareInterruptedRunFallback(
@@ -780,15 +1014,28 @@ async function prepareInterruptedRunFallback(
     typeof priorThreadId === "string" && priorThreadId.trim()
       ? priorThreadId.trim()
       : null;
+  const shouldClearContinuityHints = !resumeThreadId;
   run.session = await pool.sessionStore.patch(run.session, {
     codex_thread_id: resumeThreadId,
-    codex_rollout_path: null,
-    last_context_snapshot: null,
+    ...(shouldClearContinuityHints
+      ? {
+        provider_session_id: null,
+        codex_rollout_path: null,
+        last_context_snapshot: null,
+      }
+      : {}),
   });
+  run.state.providerSessionId = shouldClearContinuityHints
+    ? null
+    : (run.session.provider_session_id ?? run.state.providerSessionId);
   run.state.threadId = resumeThreadId;
   run.state.activeTurnId = null;
-  run.state.rolloutPath = null;
-  run.state.contextSnapshot = null;
+  run.state.rolloutPath = shouldClearContinuityHints
+    ? null
+    : (run.session.codex_rollout_path ?? run.state.rolloutPath);
+  run.state.contextSnapshot = shouldClearContinuityHints
+    ? null
+    : (run.session.last_context_snapshot ?? run.state.contextSnapshot);
   run.state.status = "rebuilding";
   run.state.resumeMode = recoveryKind;
   run.state.latestSummary = recoveryKind;
@@ -801,20 +1048,27 @@ async function prepareInterruptedRunFallback(
   run.state.progress.queueUpdate(
     buildProgressText(run.state, getSessionUiLanguage(run.session)),
   );
+
   if (resumeThreadId) {
     return {
       prompt,
       sessionThreadId: resumeThreadId,
+      skipThreadHistoryLookup: false,
     };
   }
 
   return {
-    prompt: await pool.buildFreshBriefBootstrapPrompt(run, prompt),
+    prompt,
     sessionThreadId: null,
+    skipThreadHistoryLookup: true,
   };
 }
 
-export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionThreadId }) {
+export async function runAttempt(
+  pool,
+  run,
+  { prompt, imagePaths = [], sessionThreadId, skipThreadHistoryLookup = false },
+) {
   const { state } = run;
   const currentSession =
     (await pool.sessionStore.load(run.session.chat_id, run.session.topic_id)) ||
@@ -849,14 +1103,75 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
     lastEventKind: null,
     lastEventType: null,
   };
+  const applyRuntimeState = async ({
+    threadId,
+    activeTurnId,
+    providerSessionId,
+    rolloutPath,
+    contextSnapshot,
+  } = {}) => {
+    const nextThreadId = normalizeOptionalText(threadId);
+    const nextActiveTurnId = normalizeOptionalText(activeTurnId);
+    const nextProviderSessionId = normalizeOptionalText(providerSessionId);
+    const nextRolloutPath = normalizeOptionalText(rolloutPath);
+    const nextContextSnapshot = contextSnapshot ?? null;
+    const threadChanged =
+      nextThreadId &&
+      nextThreadId !== (state.threadId || run.session.codex_thread_id || null);
+    const patch = {};
+
+    if (nextThreadId) {
+      state.threadId = nextThreadId;
+      patch.codex_thread_id = nextThreadId;
+    }
+    if (nextActiveTurnId) {
+      state.activeTurnId = nextActiveTurnId;
+    }
+    if (nextProviderSessionId) {
+      state.providerSessionId = nextProviderSessionId;
+      if (nextProviderSessionId !== run.session.provider_session_id) {
+        patch.runtime_provider = "codex";
+        patch.provider_session_id = nextProviderSessionId;
+      }
+    }
+    if (nextRolloutPath) {
+      state.rolloutPath = nextRolloutPath;
+      if (nextRolloutPath !== run.session.codex_rollout_path) {
+        patch.codex_rollout_path = nextRolloutPath;
+      }
+    } else if (threadChanged) {
+      state.rolloutPath = null;
+      patch.codex_rollout_path = null;
+    }
+    if (nextContextSnapshot) {
+      state.contextSnapshot = nextContextSnapshot;
+      if (
+        JSON.stringify(run.session.last_context_snapshot ?? null)
+          !== JSON.stringify(nextContextSnapshot)
+      ) {
+        patch.last_context_snapshot = nextContextSnapshot;
+      }
+    } else if (threadChanged) {
+      state.contextSnapshot = null;
+      patch.last_context_snapshot = null;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      run.session = await pool.sessionStore.patch(run.session, patch);
+    }
+  };
   const task = pool.runTask({
     codexBinPath: pool.config.codexBinPath,
     cwd: run.session.workspace_binding.cwd,
     prompt,
     imagePaths,
+    sessionKey: run.session.session_key,
     sessionThreadId,
+    providerSessionId: state.providerSessionId,
+    skipThreadHistoryLookup,
     model: runtimeProfile.model,
     reasoningEffort: runtimeProfile.reasoningEffort,
+    onRuntimeState: (payload) => applyRuntimeState(payload),
     onEvent: async (summary, event) => {
       const primaryThreadEvent = summary.isPrimaryThreadEvent !== false;
       attemptInsight.lastEventKind = summary.kind || null;
@@ -976,49 +1291,51 @@ export async function runAttempt(pool, run, { prompt, imagePaths = [], sessionTh
 export async function prepareResumeFallback(
   pool,
   run,
-  { prompt, resumeReplacement },
+  { resumeReplacement },
 ) {
   const current =
     (await pool.sessionStore.load(run.session.chat_id, run.session.topic_id)) ||
     run.session;
-  const compacted = pool.sessionCompactor
-    ? await pool.sessionCompactor.compact(current, {
-        reason: `resume-fallback:${resumeReplacement.requestedThreadId}`,
-      })
-    : null;
-  const compactState = compacted
-    ? {
-        activeBrief: compacted.activeBrief,
-        exchangeLog: Array.from(
-          { length: compacted.exchangeLogEntries ?? 0 },
-          () => null,
-        ),
-      }
-    : await pool.sessionStore.loadCompactState(current);
-  const compactSummary = summarizeCompactState(compactState);
+  const requestedThreadId =
+    typeof resumeReplacement?.requestedThreadId === "string" &&
+    resumeReplacement.requestedThreadId.trim()
+      ? resumeReplacement.requestedThreadId.trim()
+      : null;
 
-  run.session = await pool.sessionStore.patch(compacted?.session || current, {
-    codex_thread_id: null,
-    codex_rollout_path: null,
-    last_context_snapshot: null,
-  });
-  run.state.threadId = null;
-  run.state.status = "rebuilding";
-  run.state.resumeMode = "compact-rebuild";
+  run.session = current;
+  run.state.providerSessionId =
+    current.provider_session_id ?? run.state.providerSessionId;
+  run.state.threadId =
+    current.codex_thread_id ?? requestedThreadId ?? run.state.threadId;
+  run.state.rolloutPath = current.codex_rollout_path ?? run.state.rolloutPath;
+  run.state.contextSnapshot =
+    current.last_context_snapshot ?? run.state.contextSnapshot;
+  run.state.resumeMode = "resume-pending";
   run.state.latestSummary =
-    `brief-refresh:${compactSummary.exchangeLogEntries}`;
-  run.state.latestSummaryKind = "rebuild";
+    requestedThreadId
+      ? `resume-unavailable:${requestedThreadId}`
+      : "resume-unavailable";
+  run.state.latestSummaryKind = "event";
   run.state.latestProgressMessage = null;
   run.state.latestCommandOutput = null;
   run.state.latestCommand = null;
   run.state.finalAgentMessage = null;
-  run.state.progress.queueUpdate(
-    buildProgressText(run.state, getSessionUiLanguage(run.session)),
-  );
 
-  return buildCompactResumePrompt({
-    session: current,
-    prompt,
-    compactState,
-  });
+  return {
+    exitCode: 1,
+    signal: null,
+    threadId: run.state.threadId,
+    providerSessionId: run.state.providerSessionId,
+    rolloutPath: run.state.rolloutPath,
+    contextSnapshot: run.state.contextSnapshot,
+    warnings: [
+      requestedThreadId
+        ? `Native Codex resume is unavailable for thread ${requestedThreadId}; continuity metadata was preserved for a later /resume.`
+        : "Native Codex resume is unavailable right now; continuity metadata was preserved for a later /resume.",
+    ],
+    abortReason: "resume_unavailable",
+    interrupted: false,
+    resumeReplacement: null,
+    preserveContinuity: true,
+  };
 }

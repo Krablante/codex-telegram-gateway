@@ -10,12 +10,12 @@ test("extractUpdateSessionSelector reads topic selectors from messages and callb
   assert.deepEqual(
     extractUpdateSessionSelector({
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 2203,
       },
     }),
     {
-      chatId: "-1001234567890",
+      chatId: "-1003577434463",
       topicId: "2203",
     },
   );
@@ -24,13 +24,13 @@ test("extractUpdateSessionSelector reads topic selectors from messages and callb
     extractUpdateSessionSelector({
       callback_query: {
         message: {
-          chat: { id: -1001234567890 },
+          chat: { id: -1003577434463 },
           message_thread_id: 2204,
         },
       },
     }),
     {
-      chatId: "-1001234567890",
+      chatId: "-1003577434463",
       topicId: "2204",
     },
   );
@@ -40,7 +40,7 @@ test("resolveSpikeUpdateRoute forwards running foreign-owned topics to a live ow
   const route = await resolveSpikeUpdateRoute({
     update: {
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 2203,
       },
     },
@@ -76,7 +76,7 @@ test("resolveSpikeUpdateRoute falls back local when the owner generation is stal
   const route = await resolveSpikeUpdateRoute({
     update: {
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 2203,
       },
     },
@@ -110,7 +110,7 @@ test("resolveSpikeUpdateRoute trusts the verified generation check when availabl
   const route = await resolveSpikeUpdateRoute({
     update: {
       message: {
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
         message_thread_id: 2203,
       },
     },

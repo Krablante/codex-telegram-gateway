@@ -18,13 +18,13 @@ test("ZooService does not save a snapshot for a pet deleted during refresh", asy
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/workspace/project-a",
-    repo_root: "/workspace/project-a",
-    cwd: "/workspace/project-a",
+    resolved_path: "/home/bloob/atlas/project-a",
+    repo_root: "/home/bloob/atlas/project-a",
+    cwd: "/home/bloob/atlas/project-a",
     creature_kind: "rabbit",
   });
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -53,7 +53,7 @@ test("ZooService does not save a snapshot for a pet deleted during refresh", asy
   analysis.resolve({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/workspace/project-a",
+    resolved_path: "/home/bloob/atlas/project-a",
     creature_kind: "rabbit",
     mood: "alert",
     findings: ["one"],
@@ -97,13 +97,13 @@ test("ZooService clears stale pet selection when a deleted pet refresh fails", a
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/workspace/project-a",
-    repo_root: "/workspace/project-a",
-    cwd: "/workspace/project-a",
+    resolved_path: "/home/bloob/atlas/project-a",
+    repo_root: "/home/bloob/atlas/project-a",
+    cwd: "/home/bloob/atlas/project-a",
     creature_kind: "rabbit",
   });
   await zooStore.patchTopic({
-    chat_id: "-1001234567890",
+    chat_id: "-1003577434463",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",

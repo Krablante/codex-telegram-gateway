@@ -13,21 +13,21 @@ import {
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
 
-test("CodexWorkerPool starts a fresh continuation after an interrupted run", async () => {
+test("CodexWorkerPool resumes the stored thread after an interrupted run", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 2054,
     topicName: "Interrupted continuation",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
@@ -98,7 +98,7 @@ test("CodexWorkerPool starts a fresh continuation after an interrupted run", asy
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
   assert.equal(runCalls.length, 1);
-  assert.equal(runCalls[0].sessionThreadId, null);
+  assert.equal(runCalls[0].sessionThreadId, "interrupted-thread");
   assert.match(runCalls[0].prompt, /Resume now with the new plan\./u);
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
@@ -113,15 +113,15 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 492,
     topicName: "Termination hook test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -200,7 +200,7 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
     session,
     prompt: "Run the termination hook test.",
     message: {
-      chat: { id: -1001234567890 },
+      chat: { id: -1003577434463 },
       message_id: 7001,
       message_thread_id: 492,
     },
@@ -216,4 +216,3 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
     },
   ]);
 });
-

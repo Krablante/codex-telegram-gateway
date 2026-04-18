@@ -52,10 +52,10 @@ export function createServiceState(overrides = {}) {
 
 export function createWorkspaceBinding(overrides = {}) {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
     ...overrides,
   };
 }
@@ -79,7 +79,7 @@ export async function createTempSessionStore(
 export async function createSession(
   sessionStore,
   {
-    chatId = -1001234567890,
+    chatId = -1003577434463,
     topicId = 144,
     topicName = "Worker pool test",
     createdVia = "command/new",

@@ -2,6 +2,7 @@ import {
   normalizePromptSuffixText,
   PROMPT_SUFFIX_MAX_CHARS,
 } from "../session-manager/prompt-suffix.js";
+import { buildPromptSuffixMessage } from "./command-handlers/topic-commands.js";
 import { parseWaitCommandArgs } from "./command-parsing.js";
 import {
   buildGlobalInvalidCustomWaitMessage,
@@ -195,15 +196,28 @@ export async function maybeHandleGlobalControlReply({
     }
   }
 
-  const commandText =
-    pendingInput.kind === "suffix_text"
-      ? `/suffix global ${text}`
-      : `/wait global ${text}`;
-  await dispatchCommand({
-    actor: message.from,
-    chat: message.chat,
-    commandText,
-  });
+  let statusMessage = null;
+  if (
+    pendingInput.kind === "suffix_text" &&
+    typeof sessionService?.updateGlobalPromptSuffix === "function"
+  ) {
+    const updated = await sessionService.updateGlobalPromptSuffix({
+      text: normalizePromptSuffixText(text),
+      enabled: true,
+    });
+    statusMessage = buildPromptSuffixMessage(
+      updated,
+      "Global prompt suffix updated.",
+      "global",
+      language,
+    );
+  } else {
+    await dispatchCommand({
+      actor: message.from,
+      chat: message.chat,
+      commandText: `/wait global ${text}`,
+    });
+  }
   await globalControlPanelStore.patch({
     pending_input: null,
     active_screen: pendingInput.screen || controlState.active_screen,
@@ -219,6 +233,9 @@ export async function maybeHandleGlobalControlReply({
     promptFragmentAssembler,
     sessionService,
   });
+  if (statusMessage) {
+    await sendStatusMessage(api, message.chat.id, statusMessage);
+  }
   return {
     handled: true,
     reason: "global-control-pending-input-applied",

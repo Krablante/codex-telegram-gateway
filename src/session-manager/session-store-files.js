@@ -14,6 +14,10 @@ import {
   stripLegacyMetaFields,
 } from "./session-store-common.js";
 
+function toStoredRelativePath(fromPath, toPath) {
+  return path.relative(fromPath, toPath).split(path.sep).join(path.posix.sep);
+}
+
 export async function loadSessionMeta(store, chatId, topicId) {
   return readMetaJson(store.getMetaPath(chatId, topicId));
 }
@@ -212,7 +216,7 @@ export async function writeArtifact(
   const artifact = {
     kind,
     file_name: fileName,
-    relative_path: path.relative(
+    relative_path: toStoredRelativePath(
       store.getSessionDir(current.chat_id, current.topic_id),
       filePath,
     ),

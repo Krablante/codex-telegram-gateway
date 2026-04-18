@@ -13,17 +13,17 @@ import {
 test("handleIncomingMessage shows /q status with queued prompt previews", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -39,8 +39,8 @@ test("handleIncomingMessage shows /q status with queued prompt previews", async 
     message: {
       text: "/q status",
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 610,
       message_thread_id: 77,
     },
@@ -75,20 +75,74 @@ test("handleIncomingMessage shows /q status with queued prompt previews", async 
   assert.doesNotMatch(sent[0].text, /<code>/u);
 });
 
+test("handleIncomingMessage refuses to queue prompts into a purged topic", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 1 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/q continue",
+      entities: [{ type: "bot_command", offset: 0, length: 2 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_id: 6111,
+      message_thread_id: 771,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return {
+          session_key: "-1003577434463:771",
+          lifecycle_state: "purged",
+          topic_name: "Purged queue topic",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async recordHandledSession() {},
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1003577434463:771",
+          lifecycle_state: "purged",
+          topic_name: "Purged queue topic",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {},
+  });
+
+  assert.equal(result.reason, "purged-session");
+  assert.match(sent[0].text, /очищена|cleared/i);
+});
+
 test("handleIncomingMessage deletes a queued prompt by position via /q delete", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -104,8 +158,8 @@ test("handleIncomingMessage deletes a queued prompt by position via /q delete", 
     message: {
       text: "/q delete 2",
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 611,
       message_thread_id: 77,
     },
@@ -144,17 +198,17 @@ test("handleIncomingMessage queues /q captioned media with attachments when the 
   const sent = [];
   const queued = [];
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -174,8 +228,8 @@ test("handleIncomingMessage queues /q captioned media with attachments when the 
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 612,
       message_thread_id: 77,
     },
@@ -258,17 +312,17 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
     longPromptThresholdChars: 3000,
   });
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
   const longHead = "A".repeat(3200);
@@ -342,8 +396,8 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
     message: {
       text: `/q ${longHead}`,
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 613,
       message_thread_id: 77,
     },
@@ -352,8 +406,8 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
     ...commonArgs,
     message: {
       text: "tail fragment",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 614,
       message_thread_id: 77,
     },
@@ -375,15 +429,15 @@ test("handleIncomingMessage buffers long /q prompts and queues the merged text o
 test("handleIncomingMessage stores prompt suffix text via /suffix", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
+    session_key: "-1003577434463:77",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -398,8 +452,8 @@ test("handleIncomingMessage stores prompt suffix text via /suffix", async () => 
     message: {
       text: "/suffix P.S.\nKeep it short.",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -457,8 +511,8 @@ test("handleIncomingMessage stores global prompt suffix text via /suffix global"
     message: {
       text: "/suffix global P.S.\nKeep it short everywhere.",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -504,16 +558,16 @@ test("handleIncomingMessage stores global prompt suffix text via /suffix global"
 test("handleIncomingMessage disables topic prompt suffix routing via /suffix topic off", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
+    session_key: "-1003577434463:77",
     prompt_suffix_topic_enabled: true,
     prompt_suffix_enabled: true,
     prompt_suffix_text: "TOPIC\nKeep it short.",
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -528,8 +582,8 @@ test("handleIncomingMessage disables topic prompt suffix routing via /suffix top
     message: {
       text: "/suffix topic off",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -569,5 +623,3 @@ test("handleIncomingMessage disables topic prompt suffix routing via /suffix top
   assert.match(sent[0].text, /scope: topic-routing/u);
   assert.match(sent[0].text, /status: off/u);
 });
-
-

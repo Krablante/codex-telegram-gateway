@@ -15,6 +15,10 @@ import {
   buildPurgeBusyMessage,
   handleIncomingMessage,
 } from "../src/telegram/command-router.js";
+import {
+  buildCompactAlreadyRunningMessage,
+  buildCompactQueuedHandoffMessage,
+} from "../src/telegram/command-handlers/topic-commands.js";
 
 const config = {
   telegramAllowedUserId: "5825672398",
@@ -226,10 +230,10 @@ test("handleIncomingMessage reuses the current topic binding for /new without re
     session_key: "-1003577434463:77",
     topic_id: "77",
     workspace_binding: {
-      repo_root: "/home/example/work",
-      cwd: "/home/example/work",
+      repo_root: "/home/bloob/atlas/work",
+      cwd: "/home/bloob/atlas/work",
       branch: "feature/demo",
-      worktree_path: "/home/example/work",
+      worktree_path: "/home/bloob/atlas/work",
     },
   });
   let ensuredSessionCount = 0;
@@ -1034,6 +1038,89 @@ test("handleIncomingMessage refuses /compact for purged sessions", async () => {
   });
 
   assert.equal(messages[0].text, buildPurgedSessionMessage(purgedSession));
+});
+
+test("handleIncomingMessage blocks /compact while the topic run is active", async () => {
+  const messages = [];
+  const session = buildSession({
+    last_run_status: "running",
+    session_owner_generation_id: "spike-gen-1",
+  });
+
+  await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        messages.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: buildTopicCommandMessage("/compact"),
+    serviceState: buildServiceState(),
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      isCompacting() {
+        return false;
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return { state: { status: "running" } };
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(messages[0].text, buildCompactAlreadyRunningMessage(session));
+});
+
+test("handleIncomingMessage blocks /compact while an Omni handoff is queued", async () => {
+  const messages = [];
+  const session = buildSession();
+
+  await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        messages.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: buildTopicCommandMessage("/compact"),
+    promptHandoffStore: {
+      async load() {
+        return {
+          mode: "continuation",
+          prompt: "Queued Omni continuation",
+        };
+      },
+    },
+    serviceState: buildServiceState(),
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      isCompacting() {
+        return false;
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(messages[0].text, buildCompactQueuedHandoffMessage(session));
 });
 
 test("handleIncomingMessage purges local state and acknowledges /purge", async () => {

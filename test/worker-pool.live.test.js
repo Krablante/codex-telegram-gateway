@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { CodexWorkerPool } from "../src/pty-worker/worker-pool.js";
+import { buildSleepCommandPrompt } from "../src/runtime/live-command-prompts.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
 
 const LIVE_TESTS_ENABLED = process.env.CODEX_LIVE_TESTS === "1";
@@ -28,7 +29,7 @@ async function waitFor(check, timeoutMs, label) {
 
 function buildParallelPrompt(token, sleepSecs = 3) {
   return [
-    `Run exactly this shell command first: sh -lc 'sleep ${sleepSecs}; pwd'`,
+    buildSleepCommandPrompt(sleepSecs),
     `After the command finishes, reply ONLY with ${token}.`,
     "Do not add any extra text.",
   ].join(" ");
@@ -36,7 +37,7 @@ function buildParallelPrompt(token, sleepSecs = 3) {
 
 function buildSteerablePrompt(baseToken, sleepSecs = 4) {
   return [
-    `Run exactly this shell command first: sh -lc 'sleep ${sleepSecs}; pwd'`,
+    buildSleepCommandPrompt(sleepSecs),
     `After the command finishes, reply ONLY with ${baseToken}.`,
     "If a later user message tells you to append another token, obey it and keep the final answer to a single line.",
     "Do not add any extra text.",
@@ -60,15 +61,15 @@ function buildMockApi(sentMessages) {
 
 async function createSession(sessionStore, topicId, topicName) {
   return sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId,
     topicName,
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 }
@@ -242,6 +243,190 @@ test(
       assert.match(meta.last_agent_reply, new RegExp(baseToken, "u"));
       assert.match(meta.last_agent_reply, new RegExp(steerToken, "u"));
       assert.equal(sentMessages.at(-1)?.reply_to_message_id, 1202);
+    } finally {
+      await workerPool.shutdown();
+      await fs.rm(sessionsRoot, {
+        recursive: true,
+        force: true,
+      });
+    }
+  },
+);
+
+test(
+  "live worker pool drains shutdown without interrupting a healthy Codex run",
+  { timeout: 180000, skip: !LIVE_TESTS_ENABLED, concurrency: false },
+  async () => {
+    const sessionsRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "codex-telegram-gateway-live-shutdown-drain-"),
+    );
+    const sessionStore = new SessionStore(sessionsRoot);
+    const sentMessages = [];
+    const serviceState = {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    };
+    const workerPool = new CodexWorkerPool({
+      api: buildMockApi(sentMessages),
+      config: {
+        codexBinPath: "codex",
+        maxParallelSessions: 1,
+      },
+      sessionStore,
+      serviceState,
+    });
+
+    try {
+      const stamp = Date.now();
+      const token = `LIVE_DRAIN_${stamp}`;
+      const session = await createSession(sessionStore, 4251, "Live Shutdown Drain");
+
+      const started = await workerPool.startPromptRun({
+        session,
+        prompt: buildParallelPrompt(token, 6),
+        message: {
+          message_id: 1251,
+          message_thread_id: 4251,
+        },
+      });
+
+      assert.equal(started.ok, true);
+      await waitFor(
+        () => workerPool.getActiveRun(session.session_key) !== null,
+        60000,
+        "live shutdown-drain run to start",
+      );
+
+      let settled = false;
+      const shutdownPromise = workerPool.shutdown({
+        interruptActiveRuns: false,
+      }).then(() => {
+        settled = true;
+      });
+
+      await sleep(1000);
+      assert.equal(settled, false);
+
+      const completedMeta = await waitFor(async () => {
+        const meta = await sessionStore.load(session.chat_id, session.topic_id);
+        if (
+          meta?.last_run_status !== "completed"
+          || !String(meta?.last_agent_reply || "").includes(token)
+        ) {
+          return null;
+        }
+
+        return meta;
+      }, 180000, "live shutdown-drain completion");
+
+      await shutdownPromise;
+
+      assert.equal(completedMeta.last_run_status, "completed");
+      assert.match(completedMeta.last_agent_reply, new RegExp(token, "u"));
+    } finally {
+      await workerPool.shutdown({
+        interruptActiveRuns: false,
+      });
+      await fs.rm(sessionsRoot, {
+        recursive: true,
+        force: true,
+      });
+    }
+  },
+);
+
+test(
+  "live worker pool resumes the same Codex session after a real interrupt",
+  { timeout: 240000, skip: !LIVE_TESTS_ENABLED, concurrency: false },
+  async () => {
+    const sessionsRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "codex-telegram-gateway-live-interrupt-"),
+    );
+    const sessionStore = new SessionStore(sessionsRoot);
+    const sentMessages = [];
+    const serviceState = {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    };
+    const workerPool = new CodexWorkerPool({
+      api: buildMockApi(sentMessages),
+      config: {
+        codexBinPath: "codex",
+        maxParallelSessions: 1,
+      },
+      sessionStore,
+      serviceState,
+    });
+
+    try {
+      const stamp = Date.now();
+      const session = await createSession(sessionStore, 4301, "Live Interrupt Resume");
+      const resumedToken = `LIVE_RESUME_${stamp}`;
+
+      const started = await workerPool.startPromptRun({
+        session,
+        prompt: buildParallelPrompt(`LIVE_INTERRUPT_BASE_${stamp}`, 20),
+        message: {
+          message_id: 1301,
+          message_thread_id: 4301,
+        },
+      });
+
+      assert.equal(started.ok, true);
+      await waitFor(
+        () => workerPool.getActiveRun(session.session_key) !== null,
+        60000,
+        "live interrupt run to start",
+      );
+      await waitFor(
+        () => {
+          const run = workerPool.getActiveRun(session.session_key);
+          return run?.state?.threadId || run?.state?.activeTurnId || null;
+        },
+        60000,
+        "live interrupt run thread",
+      );
+      await sleep(1000);
+      assert.equal(workerPool.interrupt(session.session_key), true);
+
+      const interruptedMeta = await waitFor(async () => {
+        const meta = await sessionStore.load(session.chat_id, session.topic_id);
+        if (meta?.last_run_status !== "interrupted") {
+          return null;
+        }
+
+        return meta;
+      }, 120000, "live interrupt completion");
+      const interruptedThreadId = interruptedMeta.codex_thread_id;
+
+      const resumedStart = await workerPool.startPromptRun({
+        session: interruptedMeta,
+        prompt: `Reply ONLY with ${resumedToken}.`,
+        message: {
+          message_id: 1302,
+          message_thread_id: 4301,
+        },
+      });
+
+      assert.equal(resumedStart.ok, true);
+
+      const completedMeta = await waitFor(async () => {
+        const meta = await sessionStore.load(session.chat_id, session.topic_id);
+        if (
+          meta?.last_run_status !== "completed"
+          || !String(meta?.last_agent_reply || "").includes(resumedToken)
+        ) {
+          return null;
+        }
+
+        return meta;
+      }, 180000, "live resume completion");
+
+      assert.equal(completedMeta.codex_thread_id, interruptedThreadId);
+      assert.match(completedMeta.last_agent_reply, new RegExp(resumedToken, "u"));
+      assert.equal(sentMessages.at(-1)?.reply_to_message_id, 1302);
     } finally {
       await workerPool.shutdown();
       await fs.rm(sessionsRoot, {

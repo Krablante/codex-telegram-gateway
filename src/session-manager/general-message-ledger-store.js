@@ -57,6 +57,24 @@ export class GeneralMessageLedgerStore {
   constructor(settingsRoot) {
     this.filePath = path.join(settingsRoot, GENERAL_MESSAGE_LEDGER_FILE_NAME);
     this.cachedState = null;
+    this.writeChain = null;
+  }
+
+  async runExclusive(operation) {
+    const previous = this.writeChain || Promise.resolve();
+    const current = previous
+      .catch(() => {})
+      .then(operation);
+
+    this.writeChain = current;
+
+    try {
+      return await current;
+    } finally {
+      if (this.writeChain === current) {
+        this.writeChain = null;
+      }
+    }
   }
 
   async load({ force = false } = {}) {
@@ -84,7 +102,7 @@ export class GeneralMessageLedgerStore {
     }
   }
 
-  async save(nextState) {
+  async saveUnlocked(nextState) {
     const normalized = normalizeGeneralMessageLedgerState({
       ...nextState,
       updated_at: new Date().toISOString(),
@@ -98,20 +116,46 @@ export class GeneralMessageLedgerStore {
     return cloneJson(this.cachedState);
   }
 
+  async save(nextState) {
+    return this.runExclusive(() => this.saveUnlocked(nextState));
+  }
+
+  async patchWithCurrent(patch) {
+    return this.runExclusive(async () => {
+      const current = await this.load({ force: true });
+      const resolvedPatch =
+        typeof patch === "function"
+          ? await patch(current)
+          : patch;
+      if (resolvedPatch === null || resolvedPatch === undefined) {
+        return cloneJson(current);
+      }
+      if (
+        typeof resolvedPatch !== "object"
+        || Array.isArray(resolvedPatch)
+      ) {
+        throw new Error("GeneralMessageLedgerStore patch must be an object or null");
+      }
+
+      return this.saveUnlocked({
+        ...current,
+        ...resolvedPatch,
+      });
+    });
+  }
+
   async trackMessageId(messageId) {
     const normalized = normalizeInteger(messageId);
     if (!normalized) {
       return this.load();
     }
 
-    const current = await this.load();
-    return this.save({
-      ...current,
+    return this.patchWithCurrent((current) => ({
       tracked_message_ids: normalizeTrackedMessageIds([
         ...current.tracked_message_ids,
         normalized,
       ]),
-    });
+    }));
   }
 
   async forgetMessageIds(messageIds) {
@@ -120,12 +164,10 @@ export class GeneralMessageLedgerStore {
       return this.load();
     }
 
-    const current = await this.load();
-    return this.save({
-      ...current,
+    return this.patchWithCurrent((current) => ({
       tracked_message_ids: current.tracked_message_ids.filter(
         (messageId) => !removeIds.has(messageId),
       ),
-    });
+    }));
   }
 }

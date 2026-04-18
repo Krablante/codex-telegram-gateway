@@ -607,6 +607,25 @@ export function buildCompactAlreadyRunningMessage(
       ].join("\n");
 }
 
+export function buildCompactQueuedHandoffMessage(
+  session,
+  language = getSessionUiLanguage(session),
+) {
+  return isEnglish(language)
+    ? [
+        "Compaction is blocked while an Omni continuation is still queued.",
+        "",
+        `session_key: ${session.session_key}`,
+        "Let the queued continuation start first or clear /auto before compacting.",
+      ].join("\n")
+    : [
+        "Нельзя сделать compact, пока ещё стоит в очереди Omni continuation.",
+        "",
+        `session_key: ${session.session_key}`,
+        "Сначала дай queued continuation стартовать или отключи /auto, и потом делай compact.",
+      ].join("\n");
+}
+
 export function buildCompactFailureMessage(
   session,
   error,

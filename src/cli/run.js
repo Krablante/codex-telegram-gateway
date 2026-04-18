@@ -1,8 +1,11 @@
-import crypto from "node:crypto";
 import process from "node:process";
 
 import { CodexWorkerPool } from "../pty-worker/worker-pool.js";
 import { markPollError } from "../runtime/service-state.js";
+import {
+  createReplacementGenerationId,
+  resolveCurrentGenerationId,
+} from "../runtime/service-generation-id.js";
 import { syncTelegramCommandCatalog } from "../telegram/command-catalog.js";
 import { PromptFragmentAssembler } from "../telegram/prompt-fragment-assembler.js";
 import { EmergencyPrivateChatRouter } from "../emergency/private-chat-router.js";
@@ -31,15 +34,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function createGenerationId() {
-  const explicit = String(process.env.SERVICE_GENERATION_ID ?? "").trim();
-  if (explicit) {
-    return explicit;
-  }
-
-  return `spike-${process.pid}-${crypto.randomUUID()}`;
-}
-
 async function main() {
   const {
     api,
@@ -64,7 +58,7 @@ async function main() {
     trackedApi,
     zooService,
   } = await createRunRuntimeContext({
-    generationId: createGenerationId(),
+    generationId: resolveCurrentGenerationId(),
     runOnce: RUN_ONCE,
   });
   const getForwardingEndpoint = () =>
@@ -120,6 +114,7 @@ async function main() {
     emergencyRouter,
     lifecycleManager: sessionLifecycleManager,
     promptFragmentAssembler,
+    promptHandoffStore,
     queuePromptAssembler,
     runtimeObserver,
     sessionService,
@@ -139,6 +134,7 @@ async function main() {
   await forwardingServer.start();
   await generationStore.pruneStaleGenerations().catch(() => {});
   const recoveredStaleSessions = await recoverStaleRunningSessions({
+    codexSessionsRoot: config.codexSessionsRoot,
     generationStore,
     sessionStore,
     spikeFinalEventStore,
@@ -176,7 +172,7 @@ async function main() {
   let stopRequested = false;
   const rolloutController = createRolloutController({
     config,
-    createGenerationId,
+    createGenerationId: createReplacementGenerationId,
     generationStore,
     rolloutCoordinationStore,
     serviceState,
@@ -216,39 +212,46 @@ async function main() {
     scanPendingSpikeQueue,
   } = backgroundJobs;
 
+  const performShutdown = async () => {
+    serviceState.retiring = true;
+    let firstError = null;
+    const steps = [
+      () => promptFragmentAssembler.flushAll(),
+      () => queuePromptAssembler.flushAll(),
+      () => workerPool.shutdown({
+        interruptActiveRuns: false,
+      }),
+      () => emergencyRouter.shutdown(),
+      () => forwardingServer.stop(),
+      async () => {
+        serviceState.isLeader = false;
+        await generationStore.releaseLeadership();
+      },
+      () => generationStore.clearHeartbeat(),
+    ];
+
+    for (const step of steps) {
+      try {
+        await step();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+
+    if (firstError) {
+      throw firstError;
+    }
+  };
+
   console.log(
     `poller starting for @${serviceState.botUsername || "no-username"} in chat ${config.telegramForumChatId} [generation=${serviceState.generationId}]`,
   );
 
   const stop = () => {
     stopRequested = true;
-    serviceState.isLeader = false;
-    const canceled = promptFragmentAssembler.cancelAll();
-    if (canceled.canceledEntries > 0) {
-      console.warn(
-        `discarded ${canceled.canceledMessages} buffered Telegram fragment(s) across ${canceled.canceledEntries} prompt(s) during shutdown`,
-      );
-    }
-    const canceledQueued = queuePromptAssembler.cancelAll();
-    if (canceledQueued.canceledEntries > 0) {
-      console.warn(
-        `discarded ${canceledQueued.canceledMessages} buffered queue fragment(s) across ${canceledQueued.canceledEntries} prompt(s) during shutdown`,
-      );
-    }
+    serviceState.retiring = true;
     pollAbortController?.abort();
-    shutdownPromise ??= Promise.allSettled([
-      workerPool.shutdown(),
-      emergencyRouter.shutdown(),
-      generationStore.releaseLeadership(),
-      generationStore.clearHeartbeat(),
-      forwardingServer.stop(),
-    ]).then((results) => {
-      for (const result of results) {
-        if (result.status === "rejected") {
-          throw result.reason;
-        }
-      }
-    });
+    shutdownPromise ??= performShutdown();
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
@@ -339,6 +342,7 @@ async function main() {
           emergencyRouter,
           lifecycleManager: sessionLifecycleManager,
           promptFragmentAssembler,
+          promptHandoffStore,
           queuePromptAssembler,
           runtimeObserver,
           offsetStore,
@@ -379,30 +383,18 @@ async function main() {
       }
     }
   } finally {
-    backgroundJobs.stop();
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
     if (process.platform !== "win32") {
       process.off("SIGUSR2", requestRollout);
     }
-    shutdownPromise ??= Promise.allSettled([
-      workerPool.shutdown(),
-      emergencyRouter.shutdown(),
-      generationStore.releaseLeadership(),
-      generationStore.clearHeartbeat(),
-      forwardingServer.stop(),
-    ]).then((results) => {
-      for (const result of results) {
-        if (result.status === "rejected") {
-          throw result.reason;
-        }
-      }
-    });
+    shutdownPromise ??= performShutdown();
     if (shutdownPromise) {
       await shutdownPromise.catch((error) => {
         console.error(`worker shutdown failed: ${error.message}`);
       });
     }
+    backgroundJobs.stop();
     await runtimeObserver.stop({
       status: process.exitCode ? "failed" : "stopped",
     });

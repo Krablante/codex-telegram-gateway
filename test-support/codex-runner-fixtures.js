@@ -40,6 +40,13 @@ export function createStandardRequestHandlers({
         },
       };
     },
+    "thread/resume"() {
+      return {
+        thread: {
+          id: threadId,
+        },
+      };
+    },
     "turn/start"() {
       return {
         turn: {
@@ -63,8 +70,12 @@ export function createMockWebSocket({
     onmessage: null,
     onclose: null,
     onerror: null,
+    closed: false,
     sentMessages: [],
     send(raw) {
+      if (this.closed) {
+        throw new Error("websocket closed");
+      }
       const message = JSON.parse(raw);
       this.sentMessages.push(message);
       if (message.id === undefined) {
@@ -96,6 +107,7 @@ export function createMockWebSocket({
         });
     },
     close() {
+      this.closed = true;
       this.onclose?.({
         code: 1000,
         wasClean: true,
@@ -107,6 +119,7 @@ export function createMockWebSocket({
       });
     },
     emitClose({ code = 1006, wasClean = false } = {}) {
+      this.closed = true;
       this.onclose?.({ code, wasClean });
     },
   };

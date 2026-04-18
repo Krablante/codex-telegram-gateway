@@ -452,17 +452,5 @@ def main():
             image.save(output_path, format="PNG")
             print(output_path)
 
-    legacy_output = OUTPUT_DIR / "telegram-help-card.png"
-    first_rus_page = render_card(
-        HELP_CARD_COPY["rus"],
-        [HELP_CARD_COPY["rus"]["sections"][index] for index in HELP_CARD_COPY["rus"]["page_splits"][0]],
-        1,
-        len(HELP_CARD_COPY["rus"]["page_splits"]),
-        include_footer=False,
-    )
-    first_rus_page.save(legacy_output, format="PNG")
-    print(legacy_output)
-
-
 if __name__ == "__main__":
     main()

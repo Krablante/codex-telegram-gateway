@@ -11,7 +11,7 @@ const TELEGRAM_INDENT = "\u00A0\u00A0\u00A0\u00A0";
 
 test("normalizeTelegramReply keeps plain session-friendly text and strips local file targets", () => {
   const source = [
-    "Создан [`test.js`](/workspace/test.js).",
+    "Создан [`test.js`](/home/bloob/atlas/test.js).",
     "Проверил `SIGTERM` и **atlas**.",
     "",
     "Смотри [документацию](https://example.com/docs).",
@@ -32,7 +32,7 @@ test("renderTelegramHtml converts supported Codex markdown to Telegram HTML", ()
   const source = [
     "# Заголовок",
     "",
-    "Смотри [`README.md#L5`](/workspace/README.md#L5) и [документацию](https://example.com/docs).",
+    "Смотри [`README.md#L5`](/home/bloob/atlas/README.md#L5) и [документацию](https://example.com/docs).",
     "",
     "> Цитата с `code`, **bold**, ~~strike~~ и ||spoiler||.",
     "",

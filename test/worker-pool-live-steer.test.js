@@ -625,6 +625,143 @@ test("CodexWorkerPool survives two upstream interrupts before a later same-threa
   assert.equal(reloaded.codex_thread_id, "sticky-upstream-thread");
 });
 
+test("CodexWorkerPool clears stale continuity hints before a fresh rebuild without a prior thread", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-fresh-rebuild-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 20355,
+    topicName: "Fresh rebuild",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+  const continuitySeed = await sessionStore.patch(session, {
+    provider_session_id: "stale-provider-session",
+    codex_rollout_path: "/tmp/stale-rollout.jsonl",
+    last_context_snapshot: {
+      thread_id: "stale-thread",
+      session_id: "stale-provider-session",
+    },
+  });
+
+  const runCalls = [];
+  const firstAttemptFinished = createDeferred();
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        return { message_id: payload.reply_to_message_id ?? 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ sessionThreadId, skipThreadHistoryLookup, onEvent }) => {
+      runCalls.push({ sessionThreadId, skipThreadHistoryLookup });
+      const child = { kill() {} };
+      if (runCalls.length === 1) {
+        return {
+          child,
+          finished: firstAttemptFinished.promise,
+        };
+      }
+
+      return {
+        child,
+        finished: (async () => {
+          await onEvent(
+            {
+              kind: "thread",
+              eventType: "thread.started",
+              text: "Codex thread started: fresh-rebuild-thread",
+              threadId: "fresh-rebuild-thread",
+            },
+            {
+              type: "thread.started",
+              thread_id: "fresh-rebuild-thread",
+            },
+          );
+          await onEvent(
+            {
+              kind: "agent_message",
+              eventType: "item.completed",
+              text: "Свежий rebuild дошёл до конца.",
+              messagePhase: "final_answer",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Свежий rebuild дошёл до конца.",
+              },
+            },
+          );
+
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "fresh-rebuild-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session: continuitySeed,
+    prompt: "Сделай fresh rebuild без старого thread id.",
+    message: {
+      message_id: 703,
+      message_thread_id: 20355,
+    },
+  });
+
+  firstAttemptFinished.resolve({
+    exitCode: null,
+    signal: "SIGINT",
+    threadId: null,
+    warnings: [],
+    interrupted: true,
+    interruptReason: "upstream",
+    abortReason: "interrupted",
+    resumeReplacement: null,
+  });
+
+  await waitFor(() => workerPool.getActiveRun(continuitySeed.session_key) === null, 5000);
+
+  assert.equal(runCalls.length, 2);
+  assert.equal(runCalls[0].sessionThreadId, "stale-thread");
+  assert.equal(runCalls[1].sessionThreadId, null);
+  assert.equal(runCalls[1].skipThreadHistoryLookup, true);
+
+  const reloaded = await sessionStore.load(continuitySeed.chat_id, continuitySeed.topic_id);
+  assert.equal(reloaded.codex_thread_id, "fresh-rebuild-thread");
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_agent_reply, "Свежий rebuild дошёл до конца.");
+});
+
 test("CodexWorkerPool keeps a captured final answer when upstream aborts after the final message", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-upstream-final-answer-"),
@@ -1475,7 +1612,7 @@ test("CodexWorkerPool keeps repeated upstream SIGINT runs as interrupted after t
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(reloaded.last_run_status, "interrupted");
-  assert.equal(reloaded.codex_thread_id, null);
+  assert.equal(reloaded.codex_thread_id, "upstream-interrupted-thread-3");
   assert.match(reloaded.last_agent_reply, /Выполнение run было прервано до финального ответа\./u);
 });
 

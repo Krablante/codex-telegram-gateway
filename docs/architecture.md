@@ -21,7 +21,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - the Spike runtime now also supports session-aware generation handoff: exactly one generation owns Telegram intake, active run topics stay pinned to their current generation, and a new generation can take idle/new topics immediately during rollout by forwarding retained-topic updates over local loopback IPC
    - `src/cli/run-runtime-context.js` owns bootstrap-time runtime wiring, service construction, and store/layout setup
    - `src/cli/run-update-processing.js` owns bootstrap offset discovery, long-poll readiness cleanup, and the forwarded-vs-local Telegram update processing path
-   - `src/cli/run-stale-run-recovery.js` owns startup cleanup for stale `running` sessions whose recorded owner generation is no longer verifiably live, clears stale thread/rollout resume state so the next prompt starts cleanly, and emits a synthetic failed-final signal so Omni can recover `/auto` topics after a Spike restart
+   - `src/cli/run-stale-run-recovery.js` owns startup cleanup for stale `running` sessions whose recorded owner generation is no longer verifiably live, preserves resumable Codex continuity when recovery still looks honest, recovers already-completed runs from rollout truth when possible, and emits synthetic failure only when the run really died without a recoverable finish surface
    - `src/cli/run-background-jobs.js` owns heartbeats, queued-prompt scans, and retention sweep timers
    - `src/cli/run-maintenance.js` owns the explicit one-shot maintenance path so `RUN_ONCE`/smoke mode does not depend on background timer races
    - `src/cli/run-rollout-controller.js` owns rollout request/reconcile/retire control flow so the composition root stays focused on lifecycle orchestration instead of rollout detail
@@ -68,7 +68,7 @@ Expose the real local Codex runtime through Telegram forum topics without buildi
    - `src/pty-worker/worker-pool.js` is the thin public shell that keeps the exported `CodexWorkerPool` surface stable
    - `src/pty-worker/worker-pool-transport.js` owns progress bubbles, typing heartbeats, and live steer buffering/flush behavior, including the short retry window before follow-up fallback
    - `src/pty-worker/worker-pool-delivery.js` owns final reply delivery, transient final-send retry/fallback behavior, Telegram file delivery, and Spike final-event emission
-   - `src/pty-worker/worker-pool-lifecycle.js` owns run startup, resume fallback, lifecycle persistence, interrupts, shutdown coordination, and the fresh-thread recovery path for live-steer and ordinary upstream-aborted runs
+   - `src/pty-worker/worker-pool-lifecycle.js` owns run startup, native-history resume repair, lifecycle persistence, interrupts, shutdown coordination, and the eventual fresh-thread recovery path for live-steer and ordinary upstream-aborted runs
    - `src/pty-worker/worker-pool-common.js` keeps the shared worker contracts and pure helpers that really cross those slices
 8. The `codex-runner` layer now follows the same shell-plus-domain split:
    - `src/pty-worker/codex-runner.js` is the thin public facade for `runCodexTask`: child lifecycle wiring, turn orchestration, steer buffering, short late-final grace after `turn/completed`, live rollout `task_complete` fallback, and finish/fail coordination
@@ -112,12 +112,12 @@ This repo now explicitly follows a modular-first handler model.
 
 - a normal prompt starts a Codex turn through `app-server`
 - repeated follow-up prompts that land while the run is still active are sent into that same live turn through `turn/steer`; short transient steer failures are retried before the gateway falls back to the next prompt queue
-- if upstream aborts the active turn, the worker pool now first retries the same top-level run on the same Codex thread and only falls back to a fresh-thread rebuild when there is no usable thread to resume; accepted steer image inputs are replayed into live-steer recovery attempts as real `localImage` items
+- if upstream aborts the active turn, the worker pool now first retries the same top-level run on the same Codex thread and only falls back to a fresh-thread rebuild when there is no usable thread to resume; accepted steer image inputs are replayed into live-steer recovery attempts as real `localImage` items, and missing local continuity metadata is repaired from Codex history surfaces such as `thread/list`, `provider_session_id`, rollout metadata, and `session_key` before the worker gives up
 - button-driven control-panel and status surfaces prefer cached Codex limits immediately and refresh them in the background instead of stalling a menu redraw on a slow limits source
 - button presses now also clear Telegram's callback spinner on a per-batch fast path before the full message/callback business logic finishes, so button pickup stays snappy even when the batch still has heavier work behind it
 - service rollout is now per-topic rather than whole-process drain: a retiring generation keeps only the topics that already had an active run, while the replacement generation becomes the intake leader for everything else
 - generation liveness for rollout/forwarding is verified through the advertised loopback IPC identity, not only by pid plus heartbeat TTL, so fast pid reuse is much less likely to fool ownership checks
-- if the websocket transport drops, or native Windows leaves it alive without a terminal event, the gateway can still use the rollout file to finish the run
+- if the websocket transport drops, the gateway first tries to reattach the same live app-server websocket and resume the same thread; if that still fails, or native Windows leaves the websocket alive without a terminal event, the rollout file remains the final completion fallback
 - progress is commentary-oriented; command output and transport bookkeeping are not meant to become user-facing progress text
 - the emergency lane uses one-shot `codex exec`, not `app-server`, and does not depend on topic routing/session continuity
 - Omni also uses short one-shot `codex exec` evaluations instead of a second live `app-server` stack; the only heavy live worker remains Spike

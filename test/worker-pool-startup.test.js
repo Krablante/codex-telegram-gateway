@@ -405,8 +405,13 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
   const editedMessages = [];
   const deletedMessages = [];
   const runCalls = [];
-  const runTask = ({ prompt, sessionThreadId, onEvent }) => {
-    runCalls.push({ prompt, sessionThreadId });
+  const runTask = ({
+    prompt,
+    sessionThreadId,
+    skipThreadHistoryLookup,
+    onEvent,
+  }) => {
+    runCalls.push({ prompt, sessionThreadId, skipThreadHistoryLookup });
     return {
       child: { kill() {} },
       finished: (async () => {
@@ -488,6 +493,7 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
 
   assert.equal(runCalls.length, 1);
   assert.equal(runCalls[0].sessionThreadId, null);
+  assert.equal(runCalls[0].skipThreadHistoryLookup, true);
   assert.match(runCalls[0].prompt, /Telegram topic routing context:/u);
   assert.match(
     runCalls[0].prompt,
@@ -510,6 +516,144 @@ test("CodexWorkerPool bootstraps a fresh run from active brief after compaction"
   assert.equal(sentMessages.at(-1).text, "Continued from the refreshed brief.");
   assert.equal(deletedMessages.length, 1);
   assert.ok(editedMessages.length >= 0);
+});
+
+test("CodexWorkerPool does not force fresh-brief bootstrap when continuity ids are lost after a later run", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  let session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 245,
+    topicName: "History repair startup test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+  session = await sessionStore.patch(session, {
+    last_compacted_at: "2026-04-01T15:30:00.000Z",
+    last_compaction_reason: "command/compact",
+    last_run_started_at: "2026-04-02T11:00:00.000Z",
+    exchange_log_entries: 4,
+    last_user_prompt: "Please continue normally after the compacted run.",
+    last_agent_reply: "The last real run already happened after compact.",
+    last_run_status: "completed",
+    codex_thread_id: null,
+    provider_session_id: null,
+    codex_rollout_path: null,
+    last_context_snapshot: null,
+  });
+  await sessionStore.writeSessionText(
+    session,
+    "active-brief.md",
+    [
+      "# Active brief",
+      "",
+      "updated_from_reason: command/compact",
+      "session_key: -1003577434463:245",
+      "",
+      "## Latest exchange",
+      "- This brief should not be injected unless the run is a deliberate fresh start.",
+    ].join("\n"),
+  );
+
+  const runCalls = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 2,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    sessionCompactor: null,
+    runTask({ prompt, sessionThreadId, skipThreadHistoryLookup, onEvent }) {
+      runCalls.push({ prompt, sessionThreadId, skipThreadHistoryLookup });
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onEvent(
+            {
+              kind: "thread",
+              text: "Codex thread started: repaired-thread",
+              threadId: "repaired-thread",
+            },
+            {
+              type: "thread.started",
+              thread_id: "repaired-thread",
+            },
+          );
+          await onEvent(
+            {
+              kind: "agent_message",
+              text: "History repair path used.",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "History repair path used.",
+              },
+            },
+          );
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "repaired-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Continue without pretending this is a fresh compact bootstrap.",
+    message: {
+      message_id: 200,
+      message_thread_id: 245,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+  assert.equal(runCalls.length, 1);
+  assert.equal(runCalls[0].sessionThreadId, null);
+  assert.equal(runCalls[0].skipThreadHistoryLookup, false);
+  assert.doesNotMatch(
+    runCalls[0].prompt,
+    /This Telegram topic has no live Codex thread, but it does have a stored active brief\./u,
+  );
+  assert.doesNotMatch(runCalls[0].prompt, /## Active brief/u);
+  assert.match(
+    runCalls[0].prompt,
+    /Continue without pretending this is a fresh compact bootstrap\./u,
+  );
+
+  const meta = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(meta.codex_thread_id, "repaired-thread");
+  assert.equal(meta.last_run_status, "completed");
 });
 
 test("CodexWorkerPool does not reply to internal Omni handoff message ids", async () => {
@@ -673,12 +817,12 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
         await onEvent(
           {
             kind: "thread",
-            text: "Codex thread started: stale-thread",
-            threadId: "stale-thread",
+            text: "Codex thread started: replacement-thread",
+            threadId: "replacement-thread",
           },
           {
             type: "thread.started",
-            thread_id: "stale-thread",
+            thread_id: "replacement-thread",
           },
         );
         await onEvent(
@@ -698,7 +842,7 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
         return {
           exitCode: 0,
           signal: null,
-          threadId: "stale-thread",
+          threadId: "replacement-thread",
           warnings: [],
           resumeReplacement: null,
         };
@@ -745,7 +889,7 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
 
   assert.equal(runCalls.length, 2);
   assert.equal(runCalls[0].sessionThreadId, "stale-thread");
-  assert.equal(runCalls[1].sessionThreadId, "stale-thread");
+  assert.equal(runCalls[1].sessionThreadId, "replacement-thread");
   assert.match(runCalls[1].prompt, /Telegram topic routing context:/u);
   assert.match(runCalls[1].prompt, /topic_id: 145/u);
   assert.match(
@@ -755,7 +899,7 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
   assert.doesNotMatch(runCalls[1].prompt, /Pinned facts/u);
 
   const meta = await sessionStore.load(resumedSession.chat_id, resumedSession.topic_id);
-  assert.equal(meta.codex_thread_id, "stale-thread");
+  assert.equal(meta.codex_thread_id, "replacement-thread");
   assert.equal(meta.last_run_status, "completed");
   assert.equal(
     meta.last_agent_reply,
@@ -776,4 +920,3 @@ test("CodexWorkerPool retries thread resume once before succeeding without compa
     "Recovered sentinel after retry: SENTINEL_WOLF",
   );
 });
-

@@ -1,10 +1,24 @@
 import { markBootstrapDrop, markUpdateSeen } from "../runtime/service-state.js";
 import { forwardUpdate } from "../runtime/update-forwarding-ipc.js";
 import { ackBatchCallbackQueriesBestEffort } from "../telegram/callback-batch-ack.js";
+import { isGlobalControlCallbackQuery } from "../telegram/global-control-panel.js";
 import { handleSpikeUpdate } from "../telegram/spike-update-dispatch.js";
 import { resolveSpikeUpdateRoute } from "../telegram/spike-update-routing.js";
+import { isTopicControlCallbackQuery } from "../telegram/topic-control-panel.js";
 
 const MESSAGE_UPDATES_ONLY = ["message"];
+
+function shouldDeferCallbackAck(update) {
+  const callbackQuery = update?.callback_query;
+  if (!callbackQuery) {
+    return false;
+  }
+
+  return (
+    isGlobalControlCallbackQuery(callbackQuery) ||
+    isTopicControlCallbackQuery(callbackQuery)
+  );
+}
 
 export async function ensureLongPollingReady(api, webhookInfo) {
   if (webhookInfo?.url) {
@@ -51,6 +65,7 @@ export async function dispatchSpikeUpdateLocally({
   emergencyRouter,
   lifecycleManager,
   promptFragmentAssembler,
+  promptHandoffStore = null,
   queuePromptAssembler,
   runtimeObserver,
   sessionService,
@@ -70,6 +85,7 @@ export async function dispatchSpikeUpdateLocally({
     emergencyRouter,
     lifecycleManager,
     promptFragmentAssembler,
+    promptHandoffStore,
     queuePromptAssembler,
     runtimeObserver,
     sessionService,
@@ -90,6 +106,7 @@ export function createForwardingRequestHandler({
   emergencyRouter,
   lifecycleManager,
   promptFragmentAssembler,
+  promptHandoffStore = null,
   queuePromptAssembler,
   runtimeObserver,
   sessionService,
@@ -122,6 +139,7 @@ export function createForwardingRequestHandler({
       emergencyRouter,
       lifecycleManager,
       promptFragmentAssembler,
+      promptHandoffStore,
       queuePromptAssembler,
       runtimeObserver,
       sessionService,
@@ -149,6 +167,7 @@ export async function processUpdates({
   handleSpikeUpdateImpl = handleSpikeUpdate,
   lifecycleManager,
   promptFragmentAssembler,
+  promptHandoffStore = null,
   queuePromptAssembler,
   resolveSpikeUpdateRouteImpl = resolveSpikeUpdateRoute,
   runtimeObserver,
@@ -166,7 +185,10 @@ export async function processUpdates({
   updates,
 }) {
   let nextOffset = null;
-  await ackBatchCallbackQueriesImpl(api, updates);
+  await ackBatchCallbackQueriesImpl(
+    api,
+    updates.filter((update) => !shouldDeferCallbackAck(update)),
+  );
 
   for (const update of updates) {
     const updateId = update.update_id;
@@ -196,6 +218,7 @@ export async function processUpdates({
         emergencyRouter,
         lifecycleManager,
         promptFragmentAssembler,
+        promptHandoffStore,
         queuePromptAssembler,
         runtimeObserver,
         sessionService,

@@ -40,7 +40,7 @@ test("live-user bootstrap hardens env, session, and account files to 0600", asyn
   await writeTelegramUserSession(paths, {
     sessionString: "session-value",
     account: {
-      id: "1234567890",
+      id: "5825672398",
       username: "stupidumbidiot",
     },
   });

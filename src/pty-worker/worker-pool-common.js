@@ -1,6 +1,7 @@
 import { buildTopicContextPrompt } from "../session-manager/topic-context.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import { signalChildProcessTree } from "../runtime/process-tree.js";
+import { normalizeTokenUsage } from "../codex-runtime/token-usage.js";
 
 const PROGRESS_PENDING_MARKER = "...";
 const TRANSIENT_TRANSPORT_ERROR_CODES = new Set([
@@ -201,6 +202,9 @@ export function buildRunFailureText(result, language = "rus") {
     ? result.warnings.find((line) => String(line || "").trim())
     : null;
   const errorMessage = warning
+    || (result?.abortReason && result?.interrupted !== true
+      ? `Codex turn aborted (${result.abortReason})`
+      : null)
     || (Number.isFinite(result?.exitCode)
       ? `Codex app-server exited with code ${result.exitCode}`
       : null)
@@ -298,49 +302,6 @@ export function appendPromptPart(basePrompt, nextPrompt) {
   }
 
   return `${base}\n\n${next}`;
-}
-
-function normalizeUsageCount(value) {
-  if (!Number.isFinite(value) || value < 0) {
-    return null;
-  }
-
-  return Math.trunc(value);
-}
-
-export function normalizeTokenUsage(usage) {
-  if (!usage || typeof usage !== "object") {
-    return null;
-  }
-
-  const inputTokens = normalizeUsageCount(usage.input_tokens);
-  const cachedInputTokens = normalizeUsageCount(
-    usage.cached_input_tokens ?? usage.input_tokens_details?.cached_tokens,
-  );
-  const outputTokens = normalizeUsageCount(usage.output_tokens);
-  const reasoningTokens = normalizeUsageCount(
-    usage.output_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens,
-  );
-
-  if (
-    inputTokens === null &&
-    cachedInputTokens === null &&
-    outputTokens === null &&
-    reasoningTokens === null
-  ) {
-    return null;
-  }
-
-  return {
-    input_tokens: inputTokens,
-    cached_input_tokens: cachedInputTokens,
-    output_tokens: outputTokens,
-    reasoning_tokens: reasoningTokens,
-    total_tokens:
-      inputTokens === null && outputTokens === null
-        ? null
-        : (inputTokens ?? 0) + (outputTokens ?? 0),
-  };
 }
 
 export function buildExchangeLogEntry({ prompt, state, finishedAt }) {

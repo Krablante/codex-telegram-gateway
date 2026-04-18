@@ -9,6 +9,10 @@ function looksExpired(isoTimestamp) {
   return Number.isFinite(parsed) && parsed <= Date.now();
 }
 
+function isPurgeEligibilityError(error) {
+  return String(error?.message || "").includes("not purge-eligible");
+}
+
 export function isTopicUnavailableTelegramError(error) {
   const message = String(error?.message || "").toLowerCase();
   return (
@@ -83,6 +87,9 @@ export class SessionLifecycleManager {
     }
 
     if (event.kind === "closed") {
+      if (session.lifecycle_state === "purged") {
+        return { handled: true, event: event.kind, session };
+      }
       const parked = await this.parkSession(session, event.reason);
       return { handled: true, event: event.kind, session: parked };
     }
@@ -125,11 +132,16 @@ export class SessionLifecycleManager {
   }
 
   async parkSession(session, reason) {
-    const previousState = session.lifecycle_state;
-    if (this.workerPool?.getActiveRun(session.session_key)) {
-      this.workerPool.interrupt(session.session_key);
+    const alreadyParkedForReason =
+      session.lifecycle_state === "parked" &&
+      session.parked_reason === reason &&
+      session.parked_at &&
+      session.purge_after;
+    if (alreadyParkedForReason) {
+      return session;
     }
 
+    const previousState = session.lifecycle_state;
     const parked = await this.sessionStore.park(session, reason, {
       purge_after: buildPurgeAfterIso(this.config.parkedSessionRetentionHours),
     });
@@ -163,10 +175,18 @@ export class SessionLifecycleManager {
         continue;
       }
 
-      const purged = await this.sessionStore.purge(
-        session,
-        "retention/expired-parked",
-      );
+      let purged = null;
+      try {
+        purged = await this.sessionStore.purge(
+          session,
+          "retention/expired-parked",
+        );
+      } catch (error) {
+        if (isPurgeEligibilityError(error)) {
+          continue;
+        }
+        throw error;
+      }
       await this.runtimeObserver?.noteSessionLifecycle({
         action: "purged",
         session: purged,

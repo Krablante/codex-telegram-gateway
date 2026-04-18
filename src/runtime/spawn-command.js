@@ -8,6 +8,7 @@ import {
 } from "./executable-path.js";
 
 const WINDOWS_SHELL_EXTENSIONS = new Set([".bat", ".cmd"]);
+const UNSUPPORTED_WINDOWS_SHELL_METACHARS = /[%\r\n]/u;
 
 function normalizeCommand(value) {
   const normalized = String(value ?? "").trim();
@@ -34,6 +35,19 @@ function getWindowsCommandShell(env) {
 
 function buildWindowsCommandLine(command, args) {
   return [command, ...args].map((value) => quoteWindowsShellValue(value)).join(" ");
+}
+
+function assertSupportedWindowsShellValues(command, args) {
+  const unsafeValue = [command, ...args].find((value) =>
+    UNSUPPORTED_WINDOWS_SHELL_METACHARS.test(String(value ?? ""))
+  );
+  if (unsafeValue === undefined) {
+    return;
+  }
+
+  throw new Error(
+    "Windows .cmd/.bat launch does not support % or newline characters in shell-routed values; use a wrapper script or JSON argv instead.",
+  );
 }
 
 export function buildSpawnCommand(
@@ -70,6 +84,7 @@ export function buildSpawnCommand(
 
   const extension = path.win32.extname(resolvedCommand).toLowerCase();
   if (WINDOWS_SHELL_EXTENSIONS.has(extension)) {
+    assertSupportedWindowsShellValues(resolvedCommand, normalizedArgs);
     return {
       command: getWindowsCommandShell(env),
       args: [

@@ -86,6 +86,8 @@ export function summarizeCodexEvent(event) {
       text: "Codex turn completed",
       turnId: event.turn_id ?? null,
       usage: event.usage || null,
+      turnStatus: event.turn?.status || null,
+      turnError: event.turn?.error || null,
     };
   }
 
@@ -151,6 +153,8 @@ export function summarizeCodexEvent(event) {
       threadId: event.params?.threadId || null,
       turnId: event.params?.turn?.id || null,
       usage: null,
+      turnStatus: event.params?.turn?.status || null,
+      turnError: event.params?.turn?.error || null,
     };
   }
 

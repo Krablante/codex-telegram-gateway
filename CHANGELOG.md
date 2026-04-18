@@ -6,6 +6,31 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.39] - 2026-04-18
+
+Fixed:
+
+- native resume now follows real Codex session history more closely: the gateway repairs continuity through `thread/list`, `provider_session_id`, rollout metadata, and `session_key` before it falls back to a brief rebuild
+- websocket disconnects now try to reattach to the same live `codex app-server` session before dropping into rollout fallback, and service shutdown/rollout paths stop self-interrupting healthy runs by default
+- startup stale-run recovery now preserves resumable continuity when possible and can recover already-completed runs from rollout truth instead of flattening everything into fake interrupted or failed outcomes
+- session lifecycle handling is tighter: purged topics stay purged, repeated topic-unavailable parking stops spamming lifecycle state, `General` message-ledger writes are serialized, and topic reply fallback is cleaner when Telegram loses the original reply target
+- native Windows handling is more robust: case-insensitive `PATH` / `PATHEXT`, safer `.cmd` / `.bat` launching, Windows-reserved attachment-name sanitizing, transient filesystem retry for atomic replace, and platform-aware live prompt helpers
+- `CODEX_LIMITS_COMMAND` remains shell-free everywhere and now requires the JSON argv form on native Windows instead of guessing through POSIX-style command strings
+
+Ops:
+
+- `make test-live` now uses the repo-local live-test runner, `make user-spike-audit` is available for heavier user-account Spike validation, and native Windows now ships matching `scripts\\windows\\test-live.cmd` and `scripts\\windows\\user-spike-audit.cmd` wrappers
+- chained soft rollouts can now start cleanly even when the previous replacement generation already took traffic and an older generation is still draining retained topics
+
+Docs:
+
+- README, AGENTS, deployment, runbooks, architecture, state contract, and testing docs now describe the native resume-first contract, the new live validation entrypoints, and the current Windows/Linux operator behavior
+
+Tests:
+
+- public `node --test`: 597 pass, 0 fail, 4 skip
+- public `npm run test:live`: 4 pass, 0 fail
+
 ## [0.3.38] - 2026-04-17
 
 Fixed:

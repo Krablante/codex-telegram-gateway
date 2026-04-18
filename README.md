@@ -156,7 +156,7 @@ When `CODEX_LIMITS_COMMAND` is used, set the optional JSON `source` field to the
 The bot should be an admin in the forum chat. Topic creation and cleanup flows work best when it can post, edit, delete, pin, and manage topics.
 
 `/menu` also accepts the Telegram-style `/<command>@YourBot` form, shows an in-menu `Status` screen, and recreates the pinned topic panel cleanly when you reopen it so old menu messages and transient pin notices do not pile up.
-If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn, the gateway now retries that same top-level run on the same Codex thread before it falls back to a fresh-thread rebuild; accepted live-steer images are replayed into the recovery attempt, ordinary upstream-interrupted turns still use a bounded two-retry budget, and a final answer that already landed before the abort is kept as `completed` instead of being thrown away.
+If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn, the gateway now retries that same top-level run on the same Codex thread before it falls back to a fresh-thread rebuild; accepted live-steer images are replayed into the recovery attempt, ordinary upstream-interrupted turns still use a bounded two-retry budget, and a final answer that already landed before the abort is kept as `completed` instead of being thrown away. If local continuity metadata is stale or incomplete, Spike now repairs that continuity from real Codex history surfaces such as `thread/list`, `provider_session_id`, rollout metadata, and `session_key` before it gives up and drops to a brief rebuild.
 
 Native Windows:
 
@@ -204,8 +204,11 @@ Linux/operator path:
 ```bash
 make doctor
 make test
+make test-live
 make run
 make run-omni
+make user-e2e
+make user-spike-audit
 make service-install
 make service-install-omni
 make service-status
@@ -223,6 +226,7 @@ Windows-native path:
 ```powershell
 scripts\windows\doctor.cmd
 scripts\windows\test.cmd
+scripts\windows\test-live.cmd
 scripts\windows\run.cmd
 scripts\windows\run-omni.cmd
 scripts\windows\admin.cmd status
@@ -233,6 +237,8 @@ Live user-account bootstrap:
 ```bash
 make user-login
 make user-status
+make user-e2e
+make user-spike-audit
 ```
 
 Windows-native equivalent:
@@ -241,6 +247,7 @@ Windows-native equivalent:
 scripts\windows\user-login.cmd
 scripts\windows\user-status.cmd
 scripts\windows\user-e2e.cmd
+scripts\windows\user-spike-audit.cmd
 ```
 
 ## Notes
@@ -253,10 +260,13 @@ scripts\windows\user-e2e.cmd
 - `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, pins `CODEX_CONFIG_PATH` into the user unit, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`
 - on Linux, `make service-rollout` and `make service-restart` are the soft rollout path for Spike: the command waits until the replacement generation has actually taken leader traffic, while already active run topics keep finishing on the retiring generation; use `make service-hard-restart` only when you really want a blind restart
 - `make service-restart-live` is the canonical live-runtime restart path: it restarts `Omni` and then rolls `Spike` through the safe session-aware rollout flow
+- `make test-live` and `make user-spike-audit` are the quickest deep validations for real Codex continuity and heavy user-account scenarios; native Windows now ships matching wrapper scripts for both
 - `make admin ARGS='status'` now also shows the resolved `CODEX_CONFIG_PATH` and parsed MCP server names, so operators can confirm the live Codex profile before assuming tool loss
 - live `codex app-server` launches now pin explicit full-access overrides, so direct CLI use and live Spike runs do not silently diverge on hosts that would otherwise fall back to sandboxed app-server behavior
+- native resume/interrupt recovery now follows real Codex session history first, including `thread/list`, `provider_session_id`, rollout metadata, and `session_key`, instead of treating every local continuity gap like a forced fresh start
 - Windows process-tree shutdown now uses `taskkill /t` fallback instead of assuming POSIX-only negative-pid signaling, so interrupted Codex runs are less likely to leave orphaned child processes behind
 - local loopback IPC now retries blocked or reserved loopback ports on native Windows instead of failing the forwarding server on the first bind error
+- Windows runtime helpers now also normalize case-insensitive `PATH` / `PATHEXT`, reject unsafe `%` shell-routed `.cmd` arguments, sanitize reserved attachment names, and retry transient atomic-replace filesystem failures instead of surfacing brittle host-specific edge cases
 - if native Windows leaves the websocket alive but the rollout already wrote `task_complete`, Spike can still finish that run from the rollout signal instead of staying stuck in `running`
 - stalled disconnect recovery and early-start failures now reap orphaned live-run state instead of leaving a fake forever-running topic behind
 - upstream interrupted Codex turns now surface as interrupted instead of being misreported as ordinary failures

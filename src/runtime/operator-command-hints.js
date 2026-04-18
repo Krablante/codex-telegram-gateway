@@ -7,8 +7,11 @@ const WINDOWS_COMMAND_HINTS = Object.freeze({
   "install-codex": "scripts\\windows\\install-codex.cmd",
   run: "scripts\\windows\\run.cmd",
   "run-omni": "scripts\\windows\\run-omni.cmd",
+  test: "scripts\\windows\\test.cmd",
+  "test-live": "scripts\\windows\\test-live.cmd",
   "user-e2e": "scripts\\windows\\user-e2e.cmd",
   "user-login": "scripts\\windows\\user-login.cmd",
+  "user-spike-audit": "scripts\\windows\\user-spike-audit.cmd",
   "user-status": "scripts\\windows\\user-status.cmd",
 });
 

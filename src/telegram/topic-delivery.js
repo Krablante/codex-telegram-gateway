@@ -1,6 +1,12 @@
 import { deliverDocumentToTopic } from "../transport/topic-document-delivery.js";
 import { deliverPhotoToTopic } from "../transport/topic-photo-delivery.js";
 
+function isMissingReplyTargetError(error) {
+  return String(error?.message || "")
+    .toLowerCase()
+    .includes("message to be replied not found");
+}
+
 async function sendDocumentToTopic(api, message, document) {
   return deliverDocumentToTopic({
     api,
@@ -36,7 +42,7 @@ async function handleDeliveryError(session, error, lifecycleManager) {
   if (lifecycleResult?.handled) {
     return {
       delivered: false,
-      parked: true,
+      parked: lifecycleResult.parked === true,
       session: lifecycleResult.session || session,
     };
   }
@@ -45,14 +51,25 @@ async function handleDeliveryError(session, error, lifecycleManager) {
 }
 
 export async function safeSendMessage(api, params, session, lifecycleManager) {
-  try {
-    await api.sendMessage(params);
-    return {
-      delivered: true,
-      session,
-    };
-  } catch (error) {
-    return handleDeliveryError(session, error, lifecycleManager);
+  const deliveryParams = { ...params };
+  let allowReplyTargetFallback = Boolean(deliveryParams.reply_to_message_id);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await api.sendMessage(deliveryParams);
+      return {
+        delivered: true,
+        session,
+      };
+    } catch (error) {
+      if (allowReplyTargetFallback && isMissingReplyTargetError(error)) {
+        delete deliveryParams.reply_to_message_id;
+        allowReplyTargetFallback = false;
+        continue;
+      }
+
+      return handleDeliveryError(session, error, lifecycleManager);
+    }
   }
 }
 

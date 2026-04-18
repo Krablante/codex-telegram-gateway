@@ -93,6 +93,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   });
 
   const withRun = await sessionStore.patch(session, {
+    provider_session_id: "provider-before-compact",
     codex_thread_id: "thread-before-compact",
     codex_rollout_path:
       "/home/bloob/.codex/sessions/2026/03/22/rollout-before-compact.jsonl",
@@ -199,6 +200,7 @@ test("SessionCompactor builds active brief from exchange log via Codex summarize
   const updated = await sessionStore.load(withRun.chat_id, withRun.topic_id);
   assert.equal(updated.last_compaction_reason, "command/compact");
   assert.equal(updated.exchange_log_entries, 1);
+  assert.equal(updated.provider_session_id, null);
   assert.equal(updated.codex_thread_id, null);
   assert.equal(updated.codex_rollout_path, null);
   assert.equal(updated.last_context_snapshot, null);
@@ -311,6 +313,7 @@ test("SessionCompactor writes a stub brief when exchange log is empty", async ()
   assert.equal(compacted.generatedWithCodex, false);
   assert.match(briefText, /No exchange log entries yet/u);
   const updated = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(updated.provider_session_id, null);
   assert.equal(updated.codex_thread_id, null);
   assert.equal(updated.codex_rollout_path, null);
   assert.equal(updated.last_context_snapshot, null);
@@ -497,7 +500,8 @@ test("SessionCompactor skips purged sessions", async () => {
     user_prompt: "hello",
     assistant_reply: "hello",
   });
-  const purged = await sessionStore.purge(session, "test/purge");
+  const parked = await sessionStore.park(session, "test/purge");
+  const purged = await sessionStore.purge(parked, "test/purge");
   const compacted = await compactor.compact(purged, {
     reason: "command/compact",
   });

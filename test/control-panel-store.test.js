@@ -10,10 +10,10 @@ import { TopicControlPanelStore } from "../src/session-manager/topic-control-pan
 
 function buildBinding() {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
   };
 }
 
@@ -40,7 +40,7 @@ test("GlobalControlPanelStore patchWithCurrent serializes overlapping patches", 
       pending_input: {
         kind: "suffix_text",
         requested_at: "2026-04-04T21:00:00.000Z",
-        requested_by_user_id: "1234567890",
+        requested_by_user_id: "5825672398",
         menu_message_id: 91,
         screen: "suffix",
       },
@@ -78,7 +78,7 @@ test("TopicControlPanelStore patchWithCurrent serializes overlapping patches per
   const sessionStore = new SessionStore(sessionsRoot);
   const panelStore = new TopicControlPanelStore(sessionStore);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 340,
     topicName: "Topic control store",
     createdVia: "test",
@@ -102,7 +102,7 @@ test("TopicControlPanelStore patchWithCurrent serializes overlapping patches per
       pending_input: {
         kind: "wait_custom",
         requested_at: "2026-04-04T21:01:00.000Z",
-        requested_by_user_id: "1234567890",
+        requested_by_user_id: "5825672398",
         menu_message_id: 77,
         screen: "wait",
       },

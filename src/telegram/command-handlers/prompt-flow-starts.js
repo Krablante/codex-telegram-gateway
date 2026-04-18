@@ -11,6 +11,7 @@ import { buildReplyMessageParams } from "../command-parsing.js";
 import { hasIncomingAttachments } from "../incoming-attachments.js";
 import { safeSendMessage } from "../topic-delivery.js";
 import { getTopicIdFromMessage } from "../../session-manager/session-key.js";
+import { buildPurgedSessionMessage } from "./topic-commands.js";
 import {
   buildAttachmentNeedsCaptionMessage,
   buildBusyMessage,
@@ -219,6 +220,18 @@ async function startTopicPromptRun({
     typeof sessionService.ensureRunnableSessionForMessage === "function"
   ) {
     session = await sessionService.ensureRunnableSessionForMessage(message);
+  }
+  if (session?.lifecycle_state === "purged") {
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        buildPurgedSessionMessage(session, getSessionUiLanguage(session)),
+      ),
+      session,
+      lifecycleManager,
+    );
+    return { handled: true, reason: "purged-session" };
   }
   const globalPromptSuffix =
     typeof sessionService.getGlobalPromptSuffix === "function"

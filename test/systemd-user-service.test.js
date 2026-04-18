@@ -20,25 +20,26 @@ test("buildUserServiceUnit renders a direct node user systemd wrapper", () => {
     envFilePath: "/state/runtime.env",
     nodePath: "/nvm/bin/node",
     codexBinPath: "/nvm/bin/codex",
-    codexConfigPath: "/home/testuser/.codex/config.toml",
+    codexConfigPath: "/home/bloob/.codex/config.toml",
     pathEntries: ["/nvm/bin", "/usr/bin", "/bin"],
     exitType: "cgroup",
   });
 
   assert.match(unit, /Description=Codex Telegram Gateway/u);
   assert.match(unit, /ExitType=cgroup/u);
-  assert.match(unit, /WorkingDirectory="\/repo"/u);
+  assert.match(unit, /WorkingDirectory=\/repo/u);
   assert.match(unit, /Environment="ENV_FILE=\/state\/runtime\.env"/u);
   assert.match(unit, /Environment="NODE=\/nvm\/bin\/node"/u);
   assert.match(unit, /Environment="CODEX_BIN_PATH=\/nvm\/bin\/codex"/u);
   assert.match(
     unit,
-    /Environment="CODEX_CONFIG_PATH=\/home\/testuser\/\.codex\/config\.toml"/u,
+    /Environment="CODEX_CONFIG_PATH=\/home\/bloob\/\.codex\/config\.toml"/u,
   );
   assert.match(unit, /Environment="PATH=\/nvm\/bin:\/usr\/bin:\/bin"/u);
   assert.match(unit, /ExecStart="\/nvm\/bin\/node" "\/repo\/src\/cli\/run\.js"/u);
   assert.match(unit, /Restart=always/u);
   assert.match(unit, /KillMode=control-group/u);
+  assert.match(unit, /TimeoutStopSec=infinity/u);
   assert.match(unit, /WantedBy=default\.target/u);
 });
 
@@ -48,11 +49,11 @@ test("buildUserServiceUnit quotes paths with spaces for WorkingDirectory and Exe
     envFilePath: "/state/runtime.env",
     nodePath: "/opt/node versions/node",
     codexBinPath: "/opt/node versions/codex",
-    codexConfigPath: "/home/testuser/.codex/config.toml",
+    codexConfigPath: "/home/bloob/.codex/config.toml",
     pathEntries: ["/opt/node versions", "/usr/bin"],
   });
 
-  assert.match(unit, /WorkingDirectory="\/repo with spaces"/u);
+  assert.match(unit, /WorkingDirectory=\/repo\\ with\\ spaces/u);
   assert.match(
     unit,
     /ExecStart="\/opt\/node versions\/node" "\/repo with spaces\/src\/cli\/run\.js"/u,
@@ -63,12 +64,12 @@ test("buildServicePathEntries preserves the current PATH ahead of Linux defaults
   assert.deepEqual(
     buildServicePathEntries({
       nodePath: "/opt/node/bin/node",
-      currentPath: "/home/testuser/.local/bin:/home/testuser/bin:/usr/bin",
+      currentPath: "/home/bloob/.local/bin:/home/bloob/bin:/usr/bin",
     }),
     [
       "/opt/node/bin",
-      "/home/testuser/.local/bin",
-      "/home/testuser/bin",
+      "/home/bloob/.local/bin",
+      "/home/bloob/bin",
       "/usr/bin",
       "/usr/local/sbin",
       "/usr/local/bin",
@@ -100,9 +101,9 @@ test("supportsExitTypeCgroup gates the Spike service to modern systemd builds", 
 
 test("getUserServiceUnitPath targets the standard user-unit directory", () => {
   assert.equal(
-    getUserServiceUnitPath("/home/testuser"),
+    getUserServiceUnitPath("/home/bloob"),
     path.posix.join(
-      "/home/testuser",
+      "/home/bloob",
       ".config",
       "systemd",
       "user",

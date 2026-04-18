@@ -163,6 +163,8 @@ export function buildRuntimeStateFields() {
     reactivated_at: null,
     lifecycle_reactivated_reason: null,
     ui_language: "rus",
+    runtime_provider: null,
+    provider_session_id: null,
     codex_thread_id: null,
     codex_rollout_path: null,
     prompt_suffix_topic_enabled: true,

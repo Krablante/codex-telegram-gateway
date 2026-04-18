@@ -14,6 +14,7 @@ import {
   buildCompactAlreadyRunningMessage,
   buildCompactFailureMessage,
   buildCompactMessage,
+  buildCompactQueuedHandoffMessage,
   buildCompactStartedMessage,
   buildDiffCleanMessage,
   buildDiffUnavailableMessage,
@@ -209,9 +210,11 @@ export async function handleDiffCommand({
   };
 }
 
-export function handleCompactCommand({
+export async function handleCompactCommand({
   session,
   sessionService,
+  promptHandoffStore = null,
+  workerPool = null,
   language,
 }) {
   if (session.lifecycle_state === "purged") {
@@ -227,6 +230,28 @@ export function handleCompactCommand({
       responseText: buildCompactAlreadyRunningMessage(session, language),
       backgroundCompactPromise: null,
       reason: "compact-already-running",
+    };
+  }
+
+  if (
+    workerPool?.getActiveRun?.(session.session_key) ||
+    (
+      session.last_run_status === "running" &&
+      session.session_owner_generation_id
+    )
+  ) {
+    return {
+      responseText: buildCompactAlreadyRunningMessage(session, language),
+      backgroundCompactPromise: null,
+      reason: "compact-busy",
+    };
+  }
+
+  if (promptHandoffStore && await promptHandoffStore.load(session)) {
+    return {
+      responseText: buildCompactQueuedHandoffMessage(session, language),
+      backgroundCompactPromise: null,
+      reason: "compact-handoff-queued",
     };
   }
 

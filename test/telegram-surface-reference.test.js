@@ -5,10 +5,10 @@ import fs from "node:fs/promises";
 import { handleIncomingMessage } from "../src/telegram/command-router.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -66,8 +66,8 @@ test("handleIncomingMessage sends the help card from General topic", async () =>
     message: {
       text: "/help",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -113,8 +113,8 @@ test("handleIncomingMessage sends the guidebook PDF from General topic", async (
     message: {
       text: "/guide",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -151,17 +151,17 @@ test("handleIncomingMessage keeps /guide General-only", async () => {
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Guide topic",
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -176,8 +176,8 @@ test("handleIncomingMessage keeps /guide General-only", async () => {
     message: {
       text: "/guide",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -224,25 +224,25 @@ test("handleIncomingMessage sends the English help card inside an ENG topic", as
     message: {
       text: "/help",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 88,
     },
     serviceState,
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:88",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:88",
+          chat_id: "-1003577434463",
           topic_id: "88",
           topic_name: "ENG topic",
           lifecycle_state: "active",
           ui_language: "eng",
           workspace_binding: {
-            repo_root: "/workspace",
-            cwd: "/workspace",
+            repo_root: "/home/bloob/atlas",
+            cwd: "/home/bloob/atlas",
             branch: "main",
-            worktree_path: "/workspace",
+            worktree_path: "/home/bloob/atlas",
           },
         };
       },
@@ -286,8 +286,8 @@ test("handleIncomingMessage shows suffix help from General topic", async () => {
     message: {
       text: "/suffix help",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -334,8 +334,8 @@ test("handleIncomingMessage keeps suffix help in ENG when General panel language
     message: {
       text: "/suffix help",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {

@@ -9,6 +9,9 @@ import {
   loadTelegramUserBootstrap,
   readTelegramUserSession,
 } from "../live-user/client.js";
+import { summarizeForumTopic } from "../live-user/forum-topics.js";
+import { retryFilesystemOperation } from "../runtime/fs-retry.js";
+import { buildSleepCommand } from "../runtime/live-command-prompts.js";
 import { ensureStateLayout } from "../state/layout.js";
 import { SessionStore } from "../session-manager/session-store.js";
 import { SessionService } from "../session-manager/session-service.js";
@@ -16,6 +19,8 @@ import { TelegramBotApiClient } from "../telegram/bot-api-client.js";
 
 const WAIT_POLL_MS = 2000;
 const DEFAULT_TIMEOUT_MS = 180000;
+const AUTO_INTERRUPT_RESUME_TIMEOUT_MS = 600000;
+const CLEANUP_ACTIVE_RUN_GRACE_MS = 180000;
 const STRESS_TOPIC_COUNT = 3;
 
 function sleep(ms) {
@@ -51,6 +56,52 @@ async function cleanupCreatedTopics({
 
   const results = [];
   for (const topic of uniqueTopics.reverse()) {
+    const topicSessionKey = {
+      chatId: String(chatId),
+      topicId: String(topic.topicId),
+    };
+    let currentSession = await sessionStore.load(
+      topicSessionKey.chatId,
+      topicSessionKey.topicId,
+    );
+    if (
+      currentSession?.last_run_started_at &&
+      !["completed", "failed", "interrupted"].includes(currentSession.last_run_status)
+    ) {
+      try {
+        currentSession = await waitFor(async () => {
+          const latest = await sessionStore.load(
+            topicSessionKey.chatId,
+            topicSessionKey.topicId,
+          );
+          if (
+            !latest?.last_run_started_at ||
+            ["completed", "failed", "interrupted"].includes(latest.last_run_status)
+          ) {
+            return latest || currentSession;
+          }
+          return null;
+        }, CLEANUP_ACTIVE_RUN_GRACE_MS, `cleanup-ready session ${chatId}:${topic.topicId}`);
+      } catch {
+        currentSession = await sessionStore.load(
+          topicSessionKey.chatId,
+          topicSessionKey.topicId,
+        );
+      }
+    }
+
+    if (
+      currentSession?.last_run_started_at &&
+      !["completed", "failed", "interrupted"].includes(currentSession.last_run_status)
+    ) {
+      results.push({
+        topicId: topic.topicId,
+        topicName: topic.topicName,
+        deleteResult: "skipped:active-run",
+      });
+      continue;
+    }
+
     let deleteResult = "deleted";
     try {
       await api.deleteForumTopic({
@@ -61,9 +112,11 @@ async function cleanupCreatedTopics({
       deleteResult = error.message;
     }
 
-    await fs.rm(
-      sessionStore.getSessionDir(chatId, topic.topicId),
-      { recursive: true, force: true },
+    await retryFilesystemOperation(
+      () => fs.rm(
+        sessionStore.getSessionDir(chatId, topic.topicId),
+        { recursive: true, force: true },
+      ),
     ).catch(() => {});
 
     results.push({
@@ -134,14 +187,8 @@ async function listForumTopics(userClient, chatId) {
   );
 
   return response.topics
-    .filter((topic) => topic.className === "ForumTopic")
-    .map((topic) => ({
-      id: Number(topic.id),
-      title: topic.title,
-      topMessage: Number(topic.topMessage),
-      closed: Boolean(topic.closed),
-      hidden: Boolean(topic.hidden),
-    }));
+    .map((topic) => summarizeForumTopic(topic))
+    .filter(Boolean);
 }
 
 async function listTopicReplies(userClient, chatId, topicId) {
@@ -259,7 +306,7 @@ async function runNewTopicScenario({
 }) {
   const title = `Live User New ${stamp}`;
   const beforeTopics = await listForumTopics(userClient, chatId);
-  const beforeIds = new Set(beforeTopics.map((topic) => topic.id));
+  const beforeIds = new Set(beforeTopics.map((topic) => topic.forumTopicId));
 
   await sendGeneralMessage(userClient, chatId, `/new ${title}`, {
     commandName: "new",
@@ -268,18 +315,18 @@ async function runNewTopicScenario({
   const createdTopic = await waitFor(async () => {
     const topics = await listForumTopics(userClient, chatId);
     return topics.find((topic) =>
-      topic.title === title && !beforeIds.has(topic.id));
+      topic.title === title && !beforeIds.has(topic.forumTopicId));
   }, DEFAULT_TIMEOUT_MS, `/new topic ${title}`);
-  const session = await waitForSession(sessionStore, chatId, createdTopic.id);
+  const session = await waitForSession(sessionStore, chatId, createdTopic.topicId);
   registerCreatedTopic(createdTopics, {
-    topicId: createdTopic.id,
+    topicId: createdTopic.topicId,
     topicName: createdTopic.title,
   });
 
   return {
     scenario: "new-topic",
     ok: true,
-    topicId: createdTopic.id,
+    topicId: createdTopic.topicId,
     topicName: createdTopic.title,
     sessionKey: session.session_key,
   };
@@ -396,9 +443,10 @@ async function runAutoInterruptResumeScenario({
     chatId,
     topic.topicId,
     [
-      "Run `sleep 20` first, then reply with exactly the target token.",
+      `First run exactly this shell command: ${buildSleepCommand(20)}.`,
       `Target token: ${token}.`,
-      "Do not finish before the sleep completes.",
+      "After the sleep, reply with exactly the target token and nothing else.",
+      "Do not do any other work.",
     ].join("\n"),
   );
   await waitForRunStart(sessionStore, topic.session);
@@ -424,14 +472,21 @@ async function runAutoInterruptResumeScenario({
     userClient,
     chatId,
     topic.topicId,
-    `Resume now. Skip the sleep and reply with exactly ${token}.`,
+    [
+      "Resume now.",
+      `Reply with exactly ${token}.`,
+      "Do not use shell.",
+      "Do not use tools.",
+      "Do not inspect files.",
+      "Do not add any extra text.",
+    ].join(" "),
   );
 
   const done = await waitForAutoPhase(
     sessionStore,
     topic.session,
     "done",
-    DEFAULT_TIMEOUT_MS,
+    AUTO_INTERRUPT_RESUME_TIMEOUT_MS,
   );
   const spikeThreadReply = await waitForThreadReplyContaining(
     userClient,

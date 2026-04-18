@@ -11,10 +11,10 @@ import {
 import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembler.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -133,8 +133,8 @@ test("handleIncomingMessage replies with guidance in General topic for /status",
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -179,8 +179,8 @@ test("handleIncomingMessage uses the global panel ENG language for General-topic
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -216,8 +216,8 @@ test("handleIncomingMessage returns Codex limits in General without requiring a 
     message: {
       text: "/limits",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -263,8 +263,8 @@ test("handleIncomingMessage accepts /wait global from General", async () => {
     message: {
       text: "/wait global 60",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     promptFragmentAssembler,
     serviceState: {
@@ -285,8 +285,8 @@ test("handleIncomingMessage accepts /wait global from General", async () => {
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1001234567890 },
-    from: { id: 1234567890 },
+    chat: { id: -1003577434463 },
+    from: { id: 5825672398 },
   });
 
   assert.equal(result.command, "wait");
@@ -313,8 +313,8 @@ test("handleIncomingMessage keeps /wait global replies in ENG when General panel
     message: {
       text: "/wait global 60",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     promptFragmentAssembler,
     serviceState: {
@@ -360,8 +360,8 @@ test("handleIncomingMessage stores a global Spike model via /model global", asyn
     message: {
       text: "/model global gpt-5.4-mini",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -426,8 +426,8 @@ test("handleIncomingMessage keeps global model replies in ENG when General panel
     message: {
       text: "/model global gpt-5.4-mini",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
     },
     serviceState,
     sessionService: {
@@ -512,18 +512,18 @@ test("handleIncomingMessage validates /reasoning global against the global targe
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Runtime topic",
     lifecycle_state: "active",
     ui_language: "eng",
     spike_model_override: "gpt-5.1-codex-mini",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -541,8 +541,8 @@ test("handleIncomingMessage validates /reasoning global against the global targe
     message: {
       text: "/reasoning global xhigh",
       entities: [{ type: "bot_command", offset: 0, length: 10 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -614,18 +614,18 @@ test("handleIncomingMessage stores topic Omni reasoning via /omni_reasoning", as
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Runtime topic",
     lifecycle_state: "active",
     ui_language: "eng",
     omni_reasoning_effort_override: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -640,8 +640,8 @@ test("handleIncomingMessage stores topic Omni reasoning via /omni_reasoning", as
     message: {
       text: "/omni_reasoning xhigh",
       entities: [{ type: "bot_command", offset: 0, length: 15 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -718,17 +718,17 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
     codexAutoCompactTokenLimit: 300000,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Status topic",
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -743,8 +743,8 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
@@ -799,17 +799,17 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
 test("handleIncomingMessage shows topic-local Codex limits", async () => {
   const sent = [];
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Limits topic",
     lifecycle_state: "active",
     ui_language: "eng",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -824,8 +824,8 @@ test("handleIncomingMessage shows topic-local Codex limits", async () => {
     message: {
       text: "/limits",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -871,17 +871,17 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Language topic",
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
 
@@ -896,8 +896,8 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     message: {
       text: "/language eng",
       entities: [{ type: "bot_command", offset: 0, length: 9 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,

@@ -55,6 +55,7 @@ export class CodexWorkerPool {
     this.pendingLiveSteers = new Map();
     this.startingRuns = new Set();
     this.startingRunPromises = new Map();
+    this.shuttingDown = false;
   }
 
   getActiveRun(sessionKey) {
@@ -70,6 +71,10 @@ export class CodexWorkerPool {
   }
 
   canStart(sessionKey) {
+    if (this.shuttingDown) {
+      return { ok: false, reason: "shutdown" };
+    }
+
     if (this.activeRuns.has(sessionKey) || this.startingRuns.has(sessionKey)) {
       return { ok: false, reason: "busy" };
     }
@@ -113,8 +118,8 @@ export class CodexWorkerPool {
     return interrupt(this, sessionKey);
   }
 
-  async shutdown() {
-    return shutdown(this);
+  async shutdown(options = undefined) {
+    return shutdown(this, options);
   }
 
   async executeRunLifecycle(run, args) {

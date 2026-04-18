@@ -219,15 +219,20 @@ test("performServiceRollout requests and waits for a replacement leader when one
   });
 });
 
-test("performServiceRollout recognizes a rollout that already shifted leader traffic", async () => {
+test("performServiceRollout can chain a fresh rollout after traffic already shifted", async () => {
+  const calls = [];
   const result = await performServiceRollout({
     generationStore: {},
     rolloutCoordinationStore: {
       async load() {
+        calls.push("load");
         return {
           status: "in_progress",
           target_generation_id: "gen-current",
         };
+      },
+      async requestRollout(payload) {
+        calls.push(["request", payload]);
       },
     },
     restartService: async () => {
@@ -239,12 +244,38 @@ test("performServiceRollout recognizes a rollout that already shifted leader tra
         pid: 333,
       },
     }),
+    signalRollout(generation) {
+      calls.push(["signal", generation.lease.generation_id]);
+    },
+    waitForTrafficShift: async () => ({
+      state: {
+        status: "in_progress",
+      },
+      targetGenerationId: "gen-next",
+      leader: {
+        lease: {
+          pid: 444,
+        },
+      },
+    }),
   });
 
+  assert.deepEqual(calls, [
+    "load",
+    [
+      "request",
+      {
+        currentGenerationId: "gen-current",
+        requestedBy: "service-rollout",
+      },
+    ],
+    ["signal", "gen-current"],
+  ]);
   assert.deepEqual(result, {
-    mode: "already-shifted",
-    leaderGenerationId: "gen-current",
-    leaderPid: 333,
+    mode: "soft-rollout",
+    previousGenerationId: "gen-current",
+    leaderGenerationId: "gen-next",
+    leaderPid: 444,
     rolloutStatus: "in_progress",
   });
 });

@@ -123,14 +123,14 @@ test("processUpdates forwards foreign-owned updates and handles local ones in or
       {
         update_id: 41,
         message: {
-          chat: { id: -1001234567890 },
+          chat: { id: -1003577434463 },
           message_thread_id: 700,
         },
       },
       {
         update_id: 42,
         message: {
-          chat: { id: -1001234567890 },
+          chat: { id: -1003577434463 },
           message_thread_id: 701,
         },
       },
@@ -146,6 +146,57 @@ test("processUpdates forwards foreign-owned updates and handles local ones in or
   assert.equal(forwarded[0].payload.type, "spike-update");
   assert.equal(forwarded[0].payload.update.update_id, 41);
   assert.deepEqual(localUpdates, [42]);
+});
+
+test("processUpdates defers batch callback acks for control-panel callbacks", async () => {
+  const ackedUpdateIds = [];
+
+  await processUpdates({
+    api: {
+      async sendMessage() {
+        return { ok: true };
+      },
+      async answerCallbackQuery() {
+        return { ok: true };
+      },
+    },
+    ackBatchCallbackQueriesImpl: async (_api, updates) => {
+      ackedUpdateIds.push(...updates.map((update) => update.update_id));
+    },
+    botUsername: "gatewaybot",
+    config: {},
+    emergencyRouter: null,
+    forwardUpdateImpl: async () => {},
+    handleSpikeUpdateImpl: async () => {},
+    lifecycleManager: null,
+    promptFragmentAssembler: null,
+    queuePromptAssembler: null,
+    resolveSpikeUpdateRouteImpl: async () => ({ type: "local" }),
+    runtimeObserver: null,
+    offsetStore: {
+      async save() {},
+    },
+    sessionStore: {},
+    sessionService: {},
+    globalControlPanelStore: {},
+    generalMessageLedgerStore: {},
+    topicControlPanelStore: {},
+    zooService: {},
+    workerPool: {},
+    serviceState: {
+      lastUpdateId: null,
+      handledUpdates: 0,
+    },
+    generationId: "gen-new",
+    generationStore: {},
+    updates: [
+      { update_id: 51, callback_query: { id: "cbq-global", data: "gcfg:s:input" } },
+      { update_id: 52, callback_query: { id: "cbq-topic", data: "tcfg:n:root" } },
+      { update_id: 53, callback_query: { id: "cbq-other", data: "zoo:refresh" } },
+    ],
+  });
+
+  assert.deepEqual(ackedUpdateIds, [53]);
 });
 
 test("createForwardingRequestHandler serves probes and dispatches forwarded updates locally", async () => {

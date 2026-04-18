@@ -3,6 +3,8 @@ import path from "node:path";
 import { renderTelegramHtml } from "../transport/telegram-reply-normalizer.js";
 
 const TELEGRAM_HTML_PARSE_MODE = "HTML";
+const DEFAULT_RETRY_AFTER_MAX_ATTEMPTS = 8;
+const DEFAULT_RETRY_AFTER_MAX_WAIT_MS = 30000;
 
 class TelegramRetryAfterError extends Error {
   constructor(method, description, retryAfterSeconds) {
@@ -55,7 +57,17 @@ function waitForAbortOrTimeout(timeoutMs, signal) {
   });
 }
 
-async function executeWithRetry(operation, { signal } = {}) {
+async function executeWithRetry(
+  operation,
+  {
+    signal,
+    maxRetryAfterAttempts = DEFAULT_RETRY_AFTER_MAX_ATTEMPTS,
+    maxRetryAfterTotalWaitMs = DEFAULT_RETRY_AFTER_MAX_WAIT_MS,
+  } = {},
+) {
+  let retryAttempts = 0;
+  let accumulatedRetryWaitMs = 0;
+
   while (true) {
     try {
       return await operation();
@@ -63,7 +75,20 @@ async function executeWithRetry(operation, { signal } = {}) {
       if (!(error instanceof TelegramRetryAfterError)) {
         throw error;
       }
-      await waitForAbortOrTimeout(error.retryAfterSeconds * 1000, signal);
+      const retryWaitMs = error.retryAfterSeconds * 1000;
+      retryAttempts += 1;
+
+      if (
+        retryAttempts > maxRetryAfterAttempts
+        || accumulatedRetryWaitMs + retryWaitMs > maxRetryAfterTotalWaitMs
+      ) {
+        throw new Error(
+          `${error.message} (exhausted retry_after budget after ${retryAttempts} attempt(s))`,
+        );
+      }
+
+      accumulatedRetryWaitMs += retryWaitMs;
+      await waitForAbortOrTimeout(retryWaitMs, signal);
     }
   }
 }

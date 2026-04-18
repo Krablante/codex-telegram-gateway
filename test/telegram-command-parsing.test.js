@@ -15,10 +15,10 @@ import {
 } from "../src/telegram/command-parsing.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
 };
 
 test("extractBotCommand parses direct commands and bot username suffix", () => {
@@ -116,9 +116,9 @@ test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit bin
     title: "Slice 4 test",
   });
   assert.deepEqual(
-    parseNewTopicCommandArgs("cwd=/workspace Gateway topic"),
+    parseNewTopicCommandArgs("cwd=/home/bloob/atlas Gateway topic"),
     {
-      bindingPath: "/workspace",
+      bindingPath: "/home/bloob/atlas",
       title: "Gateway topic",
     },
   );
@@ -130,9 +130,9 @@ test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit bin
     },
   );
   assert.deepEqual(
-    parseNewTopicCommandArgs('cwd="C:/Users/Example User/Source Repos" Windows topic'),
+    parseNewTopicCommandArgs('cwd="C:/Users/Konstantin/Source Repos" Windows topic'),
     {
-      bindingPath: "C:/Users/Example User/Source Repos",
+      bindingPath: "C:/Users/Konstantin/Source Repos",
       title: "Windows topic",
     },
   );
@@ -317,16 +317,16 @@ test("parseScopedRuntimeSettingCommandArgs supports topic and global modes", () 
 
 test("isAuthorizedMessage allows trusted human and trusted bot principals in configured chat", () => {
   const message = {
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
   };
 
   assert.equal(isAuthorizedMessage(message, config), true);
   assert.equal(
     isAuthorizedMessage(
       {
-        from: { id: 2234567890, is_bot: true },
-        chat: { id: -1001234567890 },
+        from: { id: 8603043042, is_bot: true },
+        chat: { id: -1003577434463 },
       },
       config,
     ),
@@ -346,7 +346,7 @@ test("isAuthorizedMessage allows trusted human and trusted bot principals in con
     isAuthorizedMessage(
       {
         from: { id: 999999999, is_bot: true },
-        chat: { id: -1001234567890 },
+        chat: { id: -1003577434463 },
       },
       config,
     ),
@@ -356,14 +356,16 @@ test("isAuthorizedMessage allows trusted human and trusted bot principals in con
 
 test("buildReplyMessageParams keeps topic routing when message_thread_id exists", () => {
   const message = {
-    chat: { id: -1001234567890 },
+    chat: { id: -1003577434463 },
+    message_id: 77,
     message_thread_id: 42,
   };
 
   assert.deepEqual(buildReplyMessageParams(message, "ok"), {
-    chat_id: -1001234567890,
+    chat_id: -1003577434463,
     text: "ok",
     message_thread_id: 42,
+    reply_to_message_id: 77,
   });
   assert.equal(getTopicLabel(message), "42");
 });

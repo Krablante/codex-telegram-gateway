@@ -4,18 +4,18 @@ import assert from "node:assert/strict";
 import { EmergencyPrivateChatRouter } from "../src/emergency/private-chat-router.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890", "1234567891"],
-  repoRoot: "/workspace/codex-telegram-gateway",
-  stateRoot: "/workspace/state/homelab/infra/automation/codex-telegram-gateway",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398", "5825672400"],
+  repoRoot: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+  stateRoot: "/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway",
   codexBinPath: "codex",
 };
 
 function buildPrivateMessage(overrides = {}) {
   return {
     text: "fix the gateway",
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: 1234567890, type: "private" },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: 5825672398, type: "private" },
     message_id: 1,
     ...overrides,
   };
@@ -24,8 +24,8 @@ function buildPrivateMessage(overrides = {}) {
 function buildTopicMessage(overrides = {}) {
   return {
     text: "normal topic message",
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890, type: "supergroup" },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463, type: "supergroup" },
     message_thread_id: 2203,
     message_id: 1,
     ...overrides,
@@ -101,8 +101,8 @@ test("EmergencyPrivateChatRouter accepts a private emergency prompt from any all
 
   const result = await router.handleMessage(
     buildPrivateMessage({
-      from: { id: 1234567891, is_bot: false },
-      chat: { id: 1234567891, type: "private" },
+      from: { id: 5825672400, is_bot: false },
+      chat: { id: 5825672400, type: "private" },
     }),
   );
 
@@ -310,7 +310,7 @@ test("EmergencyPrivateChatRouter refuses to start while normal topic runs are ac
     },
     config: {
       ...config,
-      telegramForumChatId: "-1001234567890",
+      telegramForumChatId: "-1003577434463",
     },
     normalRunState: {
       hasActiveRuns: () => true,
@@ -385,7 +385,7 @@ test("EmergencyPrivateChatRouter blocks normal topic prompts while emergency mod
     },
     config: {
       ...config,
-      telegramForumChatId: "-1001234567890",
+      telegramForumChatId: "-1003577434463",
     },
     startRun() {
       return {
@@ -417,7 +417,7 @@ test("EmergencyPrivateChatRouter blocks competing topic prompts from any allowed
     },
     config: {
       ...config,
-      telegramForumChatId: "-1001234567890",
+      telegramForumChatId: "-1003577434463",
     },
     startRun() {
       return {
@@ -434,7 +434,7 @@ test("EmergencyPrivateChatRouter blocks competing topic prompts from any allowed
   await router.handleMessage(buildPrivateMessage());
   const result = await router.handleCompetingTopicMessage(
     buildTopicMessage({
-      from: { id: 1234567891, is_bot: false },
+      from: { id: 5825672400, is_bot: false },
     }),
   );
 
@@ -453,7 +453,7 @@ test("EmergencyPrivateChatRouter lets topic commands pass through while emergenc
     },
     config: {
       ...config,
-      telegramForumChatId: "-1001234567890",
+      telegramForumChatId: "-1003577434463",
     },
     botUsername: "gatewaybot",
     startRun() {

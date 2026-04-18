@@ -1,8 +1,8 @@
 export const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -46,18 +46,18 @@ export const createPromptServiceState = createServiceState;
 
 export function createWorkspaceBinding(overrides = {}) {
   return {
-    repo_root: "/workspace",
-    cwd: "/workspace",
+    repo_root: "/home/bloob/atlas",
+    cwd: "/home/bloob/atlas",
     branch: "main",
-    worktree_path: "/workspace",
+    worktree_path: "/home/bloob/atlas",
     ...overrides,
   };
 }
 
 export function createTopicSession(overrides = {}) {
   return {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     lifecycle_state: "active",
     ui_language: "rus",

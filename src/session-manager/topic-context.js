@@ -12,6 +12,19 @@ function normalizePosixPath(input) {
   return String(input || "").replace(/\\/gu, path.posix.sep);
 }
 
+function isWindowsStylePath(input) {
+  return /^[A-Za-z]:[\\/]/u.test(String(input || ""))
+    || /^\\\\/u.test(String(input || ""));
+}
+
+function isContainedRelativePath(relativePath, pathModule) {
+  return relativePath === ""
+    || (
+      !relativePath.startsWith("..")
+      && !pathModule.isAbsolute(relativePath)
+    );
+}
+
 function resolveContainerMirrorPath(session, hostPath) {
   const hostRoot = String(session?.workspace_binding?.atlas_workspace_root || "").trim();
   const normalizedHostPath = String(hostPath || "").trim();
@@ -19,12 +32,28 @@ function resolveContainerMirrorPath(session, hostPath) {
     return null;
   }
 
+  if (isWindowsStylePath(hostRoot) || isWindowsStylePath(normalizedHostPath)) {
+    const normalizedHostRoot = path.win32.normalize(hostRoot);
+    const normalizedTarget = path.win32.normalize(normalizedHostPath);
+    const relative = path.win32.relative(normalizedHostRoot, normalizedTarget);
+    if (!isContainedRelativePath(relative, path.win32)) {
+      return null;
+    }
+
+    const rootName = path.win32.basename(normalizedHostRoot).toLowerCase();
+    if (!rootName) {
+      return null;
+    }
+
+    return relative
+      ? path.posix.join("/workspace", rootName, normalizePosixPath(relative))
+      : path.posix.join("/workspace", rootName);
+  }
+
   const normalizedHostRoot = normalizePosixPath(hostRoot);
   const normalizedTarget = normalizePosixPath(normalizedHostPath);
-  if (
-    normalizedTarget !== normalizedHostRoot
-    && !normalizedTarget.startsWith(`${normalizedHostRoot}/`)
-  ) {
+  const relative = path.posix.relative(normalizedHostRoot, normalizedTarget);
+  if (!isContainedRelativePath(relative, path.posix)) {
     return null;
   }
 
@@ -33,7 +62,6 @@ function resolveContainerMirrorPath(session, hostPath) {
     return null;
   }
 
-  const relative = path.posix.relative(normalizedHostRoot, normalizedTarget);
   return relative
     ? path.posix.join("/workspace", rootName, relative)
     : path.posix.join("/workspace", rootName);
@@ -81,7 +109,7 @@ function buildTopicContextLines(session, topicContextPath = null) {
           ...(containerCwd
             ? [`- Current cwd inside container-backed MCP tools: ${containerCwd}`]
             : []),
-          "- For container-backed MCP tools like pitlane and large_file, translate workspace-root host paths into the /workspace/... mirror before calling the tool.",
+          "- For container-backed MCP tools like pitlane and large_file, translate host workspace paths into the /workspace/... mirror before calling the tool.",
         ]
       : []),
     "",
@@ -105,6 +133,7 @@ export function buildTopicContextPrompt(session, { topicContextPath = null } = {
   return [
     "Telegram topic routing context:",
     `- topic_id: ${session.topic_id}`,
+    `- session_key: ${session.session_key}`,
     `- cwd: ${session.workspace_binding?.cwd ?? "unknown"}`,
     "- Default delivery target is this current Telegram topic.",
     '- Words like "this topic", "here", "сюда", or "в этот топик" mean this topic.',

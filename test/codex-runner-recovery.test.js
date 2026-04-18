@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { runCodexTask } from "../src/pty-worker/codex-runner.js";
+import { summarizeRolloutLine } from "../src/pty-worker/codex-runner-recovery.js";
 import {
   createMockChild,
   createMockWebSocket,
@@ -13,7 +14,24 @@ import {
   waitForCondition,
 } from "../test-support/codex-runner-fixtures.js";
 
-test("runCodexTask shuts down the app-server child when the websocket disconnects unexpectedly", async (t) => {
+test("summarizeRolloutLine keeps phase-less rollout agent messages non-terminal", () => {
+  const summary = summarizeRolloutLine(
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "agent_message",
+        message: "Промежуточный комментарий.",
+      },
+    }),
+    {
+      primaryThreadId: "root-thread",
+    },
+  );
+
+  assert.equal(summary?.messagePhase, null);
+});
+
+test("runCodexTask turns an unexpected websocket disconnect into a resume path when a thread is known", async (t) => {
   const child = createMockChild();
   const codexSessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-empty-rollout-"),
@@ -35,6 +53,8 @@ test("runCodexTask shuts down the app-server child when the websocket disconnect
     openWebSocketImpl: async () => ws,
     codexSessionsRoot,
     rolloutDiscoveryTimeoutMs: 50,
+    transportReattachRetryDelayMs: 10,
+    transportReattachTimeoutMs: 50,
   });
 
   emitListenBanner(child, 43124);
@@ -47,8 +67,719 @@ test("runCodexTask shuts down the app-server child when the websocket disconnect
     wasClean: false,
   });
 
-  await assert.rejects(run.finished, /websocket closed \(code=1006, clean=false\)/u);
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.interruptReason, "upstream");
+  assert.equal(result.abortReason, "transport_lost");
+  assert.deepEqual(result.resumeReplacement, {
+    requestedThreadId: "root-thread",
+    replacementThreadId: null,
+    reason: "transport-disconnect",
+  });
   assert.deepEqual(child.killCalls, ["SIGTERM"]);
+});
+
+test("runCodexTask reattaches to the same app-server websocket before falling back to rollout recovery", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-reattach-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const firstWs = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const secondWs = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const sockets = [firstWs, secondWs];
+  let openCallCount = 0;
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Проверь transport reattach.",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => sockets[openCallCount++],
+    codexSessionsRoot,
+    rolloutDiscoveryTimeoutMs: 50,
+    transportReattachRetryDelayMs: 10,
+    transportReattachTimeoutMs: 100,
+  });
+
+  emitListenBanner(child, 43124);
+  await waitForCondition(
+    () => firstWs.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  firstWs.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+
+  await waitForCondition(
+    () => secondWs.sentMessages.some((message) => message.method === "thread/resume"),
+  );
+  secondWs.emitNotification({
+    method: "item/completed",
+    params: {
+      threadId: "root-thread",
+      turnId: "root-turn",
+      item: {
+        type: "agentMessage",
+        phase: "final_answer",
+        text: "Финал после reattach.",
+      },
+    },
+  });
+  secondWs.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "root-thread",
+      turn: {
+        id: "root-turn",
+      },
+    },
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "root-thread");
+  assert.equal(result.resumeReplacement, null);
+  assert.equal(openCallCount, 2);
+  assert.deepEqual(child.killCalls, ["SIGTERM"]);
+});
+
+test("runCodexTask keeps watching rollout after reattach when resume returns a completed turn without the final output", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-reattach-completed-tail-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "18");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-04-18T12-30-00-root-thread.jsonl",
+  );
+  await fs.writeFile(rolloutPath, "");
+
+  const firstWs = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const secondWs = createMockWebSocket({
+    requestHandlers: {
+      ...createStandardRequestHandlers(),
+      "thread/resume"(params) {
+        assert.equal(params.threadId, "root-thread");
+        return {
+          thread: {
+            id: "root-thread",
+            turns: [
+              {
+                id: "root-turn",
+                status: "completed",
+              },
+            ],
+          },
+        };
+      },
+    },
+  });
+  const sockets = [firstWs, secondWs];
+  let openCallCount = 0;
+  const summaries = [];
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Не теряй task_complete после reattach.",
+    onEvent(summary) {
+      summaries.push(summary);
+    },
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => sockets[openCallCount++],
+    codexSessionsRoot,
+    rolloutPollIntervalMs: 20,
+    transportReattachRetryDelayMs: 10,
+    transportReattachTimeoutMs: 100,
+  });
+
+  emitListenBanner(child, 43132);
+  await waitForCondition(
+    () => firstWs.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  firstWs.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+
+  await waitForCondition(
+    () => secondWs.sentMessages.some((message) => message.method === "thread/resume"),
+  );
+
+  setTimeout(() => {
+    void fs.appendFile(
+      rolloutPath,
+      `${JSON.stringify({
+        timestamp: "2026-04-18T12:30:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+          turn_id: "root-turn",
+          last_agent_message: "Финал после reattach task_complete.",
+        },
+      })}\n`,
+    );
+  }, 80);
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "root-thread");
+  assert.equal(result.resumeReplacement, null);
+  assert.equal(openCallCount, 2);
+  assert.equal(
+    summaries.some((summary) => summary.text === "Финал после reattach task_complete."),
+    true,
+  );
+});
+
+test("runCodexTask uses official thread history to repair a stale stored thread id before resume", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/list"() {
+        return {
+          data: [
+            {
+              id: "history-thread",
+              preview: [
+                "Telegram topic routing context:",
+                "session_key: -1003577434463:2203",
+              ].join("\n"),
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+      "thread/resume"(params) {
+        assert.equal(params.threadId, "history-thread");
+        return {
+          thread: {
+            id: "history-thread",
+          },
+        };
+      },
+      "turn/start"() {
+        return {
+          turn: {
+            id: "history-turn",
+          },
+        };
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Продолжай.",
+    sessionKey: "-1003577434463:2203",
+    sessionThreadId: "stale-thread",
+    providerSessionId: "provider-session-2203",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43126);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitNotification({
+    method: "item/completed",
+    params: {
+      threadId: "history-thread",
+      turnId: "history-turn",
+      item: {
+        type: "agentMessage",
+        phase: "final_answer",
+        text: "Resume recovered from official history.",
+      },
+    },
+  });
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "history-thread",
+      turn: {
+        id: "history-turn",
+      },
+    },
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "history-thread");
+  assert.equal(result.resumeReplacement, null);
+  assert.equal(
+    ws.sentMessages.some(
+      (message) => message.method === "thread/list",
+    ),
+    true,
+  );
+});
+
+test("runCodexTask uses official thread history even when local continuity ids are gone", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/list"() {
+        return {
+          data: [
+            {
+              id: "history-only-thread",
+              preview: [
+                "Telegram topic routing context:",
+                "session_key: -1003577434463:2203",
+              ].join("\n"),
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+      "thread/resume"(params) {
+        assert.equal(params.threadId, "history-only-thread");
+        return {
+          thread: {
+            id: "history-only-thread",
+          },
+        };
+      },
+      "turn/start"() {
+        return {
+          turn: {
+            id: "history-only-turn",
+          },
+        };
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Продолжай нативный resume.",
+    sessionKey: "-1003577434463:2203",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43127);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitNotification({
+    method: "item/completed",
+    params: {
+      threadId: "history-only-thread",
+      turnId: "history-only-turn",
+      item: {
+        type: "agentMessage",
+        phase: "final_answer",
+        text: "History-only resume recovered.",
+      },
+    },
+  });
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "history-only-thread",
+      turn: {
+        id: "history-only-turn",
+      },
+    },
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "history-only-thread");
+  assert.equal(
+    ws.sentMessages.some((message) => message.method === "thread/list"),
+    true,
+  );
+  assert.equal(
+    ws.sentMessages.some((message) => message.method === "thread/resume"),
+    true,
+  );
+});
+
+test("runCodexTask broadens history repair beyond cwd-scoped thread list when session history lives elsewhere", async () => {
+  const child = createMockChild();
+  const threadListCalls = [];
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/list"(params) {
+        threadListCalls.push(params);
+        if (threadListCalls.length === 1) {
+          assert.equal(params.cwd, "/home/bloob/atlas");
+          return {
+            data: [],
+            nextCursor: null,
+          };
+        }
+
+        assert.equal("cwd" in params, false);
+        return {
+          data: [
+            {
+              id: "global-history-thread",
+              preview: [
+                "Telegram topic routing context:",
+                "session_key: -1003577434463:2203",
+              ].join("\n"),
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+      "thread/resume"(params) {
+        assert.equal(params.threadId, "global-history-thread");
+        return {
+          thread: {
+            id: "global-history-thread",
+          },
+        };
+      },
+      "turn/start"() {
+        return {
+          turn: {
+            id: "global-history-turn",
+          },
+        };
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Продолжай через глобальную историю.",
+    sessionKey: "-1003577434463:2203",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43137);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitNotification({
+    method: "item/completed",
+    params: {
+      threadId: "global-history-thread",
+      turnId: "global-history-turn",
+      item: {
+        type: "agentMessage",
+        phase: "final_answer",
+        text: "Global history resume recovered.",
+      },
+    },
+  });
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "global-history-thread",
+      turn: {
+        id: "global-history-turn",
+      },
+    },
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "global-history-thread");
+  assert.equal(threadListCalls.length, 2);
+});
+
+test("runCodexTask fails fast when session-key-only history repair breaks", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/list"() {
+        throw new Error("list unavailable");
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Продолжай.",
+    sessionKey: "-1003577434463:2203",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43138);
+
+  await assert.rejects(
+    run.finished,
+    /Codex thread history lookup failed before resume: list unavailable/u,
+  );
+  assert.equal(
+    ws.sentMessages.some((message) => message.method === "thread/start"),
+    false,
+  );
+});
+
+test("runCodexTask does not start a duplicate turn when thread resume already exposes an in-progress turn", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/resume"(params) {
+        assert.equal(params.threadId, "history-thread");
+        return {
+          thread: {
+            id: "history-thread",
+            turns: [
+              {
+                id: "history-turn",
+                status: "inProgress",
+              },
+            ],
+          },
+        };
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Не дублируй turn.",
+    sessionKey: "-1003577434463:2203",
+    sessionThreadId: "history-thread",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43139);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "thread/resume"),
+  );
+  assert.equal(
+    ws.sentMessages.some((message) => message.method === "turn/start"),
+    false,
+  );
+
+  ws.emitNotification({
+    method: "item/completed",
+    params: {
+      threadId: "history-thread",
+      turnId: "history-turn",
+      item: {
+        type: "agentMessage",
+        phase: "final_answer",
+        text: "Reused the open turn.",
+      },
+    },
+  });
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "history-thread",
+      turn: {
+        id: "history-turn",
+      },
+    },
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "history-thread");
+});
+
+test("runCodexTask skips thread history lookup during a deliberate fresh-start bootstrap", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/start"() {
+        return {
+          thread: {
+            id: "fresh-start-thread",
+          },
+        };
+      },
+      "turn/start"() {
+        return {
+          turn: {
+            id: "fresh-start-turn",
+          },
+        };
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Стартуй свежо после compact.",
+    sessionKey: "-1003577434463:2203",
+    skipThreadHistoryLookup: true,
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43128);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitNotification({
+    method: "item/completed",
+    params: {
+      threadId: "fresh-start-thread",
+      turnId: "fresh-start-turn",
+      item: {
+        type: "agentMessage",
+        phase: "final_answer",
+        text: "Fresh start respected.",
+      },
+    },
+  });
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "fresh-start-thread",
+      turn: {
+        id: "fresh-start-turn",
+      },
+    },
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "fresh-start-thread");
+  assert.equal(
+    ws.sentMessages.some((message) => message.method === "thread/list"),
+    false,
+  );
+  assert.equal(
+    ws.sentMessages.some((message) => message.method === "thread/resume"),
+    false,
+  );
+  assert.equal(
+    ws.sentMessages.some((message) => message.method === "thread/start"),
+    true,
+  );
+});
+
+test("runCodexTask fails fast when historical thread lookup breaks while continuity hints exist", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/list"() {
+        throw new Error("list unavailable");
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Продолжай.",
+    sessionKey: "-1003577434463:2203",
+    sessionThreadId: "stale-thread",
+    providerSessionId: "provider-session-2203",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43129);
+
+  await assert.rejects(
+    run.finished,
+    /Codex thread history lookup failed before resume: list unavailable/u,
+  );
+});
+
+test("runCodexTask surfaces transient resume errors instead of pretending the thread is gone", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/resume"() {
+        throw new Error("network timeout");
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: "/home/bloob/atlas",
+    prompt: "Продолжай.",
+    sessionKey: "-1003577434463:2203",
+    sessionThreadId: "stale-thread",
+    skipThreadHistoryLookup: true,
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43130);
+
+  await assert.rejects(run.finished, /network timeout/u);
 });
 
 test("runCodexTask follows the rollout file after websocket disconnect and completes from final_answer", async (t) => {
@@ -377,7 +1108,7 @@ test("runCodexTask completes from rollout task_complete while the websocket stay
   );
 });
 
-test("runCodexTask rollout fallback fails if the app-server exits and no final_answer arrives", async (t) => {
+test("runCodexTask keeps app-server exit without a final answer on the resume path when a thread is known", async (t) => {
   const child = createMockChild();
   const codexSessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-rollout-stall-"),
@@ -435,10 +1166,17 @@ test("runCodexTask rollout fallback fails if the app-server exits and no final_a
   child.exitCode = 1;
   child.emit("close", 1, null);
 
-  await assert.rejects(
-    run.finished,
-    /exited before rollout fallback reached a final answer/u,
-  );
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.interruptReason, "upstream");
+  assert.equal(result.abortReason, "transport_lost");
+  assert.deepEqual(result.resumeReplacement, {
+    requestedThreadId: "root-thread",
+    replacementThreadId: null,
+    reason: "transport-disconnect",
+  });
 });
 
 test("runCodexTask resolves interrupted when disconnect recovery sees a user interrupt before child exit", async (t) => {
@@ -497,7 +1235,7 @@ test("runCodexTask resolves interrupted when disconnect recovery sees a user int
   assert.equal(result.interruptReason, "user");
 });
 
-test("runCodexTask finishes interrupted from rollout turn_aborted and reaps the child", async (t) => {
+test("runCodexTask keeps rollout turn_aborted on a transport resume path and reaps the child", async (t) => {
   const child = createMockChild();
   const codexSessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-rollout-turn-aborted-"),
@@ -560,10 +1298,82 @@ test("runCodexTask finishes interrupted from rollout turn_aborted and reaps the 
   assert.equal(result.interrupted, true);
   assert.equal(result.interruptReason, "upstream");
   assert.equal(result.abortReason, "interrupted");
+  assert.deepEqual(result.resumeReplacement, {
+    requestedThreadId: "root-thread",
+    replacementThreadId: null,
+    reason: "transport-disconnect",
+  });
   assert.deepEqual(child.killCalls, ["SIGTERM"]);
 });
 
-test("runCodexTask fails stalled recovery when the websocket disconnects and rollout stops growing", async (t) => {
+test("runCodexTask preserves non-interrupted rollout turn_aborted as a terminal failure instead of transport resume", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-turn-failed-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "15");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-04-15T19-20-41-root-thread.jsonl",
+  );
+  await fs.writeFile(rolloutPath, "");
+
+  const ws = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Не маскируй failure как resume.",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+    codexSessionsRoot,
+    rolloutDiscoveryTimeoutMs: 100,
+    rolloutPollIntervalMs: 20,
+    rolloutStallWithoutChildExitMs: 200,
+  });
+
+  emitListenBanner(child, 43140);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+
+  await fs.appendFile(
+    rolloutPath,
+    `${JSON.stringify({
+      timestamp: "2026-04-15T19:20:41.000Z",
+      type: "event_msg",
+      payload: {
+        type: "turn_aborted",
+        turn_id: "root-turn",
+        reason: "tool_error",
+      },
+    })}\n`,
+  );
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.signal, null);
+  assert.equal(result.interrupted, false);
+  assert.equal(result.abortReason, "tool_error");
+  assert.equal(result.resumeReplacement, null);
+  assert.match(result.warnings.at(-1), /Codex turn aborted \(tool_error\)/u);
+  assert.deepEqual(child.killCalls, ["SIGTERM"]);
+});
+
+test("runCodexTask turns stalled disconnect recovery into a transport resume path when a thread is known", async (t) => {
   const child = createMockChild();
   const codexSessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-rollout-stall-live-child-"),
@@ -607,14 +1417,21 @@ test("runCodexTask fails stalled recovery when the websocket disconnects and rol
     wasClean: false,
   });
 
-  await assert.rejects(
-    run.finished,
-    /rollout recovery stalled after websocket disconnect/u,
-  );
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.interruptReason, "upstream");
+  assert.equal(result.abortReason, "transport_lost");
+  assert.deepEqual(result.resumeReplacement, {
+    requestedThreadId: "root-thread",
+    replacementThreadId: null,
+    reason: "transport-disconnect",
+  });
   assert.deepEqual(child.killCalls, ["SIGTERM"]);
 });
 
-test("runCodexTask reports transport-recovering instead of pretending to steer a disconnected run", async (t) => {
+test("runCodexTask buffers steer input while transport recovery is in progress", async (t) => {
   const child = createMockChild();
   const codexSessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-rollout-recovering-"),
@@ -662,14 +1479,135 @@ test("runCodexTask reports transport-recovering instead of pretending to steer a
     input: [{ type: "text", text: "follow-up" }],
   });
   assert.deepEqual(steerResult, {
-    ok: false,
-    reason: "transport-recovering",
+    ok: true,
+    reason: "steer-buffered",
+    inputCount: 1,
   });
 
   child.exitCode = 1;
   child.emit("close", 1, null);
-  await assert.rejects(
-    run.finished,
-    /exited before rollout fallback reached a final answer/u,
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.interruptReason, "upstream");
+  assert.equal(result.abortReason, "transport_lost");
+  assert.deepEqual(result.resumeReplacement, {
+    requestedThreadId: "root-thread",
+    replacementThreadId: null,
+    reason: "transport-disconnect",
+  });
+});
+
+test("runCodexTask finishes interrupted when reattach finds the resumed turn already interrupted", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-reattach-interrupted-"),
   );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const firstWs = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const secondWs = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/resume"() {
+        return {
+          thread: {
+            id: "root-thread",
+            turns: [
+              {
+                id: "root-turn",
+                status: "interrupted",
+              },
+            ],
+          },
+        };
+      },
+    },
+  });
+  const sockets = [firstWs, secondWs];
+  let openCallCount = 0;
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Проверь interrupted reattach.",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => sockets[openCallCount++],
+    codexSessionsRoot,
+    rolloutDiscoveryTimeoutMs: 50,
+    transportReattachRetryDelayMs: 10,
+    transportReattachTimeoutMs: 100,
+  });
+
+  emitListenBanner(child, 43141);
+  await waitForCondition(
+    () => firstWs.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  firstWs.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.abortReason, "transport_lost");
+  assert.deepEqual(result.resumeReplacement, {
+    requestedThreadId: "root-thread",
+    replacementThreadId: null,
+    reason: "transport-disconnect",
+  });
+});
+
+test("runCodexTask preserves user interrupt semantics when startup dies before thread ids exist", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/list"() {
+        return new Promise(() => {});
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Остановись во время раннего startup.",
+    sessionKey: "-1003577434463:2203",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43142);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "thread/list"),
+  );
+
+  await run.interrupt();
+  ws.emitClose({
+    code: 1006,
+    wasClean: false,
+  });
+  child.emit("close", null, "SIGINT");
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.interruptReason, "user");
 });

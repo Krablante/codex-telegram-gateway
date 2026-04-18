@@ -47,6 +47,9 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `make smoke` — focused Spike smoke path
 - `make smoke-omni` — focused Omni smoke path
 - `make soak` — multi-topic concurrency validation
+- `make test-live` — real Codex continuity validation for interrupt, reattach, and resume semantics
+- `make user-e2e` — real Telegram user-account baseline scenarios
+- `make user-spike-audit` — heavier user-account Spike scenarios such as interrupt/resume, chained rollouts, `/compact`, and attachment ingress
 
 `make smoke`, `make smoke-omni`, `make soak`, and `make service-*` are Linux/operator flows. On native Windows, stay on the direct wrapper path unless you intentionally add your own Windows service wrapper.
 
@@ -63,6 +66,8 @@ Native Windows equivalent:
 scripts\windows\user-login.cmd
 scripts\windows\user-status.cmd
 scripts\windows\user-e2e.cmd
+scripts\windows\user-spike-audit.cmd
+scripts\windows\test-live.cmd
 ```
 
 The built-in `user-login` flow now uses the repo's own Node prompt helper for phone/code/password entry instead of the old third-party `input`/`inquirer` stack. That keeps the operator UX the same while removing stale transitive dependencies from the production graph.
@@ -110,7 +115,10 @@ Once the bot is running in the forum:
 2. `make test`
 3. `make smoke`
 4. `make smoke-omni` if Omni is enabled
-5. live topic testing only after that
+5. `make test-live`
+6. `make user-e2e`
+7. `make user-spike-audit` when you want the heavier live audit path
+8. live topic testing only after that
 
 Native Windows:
 
@@ -119,8 +127,11 @@ Native Windows:
 3. `scripts\windows\doctor.cmd`
 4. `scripts\windows\admin.cmd status`
 5. `scripts\windows\test.cmd`
-6. `scripts\windows\user-status.cmd` if you plan live user-account checks
-7. live topic testing only after that
+6. `scripts\windows\test-live.cmd`
+7. `scripts\windows\user-status.cmd` if you plan live user-account checks
+8. `scripts\windows\user-e2e.cmd`
+9. `scripts\windows\user-spike-audit.cmd` when you want the heavier live audit path
+10. live topic testing only after that
 
 ## Test Ownership Notes
 
@@ -147,6 +158,7 @@ Native Windows:
 - keep batch-level callback early-ack behavior in `test/telegram-callback-batch-ack.test.js`
 - keep long-poll bootstrap, forwarded-vs-local update dispatch, and IPC forwarding probes in `test/run-update-processing.test.js`
 - keep stale-running startup cleanup, including clearing dead thread/rollout resume state and emitting an Omni-visible failed final, in `test/run-stale-run-recovery.test.js`
+- keep stale-running startup cleanup, resumable continuity preservation, and rollout-truth recovery for already completed runs in `test/run-stale-run-recovery.test.js`
 - keep run-once maintenance ordering in `test/run-maintenance.test.js`
 - keep rollout request/reconcile behavior in `test/run-rollout-controller.test.js`
 - keep background timer registration and leader-gated scans in `test/run-background-jobs.test.js`
@@ -166,12 +178,13 @@ Native Windows:
 - keep `src/pty-worker/codex-runner.js` as the thin public shell and move heavy runner logic into `codex-runner-common.js`, `codex-runner-transport.js`, and `codex-runner-recovery.js`
 - keep public helper/export coverage in `test/codex-runner-common.test.js`
 - keep primary-thread filtering, active-turn refresh, and async finalization coverage in `test/codex-runner-lifecycle.test.js`
-- keep disconnect, rollout replay, and recovery fallback coverage in `test/codex-runner-recovery.test.js`
+- keep disconnect, websocket reattach, rollout replay, and recovery fallback coverage in `test/codex-runner-recovery.test.js`
 - keep session-aware service rollout coverage in `test/service-generation-store.test.js`, `test/service-rollout.test.js`, `test/service-rollout-command.test.js`, `test/update-forwarding-ipc.test.js`, and `test/spike-update-routing.test.js`
 - keep shared worker-pool helpers in `test-support/worker-pool-fixtures.js`
 - keep the compact worker-pool integration spine in `test/worker-pool.test.js`
 - keep `src/pty-worker/worker-pool.js` as the thin public shell and move heavy worker logic into `worker-pool-transport.js`, `worker-pool-delivery.js`, `worker-pool-lifecycle.js`, and `worker-pool-common.js`
 - keep worker startup and resume/bootstrap behavior in `test/worker-pool-startup.test.js`
+- keep native history repair via `thread/list`, `provider_session_id`, rollout metadata, and `session_key` in `test/worker-pool-startup.test.js`
 - keep telegram-file and attachment-delivery coverage in `test/worker-pool-file-delivery.test.js`
 - keep progress/final-reply/failure delivery coverage in `test/worker-pool-delivery.test.js`
 - keep live-steer, busy/capacity, and late-event coverage in `test/worker-pool-live-steer.test.js`

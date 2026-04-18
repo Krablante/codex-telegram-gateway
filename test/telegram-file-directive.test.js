@@ -41,7 +41,7 @@ test("extractTelegramFileDirectives reports malformed blocks without leaking the
   assert.equal(parsed.text, "");
   assert.deepEqual(parsed.documents, []);
   assert.equal(parsed.warnings.length, 1);
-  assert.match(parsed.warnings[0], /нужен path/u);
+  assert.match(parsed.warnings[0], /<absolute-host-path-to-file>/u);
 });
 
 test("extractTelegramFileDirectives keeps example blocks visible when action sentinel is missing", () => {
@@ -66,7 +66,7 @@ test("extractTelegramFileDirectives ignores the legacy placeholder example even 
     "",
     "```telegram-file",
     "action: send",
-    "path: /absolute/path/to/file",
+    "path: <absolute-host-path-to-file>",
     "filename: optional-name.ext",
     "caption: optional caption",
     "```",

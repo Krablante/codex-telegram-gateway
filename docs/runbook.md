@@ -118,6 +118,7 @@ make service-restart-live
 ```
 
 `make service-restart-live` is the canonical live-runtime restart: it restarts `Omni` and then rolls `Spike` through the soft session-aware path. Avoid raw `systemctl restart codex-telegram-gateway.service` unless you explicitly want the blind hard-restart behavior.
+If the previous rollout already shifted leader traffic but a retiring generation is still draining retained topics, rerunning `make service-restart-live` now chains the next soft rollout instead of getting stuck behind a fake `already-shifted` stop.
 
 ## Failure Handling
 
@@ -132,10 +133,11 @@ make service-restart-live
 - on native Windows, use `scripts\windows\admin.cmd ...` instead of trying Linux-only `make admin`
 - correlate `runtime-events.ndjson`, `meta.json`, `exchange-log.jsonl`, and `active-brief.md` before hand-editing state
 - after manual `/compact`, expect the next fresh run to bootstrap from `active-brief.md`
+- for heavier live validation, prefer `make test-live`, `make user-e2e`, and `make user-spike-audit` before trying to reason from one broken topic by hand
 
 ## Recovery Notes
 
-- if a stored `codex_thread_id` no longer resumes cleanly, the runtime retries once before falling back to compact recovery
+- if a stored `codex_thread_id` no longer resumes cleanly, the runtime first repairs continuity from real Codex history surfaces such as `thread/list`, `provider_session_id`, rollout metadata, and `session_key`; compact recovery is the bounded last resort, not the first move
 - if Omni is disabled globally, old topic `auto_mode` state stays on disk but becomes inert
 - if `zoo/topic.json` is missing, incomplete, or quarantined, a live Zoo menu callback now rebuilds the stored chat/topic/menu binding; before this fix the symptom was silent Zoo button no-ops or the Zoo topic falling back into ordinary session routing
 - if Telegram reports a topic as unavailable, the session may move into `parked`

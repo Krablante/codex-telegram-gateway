@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 
 import { resolveWorkspaceBinding } from "../src/workspace/binding-resolver.js";
 
-test("resolveWorkspaceBinding returns repo and cwd for workspace-root paths", async () => {
+test("resolveWorkspaceBinding returns repo and cwd for atlas paths", async () => {
   const workspaceRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-workspace-root-"),
   );

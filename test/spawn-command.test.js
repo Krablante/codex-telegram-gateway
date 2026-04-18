@@ -144,7 +144,7 @@ test("buildSpawnCommand quotes Windows shell args that contain spaces", async ()
   try {
     const launch = buildSpawnCommand(commandPath, [
       "-C",
-      "O:/Users/Example User/Source Repos/gateway",
+      "O:/Users/Konstantin/Source Repos/gateway",
       "--flag",
       "plain",
     ], {
@@ -161,9 +161,35 @@ test("buildSpawnCommand quotes Windows shell args that contain spaces", async ()
       "/d",
       "/s",
       "/c",
-      `${commandPath} -C "O:/Users/Example User/Source Repos/gateway" --flag plain`,
+      `${commandPath} -C "O:/Users/Konstantin/Source Repos/gateway" --flag plain`,
     ]);
     assert.equal(launch.spawnOptions.shell, undefined);
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("buildSpawnCommand rejects Windows shell-routed values with percent expansion", async () => {
+  const tempRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-spawn-command-percent-"),
+  );
+  const binDir = path.join(tempRoot, "npm");
+  const commandPath = path.join(binDir, "codex.cmd");
+
+  await writeWindowsCommandShim(commandPath);
+
+  try {
+    assert.throws(
+      () => buildSpawnCommand(commandPath, ["--label", "%TEMP%"], {
+        cwd: tempRoot,
+        env: {
+          PATH: binDir,
+          PATHEXT: ".CMD",
+        },
+        platform: "win32",
+      }),
+      /does not support % or newline characters/u,
+    );
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

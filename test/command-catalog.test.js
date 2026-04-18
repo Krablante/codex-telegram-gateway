@@ -7,14 +7,14 @@ import {
 } from "../src/telegram/command-catalog.js";
 
 test("buildTelegramCommandSyncPlan includes full Spike forum/private catalogs", () => {
-  const plan = buildTelegramCommandSyncPlan("spike", "-1001234567890");
+  const plan = buildTelegramCommandSyncPlan("spike", "-1003577434463");
 
   assert.equal(plan.length, 8);
   assert.equal(
     plan.find(
       (entry) =>
         entry.scope.type === "chat"
-        && entry.scope.chat_id === "-1001234567890"
+        && entry.scope.chat_id === "-1003577434463"
         && entry.languageCode === null,
     )?.commands.some((command) => command.command === "auto"),
     true,
@@ -23,7 +23,7 @@ test("buildTelegramCommandSyncPlan includes full Spike forum/private catalogs", 
     plan.find(
       (entry) =>
         entry.scope.type === "chat"
-        && entry.scope.chat_id === "-1001234567890"
+        && entry.scope.chat_id === "-1003577434463"
         && entry.languageCode === null,
     )?.commands.some((command) => command.command === "global"),
     true,
@@ -32,7 +32,7 @@ test("buildTelegramCommandSyncPlan includes full Spike forum/private catalogs", 
     plan.find(
       (entry) =>
         entry.scope.type === "chat"
-        && entry.scope.chat_id === "-1001234567890"
+        && entry.scope.chat_id === "-1003577434463"
         && entry.languageCode === null,
     )?.commands.some((command) => command.command === "menu"),
     true,
@@ -41,7 +41,7 @@ test("buildTelegramCommandSyncPlan includes full Spike forum/private catalogs", 
     plan.find(
       (entry) =>
         entry.scope.type === "chat"
-        && entry.scope.chat_id === "-1001234567890"
+        && entry.scope.chat_id === "-1003577434463"
         && entry.languageCode === null,
     )?.commands.some((command) => command.command === "zoo"),
     true,
@@ -50,7 +50,7 @@ test("buildTelegramCommandSyncPlan includes full Spike forum/private catalogs", 
     plan.find(
       (entry) =>
         entry.scope.type === "chat"
-        && entry.scope.chat_id === "-1001234567890"
+        && entry.scope.chat_id === "-1003577434463"
         && entry.languageCode === null,
     )?.commands.some((command) => command.command === "limits"),
     true,
@@ -67,7 +67,7 @@ test("buildTelegramCommandSyncPlan includes full Spike forum/private catalogs", 
 });
 
 test("buildTelegramCommandSyncPlan omits Omni commands from Spike when Omni is disabled", () => {
-  const plan = buildTelegramCommandSyncPlan("spike", "-1001234567890", {
+  const plan = buildTelegramCommandSyncPlan("spike", "-1003577434463", {
     omniEnabled: false,
   });
 
@@ -83,7 +83,7 @@ test("buildTelegramCommandSyncPlan omits Omni commands from Spike when Omni is d
 });
 
 test("buildTelegramCommandSyncPlan includes Omni auto commands for group scopes", () => {
-  const plan = buildTelegramCommandSyncPlan("omni", "-1001234567890");
+  const plan = buildTelegramCommandSyncPlan("omni", "-1003577434463");
 
   assert.equal(plan.length, 4);
   assert.deepEqual(
@@ -93,7 +93,7 @@ test("buildTelegramCommandSyncPlan includes Omni auto commands for group scopes"
 });
 
 test("buildTelegramCommandSyncPlan returns an empty Omni catalog when Omni is disabled", () => {
-  const plan = buildTelegramCommandSyncPlan("omni", "-1001234567890", {
+  const plan = buildTelegramCommandSyncPlan("omni", "-1003577434463", {
     omniEnabled: false,
   });
 
@@ -109,7 +109,7 @@ test("syncTelegramCommandCatalog applies every scoped command list", async () =>
     },
   };
 
-  const plan = await syncTelegramCommandCatalog(api, "spike", "-1001234567890");
+  const plan = await syncTelegramCommandCatalog(api, "spike", "-1003577434463");
 
   assert.equal(calls.length, plan.length);
   assert.deepEqual(
@@ -134,7 +134,7 @@ test("syncTelegramCommandCatalog clears stale Omni commands when Omni is disable
     },
   };
 
-  const plan = await syncTelegramCommandCatalog(api, "omni", "-1001234567890", {
+  const plan = await syncTelegramCommandCatalog(api, "omni", "-1003577434463", {
     omniEnabled: false,
   });
 

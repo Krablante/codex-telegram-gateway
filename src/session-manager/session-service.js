@@ -340,13 +340,14 @@ export class SessionService {
   }
 
   async purgeSession(session, reason = "command/purge") {
-    await this.sessionStore.park(session, reason);
-    const purged = await this.sessionStore.purge(session, reason);
+    const current =
+      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
+    const purged = await this.sessionStore.purge(current, reason);
     await this.runtimeObserver?.noteSessionLifecycle({
       action: "purged",
       session: purged,
       reason,
-      previousState: session.lifecycle_state,
+      previousState: current.lifecycle_state,
       nextState: purged.lifecycle_state,
       trigger: "command",
     });
@@ -612,15 +613,25 @@ export class SessionService {
   async resolveContextSnapshot(
     session,
     {
-      threadId = session.codex_thread_id ?? null,
+      threadId =
+        session.codex_thread_id
+        ?? session.last_context_snapshot?.thread_id
+        ?? session.last_context_snapshot?.threadId
+        ?? null,
+      providerSessionId =
+        session.provider_session_id
+        ?? session.last_context_snapshot?.session_id
+        ?? session.last_context_snapshot?.sessionId
+        ?? null,
       rolloutPath = session.codex_rollout_path ?? null,
     } = {},
   ) {
     const storedSnapshot = normalizeContextSnapshot(session.last_context_snapshot);
 
-    if (threadId && this.config.codexSessionsRoot) {
+    if ((threadId || providerSessionId) && this.config.codexSessionsRoot) {
       const resolved = await readLatestContextSnapshot({
         threadId,
+        providerSessionId,
         sessionsRoot: this.config.codexSessionsRoot,
         knownRolloutPath: rolloutPath || storedSnapshot?.rollout_path || null,
       });
@@ -636,6 +647,19 @@ export class SessionService {
 
         if (resolved.rolloutPath && resolved.rolloutPath !== session.codex_rollout_path) {
           patch.codex_rollout_path = resolved.rolloutPath;
+        }
+        if (
+          resolved.snapshot.thread_id &&
+          resolved.snapshot.thread_id !== session.codex_thread_id
+        ) {
+          patch.codex_thread_id = resolved.snapshot.thread_id;
+        }
+        if (
+          resolved.snapshot.session_id &&
+          resolved.snapshot.session_id !== session.provider_session_id
+        ) {
+          patch.runtime_provider = "codex";
+          patch.provider_session_id = resolved.snapshot.session_id;
         }
         if (
           JSON.stringify(storedSnapshot) !== JSON.stringify(resolved.snapshot)

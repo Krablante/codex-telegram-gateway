@@ -95,6 +95,57 @@ test("global control panel suffix text flow applies reply-based manual input", a
   assert.equal(edited.length >= 2, true);
 });
 
+test("global control panel keeps literal suffix text like off instead of reinterpreting it as a command", async () => {
+  const sent = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "suffix",
+    pending_input: {
+      kind: "suffix_text",
+      requested_at: "2026-04-04T15:00:00.000Z",
+      requested_by_user_id: "5825672398",
+      menu_message_id: 901,
+      screen: "suffix",
+    },
+  });
+  const sessionService = createGlobalControlSessionService();
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore: store,
+    message: {
+      text: "off",
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      reply_to_message: { message_id: 901 },
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService,
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-pending-input-applied");
+  const suffixState = await sessionService.getGlobalPromptSuffix();
+  assert.equal(suffixState.prompt_suffix_text, "off");
+  assert.equal(suffixState.prompt_suffix_enabled, true);
+  assert.match(sent.at(-1).text, /text: set/u);
+});
+
 test("handleIncomingCallbackQuery clears pending global panel input", async () => {
   const sent = [];
   const edited = [];

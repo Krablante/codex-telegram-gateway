@@ -19,6 +19,49 @@ import {
   resolveSessionRepoRoot,
 } from "./coordinator-common.js";
 
+function extractExactReplyToken(goalText) {
+  const text = String(goalText || "").trim();
+  if (!text) {
+    return null;
+  }
+
+  const match =
+    text.match(/reply contains exactly\s+(.+?)(?:[.]|$)/iu)
+    || text.match(/reply with exactly\s+(.+?)(?:[.]|$)/iu);
+  if (!match) {
+    return null;
+  }
+
+  const token = String(match[1] || "")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/gu, "")
+    .trim();
+  return token || null;
+}
+
+function resolveExactReplyGoalToken(autoMode) {
+  return (
+    extractExactReplyToken(autoMode?.normalized_goal_interpretation)
+    || extractExactReplyToken(autoMode?.literal_goal_text)
+  );
+}
+
+function finalReplySatisfiesExactGoal(autoMode, spikeFinalEvent, session) {
+  const token = resolveExactReplyGoalToken(autoMode);
+  if (!token) {
+    return null;
+  }
+
+  const finalReply = String(
+    spikeFinalEvent?.final_reply_text || session?.last_agent_reply || "",
+  ).trim();
+  if (finalReply !== token) {
+    return null;
+  }
+
+  return token;
+}
+
 export async function answerOmniQuery(
   coordinator,
   {
@@ -158,6 +201,35 @@ export async function evaluateSession(coordinator, session, { force = false } = 
         handled: true,
         reason: "auto-paused-after-interrupt",
         session: pausedSession,
+      };
+    }
+
+    const exactGoalToken = finalReplySatisfiesExactGoal(
+      latestAutoMode,
+      spikeFinalEvent,
+      evaluatingSession,
+    );
+    if (exactGoalToken) {
+      const doneSummary = `Locked goal satisfied by exact reply token ${exactGoalToken}.`;
+      const doneSession = await coordinator.sessionService.markAutoDecision(
+        evaluatingSession,
+        {
+          phase: "done",
+          resultSummary: doneSummary,
+          clearPendingUserInput: true,
+        },
+      );
+      await coordinator.sendTopicMessage(
+        doneSession,
+        buildAutoDoneMessage(
+          doneSummary,
+          getSessionUiLanguage(doneSession),
+        ),
+      );
+      return {
+        handled: true,
+        reason: "auto-done-exact-token",
+        session: doneSession,
       };
     }
 
@@ -406,10 +478,6 @@ export async function scanPendingSpikeFinals(coordinator) {
   const sessions = await coordinator.sessionStore.listSessions();
 
   for (const session of sessions) {
-    if (session.lifecycle_state !== "active") {
-      continue;
-    }
-
     const autoMode = normalizeAutoModeState(session.auto_mode);
     if (!autoMode.enabled) {
       continue;
@@ -420,10 +488,18 @@ export async function scanPendingSpikeFinals(coordinator) {
     }
 
     const spikeFinalEvent = await coordinator.spikeFinalEventStore.load(session);
-    if (
-      spikeFinalEvent.exchange_log_entries <=
-      autoMode.last_evaluated_exchange_log_entries
-    ) {
+    const hasNewFinal =
+      spikeFinalEvent.exchange_log_entries >
+      autoMode.last_evaluated_exchange_log_entries;
+    if (!hasNewFinal) {
+      continue;
+    }
+
+    if (session.lifecycle_state === "parked") {
+      if (!finalReplySatisfiesExactGoal(autoMode, spikeFinalEvent, session)) {
+        continue;
+      }
+    } else if (session.lifecycle_state !== "active") {
       continue;
     }
 

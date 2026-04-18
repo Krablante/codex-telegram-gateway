@@ -235,6 +235,21 @@ test("CodexLimitsService still accepts simple quoted CODEX_LIMITS_COMMAND string
   }
 });
 
+test("CodexLimitsService requires JSON argv syntax for CODEX_LIMITS_COMMAND on Windows", async () => {
+  const service = new CodexLimitsService({
+    command: 'node "C:\\Program Files\\read-limits.mjs"',
+    cacheTtlMs: 1000,
+    commandTimeoutMs: 5000,
+    platform: "win32",
+  });
+
+  const summary = await service.getSummary();
+
+  assert.equal(summary.available, false);
+  assert.equal(summary.unlimited, false);
+  assert.equal(summary.source, "command");
+});
+
 test("CodexLimitsService degrades to unavailable instead of throwing when the command fails", async () => {
   const service = new CodexLimitsService({
     command: "node -e \"process.stderr.write('boom'); process.exit(1)\"",

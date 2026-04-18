@@ -21,8 +21,8 @@ test("handleIncomingMessage accepts direct human prompts again when auto mode is
     config,
     message: {
       text: "continue without omni",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -34,11 +34,11 @@ test("handleIncomingMessage accepts direct human prompts again when auto mode is
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: false,
             phase: "off",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -48,7 +48,7 @@ test("handleIncomingMessage accepts direct human prompts again when auto mode is
     workerPool: {
       async startPromptRun({ prompt, session }) {
         assert.equal(prompt, "continue without omni");
-        assert.equal(session.session_key, "-1001234567890:77");
+        assert.equal(session.session_key, "-1003577434463:77");
         return { ok: true };
       },
     },
@@ -69,8 +69,8 @@ test("handleIncomingMessage ignores Omni-owned /auto commands in Spike bot", asy
     message: {
       text: "/auto",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -102,8 +102,8 @@ test("handleIncomingMessage returns a clear unavailable message for /auto when O
     message: {
       text: "/auto",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     lifecycleManager: null,
@@ -116,9 +116,9 @@ test("handleIncomingMessage returns a clear unavailable message for /auto when O
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           topic_id: "77",
-          chat_id: "-1001234567890",
+          chat_id: "-1003577434463",
           ui_language: "rus",
         };
       },
@@ -146,8 +146,8 @@ test("handleIncomingMessage ignores foreign bot commands instead of starting a S
     message: {
       text: "/auto@omnibot",
       entities: [{ type: "bot_command", offset: 0, length: 13 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     promptFragmentAssembler: {
@@ -191,8 +191,8 @@ test("handleIncomingMessage ignores /omni because it belongs to Omni", async () 
     message: {
       text: "/omni what changed?",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -220,8 +220,8 @@ test("handleIncomingMessage blocks destructive human Spike commands in auto topi
     message: {
       text: "/purge",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -233,11 +233,11 @@ test("handleIncomingMessage blocks destructive human Spike commands in auto topi
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
         };
       },
@@ -266,8 +266,8 @@ test("handleIncomingMessage rejects /q while /auto owns the topic", async () => 
     message: {
       text: "/q подготовь следующий шаг",
       entities: [{ type: "bot_command", offset: 0, length: 2 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_id: 778,
       message_thread_id: 77,
     },
@@ -280,13 +280,13 @@ test("handleIncomingMessage rejects /q while /auto owns the topic", async () => 
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:77",
+          chat_id: "-1003577434463",
           topic_id: "77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
         };
       },
@@ -313,8 +313,8 @@ test("handleIncomingMessage ignores stale auto human-input locks when Omni is gl
     },
     message: {
       text: "continue without omni at all",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -326,11 +326,11 @@ test("handleIncomingMessage ignores stale auto human-input locks when Omni is gl
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -362,8 +362,8 @@ test("handleIncomingMessage ignores Omni bot chatter before the goal is captured
     config,
     message: {
       text: "Auto setup started. Send the goal next.",
-      from: { id: 2234567890, is_bot: true },
-      chat: { id: -1001234567890 },
+      from: { id: 8603043042, is_bot: true },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -375,11 +375,11 @@ test("handleIncomingMessage ignores Omni bot chatter before the goal is captured
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "await_goal",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
         };
       },
@@ -405,8 +405,8 @@ test("handleIncomingMessage accepts Omni bot continuation prompts in active auto
     config,
     message: {
       text: "Continuation task: finish the remaining validation work.",
-      from: { id: 2234567890, is_bot: true },
-      chat: { id: -1001234567890 },
+      from: { id: 8603043042, is_bot: true },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -418,11 +418,11 @@ test("handleIncomingMessage accepts Omni bot continuation prompts in active auto
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -458,8 +458,8 @@ test("handleIncomingMessage does not buffer internal Omni handoff prompts", asyn
     message: {
       text: longPrompt,
       is_internal_omni_handoff: true,
-      from: { id: 2234567890, is_bot: true },
-      chat: { id: -1001234567890 },
+      from: { id: 8603043042, is_bot: true },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     promptFragmentAssembler,
@@ -472,11 +472,11 @@ test("handleIncomingMessage does not buffer internal Omni handoff prompts", asyn
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,

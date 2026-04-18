@@ -18,8 +18,8 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
     config,
     message: {
       photo: [{ file_id: "photo-1", file_unique_id: "photo-1", file_size: 10 }],
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 78,
     },
     serviceState: {
@@ -31,8 +31,8 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
     sessionService: {
       async ensureSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           lifecycle_state: "active",
           ui_language: "rus",
@@ -40,8 +40,8 @@ test("handleIncomingMessage asks for caption when media arrives without text", a
       },
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           lifecycle_state: "active",
           ui_language: "rus",
@@ -84,18 +84,18 @@ test("handleIncomingMessage carries attachment-only message into the next text p
   const startedRuns = [];
   const pendingByTopic = new Map();
   const session = {
-    session_key: "-1001234567890:88",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:88",
+    chat_id: "-1003577434463",
     topic_id: "88",
     lifecycle_state: "active",
     ui_language: "rus",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   };
   const attachmentMessage = {
@@ -106,15 +106,15 @@ test("handleIncomingMessage carries attachment-only message into the next text p
       mime_type: "text/plain",
       file_size: 12345,
     },
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2001,
     message_thread_id: 88,
   };
   const textMessage = {
     text: "Переделай это в нормальный формат и влепи в ридмишку.",
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2002,
     message_thread_id: 88,
   };
@@ -221,18 +221,18 @@ test("handleIncomingMessage keeps /q attachment buffering separate from direct S
   const directPendingByTopic = new Map();
   const queuedPendingByTopic = new Map();
   const session = {
-    session_key: "-1001234567890:89",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:89",
+    chat_id: "-1003577434463",
     topic_id: "89",
     lifecycle_state: "active",
     ui_language: "rus",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
     auto_mode: {
       enabled: false,
@@ -249,15 +249,15 @@ test("handleIncomingMessage keeps /q attachment buffering separate from direct S
       mime_type: "text/plain",
       file_size: 100,
     },
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2101,
     message_thread_id: 89,
   };
   const textMessage = {
     text: "Сделай обычный Spike prompt без очереди.",
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     message_id: 2102,
     message_thread_id: 89,
   };

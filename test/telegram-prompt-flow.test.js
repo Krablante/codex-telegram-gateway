@@ -24,15 +24,15 @@ test("handleIncomingMessage starts codex run for plain text in a topic", async (
     config,
     message: {
       text: "run a quick task",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState,
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
         };
@@ -41,13 +41,58 @@ test("handleIncomingMessage starts codex run for plain text in a topic", async (
     workerPool: {
       async startPromptRun({ prompt, session }) {
         assert.equal(prompt, "run a quick task");
-        assert.equal(session.session_key, "-1001234567890:77");
+        assert.equal(session.session_key, "-1003577434463:77");
         return { ok: true };
       },
     },
   });
 
   assert.equal(result.reason, "prompt-started");
+});
+
+test("handleIncomingMessage refuses to auto-reactivate a purged topic for direct prompts", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "continue",
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_thread_id: 770,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1003577434463:770",
+          lifecycle_state: "purged",
+          topic_name: "Purged topic",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        throw new Error("purged topic should not start a run");
+      },
+    },
+  });
+
+  assert.equal(result.reason, "purged-session");
+  assert.match(sent[0].text, /очищена|cleared/i);
 });
 
 test("handleIncomingMessage silently blocks direct human prompts to Spike in auto topics", async () => {
@@ -61,8 +106,8 @@ test("handleIncomingMessage silently blocks direct human prompts to Spike in aut
     config,
     message: {
       text: "continue from here",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -74,11 +119,11 @@ test("handleIncomingMessage silently blocks direct human prompts to Spike in aut
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:77",
+          session_key: "-1003577434463:77",
           auto_mode: {
             enabled: true,
             phase: "running",
-            omni_bot_id: "2234567890",
+            omni_bot_id: "8603043042",
           },
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -110,8 +155,8 @@ test("handleIncomingMessage steers the active run instead of returning busy when
     message: {
       text: "Докинь ещё вот это.",
       message_id: 990,
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 78,
     },
     serviceState: {
@@ -123,8 +168,8 @@ test("handleIncomingMessage steers the active run instead of returning busy when
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1001234567890:78",
-          chat_id: "-1001234567890",
+          session_key: "-1003577434463:78",
+          chat_id: "-1003577434463",
           topic_id: "78",
           prompt_suffix_enabled: true,
           prompt_suffix_text: "SUFFIX",
@@ -176,8 +221,8 @@ test("handleIncomingMessage buffers long prompt fragments without reactivating t
     config,
     message: {
       text: "part 1 of a very long prompt",
-      from: { id: 1234567890, is_bot: false },
-      chat: { id: -1001234567890 },
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
       message_thread_id: 79,
     },
     promptFragmentAssembler: {
@@ -208,7 +253,7 @@ test("handleIncomingMessage buffers long prompt fragments without reactivating t
       async ensureSessionForMessage() {
         ensuredSessionCount += 1;
         return {
-          session_key: "-1001234567890:79",
+          session_key: "-1003577434463:79",
           lifecycle_state: "parked",
           auto_mode: {
             enabled: false,

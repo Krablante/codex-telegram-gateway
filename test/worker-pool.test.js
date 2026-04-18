@@ -13,21 +13,21 @@ import {
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
 
-test("CodexWorkerPool falls back to compact rebuild only after one resume retry", async () => {
+test("CodexWorkerPool preserves continuity metadata when native resume stays unavailable after retry", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 144,
     topicName: "Resume fallback test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   const resumedSession = await sessionStore.patch(session, {
@@ -75,43 +75,7 @@ test("CodexWorkerPool falls back to compact rebuild only after one resume retry"
       };
     }
 
-    return {
-      child,
-      finished: (async () => {
-        await onEvent(
-          {
-            kind: "thread",
-            text: "Codex thread started: fresh-thread",
-            threadId: "fresh-thread",
-          },
-          {
-            type: "thread.started",
-            thread_id: "fresh-thread",
-          },
-        );
-        await onEvent(
-          {
-            kind: "agent_message",
-            text: "Recovered sentinel: SENTINEL_FOX",
-          },
-          {
-            type: "item.completed",
-            item: {
-              type: "agent_message",
-              text: "Recovered sentinel: SENTINEL_FOX",
-            },
-          },
-        );
-
-        return {
-          exitCode: 0,
-          signal: null,
-          threadId: "fresh-thread",
-          warnings: [],
-          resumeReplacement: null,
-        };
-      })(),
-    };
+    throw new Error(`unexpected extra run attempt #${runCalls.length}`);
   };
 
   const workerPool = new CodexWorkerPool({
@@ -162,40 +126,28 @@ test("CodexWorkerPool falls back to compact rebuild only after one resume retry"
 
   await waitFor(() => workerPool.getActiveRun(resumedSession.session_key) === null);
 
-  assert.equal(runCalls.length, 3);
+  assert.equal(runCalls.length, 2);
   assert.equal(runCalls[0].sessionThreadId, "stale-thread");
-  assert.equal(runCalls[1].sessionThreadId, "stale-thread");
-  assert.equal(runCalls[2].sessionThreadId, null);
+  assert.equal(runCalls[1].sessionThreadId, "replacement-thread");
   assert.match(runCalls[1].prompt, /Telegram topic routing context:/u);
   assert.match(runCalls[1].prompt, /topic_id: 144/u);
   assert.match(runCalls[1].prompt, /What sentinel did we agree on\?/u);
-  assert.match(
-    runCalls[2].prompt,
-    /The previous Codex thread for this Telegram topic could not be resumed\./u,
-  );
-  assert.match(runCalls[2].prompt, /session_key: -1001234567890:144/u);
-  assert.match(runCalls[2].prompt, /previous_thread_id: stale-thread/u);
-  assert.match(runCalls[2].prompt, /last_run_status: \w+/u);
-  assert.match(runCalls[2].prompt, /## Active brief/u);
-  assert.match(runCalls[2].prompt, /Sentinel: SENTINEL_FOX/u);
-  assert.match(runCalls[2].prompt, /## Latest user request/u);
-  assert.match(runCalls[2].prompt, /What sentinel did we agree on\?/u);
-  assert.doesNotMatch(runCalls[2].prompt, /Pinned facts/u);
 
   const meta = await sessionStore.load(resumedSession.chat_id, resumedSession.topic_id);
-  assert.equal(meta.codex_thread_id, "fresh-thread");
-  assert.equal(meta.last_run_status, "completed");
-  assert.equal(meta.last_agent_reply, "Recovered sentinel: SENTINEL_FOX");
+  assert.equal(meta.codex_thread_id, "replacement-thread");
+  assert.equal(meta.last_run_status, "interrupted");
+  assert.match(meta.last_agent_reply, /continuity metadata was preserved/u);
 
   const exchangeLog = await sessionStore.loadExchangeLog(resumedSession);
   assert.equal(exchangeLog.length, 2);
-  assert.equal(exchangeLog.at(-1).status, "completed");
+  assert.equal(exchangeLog.at(-1).status, "interrupted");
   assert.equal(exchangeLog.at(-1).user_prompt, "What sentinel did we agree on?");
-  assert.match(exchangeLog.at(-1).assistant_reply, /Recovered sentinel/u);
+  assert.match(exchangeLog.at(-1).assistant_reply, /continuity metadata was preserved/u);
 
   assert.equal(sentMessages.length, 2);
   assert.equal(sentMessages[0].text, "...");
-  assert.equal(sentMessages.at(-1).text, "Recovered sentinel: SENTINEL_FOX");
+  assert.match(sentMessages.at(-1).text, /Could not finish the run|Не смог закончить run/u);
+  assert.match(sentMessages.at(-1).text, /continuity metadata was preserved/u);
   assert.equal(sentMessages.at(-1).reply_to_message_id, 99);
   assert.equal(deletedMessages.length, 1);
 });
@@ -208,15 +160,15 @@ test("CodexWorkerPool keeps commentary progress visible even after later command
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 189,
     topicName: "Progress rewrite test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -366,15 +318,15 @@ test("CodexWorkerPool steers an active run through the live controller without s
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 202,
     topicName: "Steer queue",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -542,15 +494,15 @@ test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 204,
     topicName: "Shutdown test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -626,5 +578,259 @@ test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", a
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(reloaded.last_run_status, "interrupted");
-  assert.equal(reloaded.codex_thread_id, null);
+  assert.equal(reloaded.codex_thread_id, "shutdown-thread");
+});
+
+test("CodexWorkerPool interrupt falls back to SIGINT immediately when native interrupt is not ready", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 2041,
+    topicName: "Interrupt fallback test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+
+  const deferred = createDeferred();
+  const killSignals = [];
+  const serviceState = {
+    acceptedPrompts: 0,
+    lastPromptAt: null,
+    activeRunCount: 0,
+  };
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState,
+    runTask: () => ({
+      child: {
+        kill(signal) {
+          killSignals.push(signal);
+        },
+      },
+      steer() {
+        return Promise.resolve({ ok: false });
+      },
+      interrupt() {
+        return Promise.resolve(false);
+      },
+      finished: deferred.promise,
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "interrupt me",
+    message: {
+      message_id: 31,
+      message_thread_id: 2041,
+    },
+  });
+
+  await waitFor(() => serviceState.activeRunCount === 1);
+  assert.equal(workerPool.interrupt(session.session_key), true);
+  await waitFor(() => killSignals.length > 0);
+  assert.deepEqual(killSignals, ["SIGINT"]);
+
+  deferred.resolve({
+    exitCode: null,
+    signal: "SIGINT",
+    threadId: "interrupt-thread",
+    warnings: [],
+    resumeReplacement: null,
+  });
+  await waitFor(() => serviceState.activeRunCount === 0);
+});
+
+test("CodexWorkerPool shutdown can drain an active run before sending interrupts", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 205,
+    topicName: "Shutdown drain test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+
+  const deferred = createDeferred();
+  const killSignals = [];
+  const serviceState = {
+    acceptedPrompts: 0,
+    lastPromptAt: null,
+    activeRunCount: 0,
+  };
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState,
+    runTask: () => ({
+      child: {
+        kill(signal) {
+          killSignals.push(signal);
+        },
+      },
+      finished: deferred.promise,
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "drain me",
+    message: {
+      message_id: 22,
+      message_thread_id: 205,
+    },
+  });
+
+  await waitFor(() => serviceState.activeRunCount === 1);
+
+  let settled = false;
+  const shutdownPromise = workerPool.shutdown({
+    drainTimeoutMs: 200,
+    interruptActiveRuns: true,
+  }).then(() => {
+    settled = true;
+  });
+
+  await sleep(20);
+  assert.equal(settled, false);
+  assert.deepEqual(killSignals, []);
+
+  deferred.resolve({
+    exitCode: 0,
+    signal: null,
+    threadId: "drained-thread",
+    warnings: [],
+    resumeReplacement: null,
+  });
+
+  await shutdownPromise;
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.codex_thread_id, "drained-thread");
+  assert.deepEqual(killSignals, []);
+});
+
+test("CodexWorkerPool hard shutdown stays bounded even if a lifecycle promise never settles", async () => {
+  const serviceState = {
+    acceptedPrompts: 0,
+    lastPromptAt: null,
+    activeRunCount: 1,
+  };
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore: {
+      async patch(session) {
+        return session;
+      },
+      async appendExchangeLogEntry(session) {
+        return { session };
+      },
+    },
+    serviceState,
+  });
+
+  const lifecycle = createDeferred();
+  const sessionKey = "-1003577434463:2051";
+  workerPool.activeRuns.set(sessionKey, {
+    sessionKey,
+    session: {
+      session_key: sessionKey,
+      ui_language: "rus",
+    },
+    child: null,
+    controller: null,
+    lifecyclePromise: lifecycle.promise,
+    exchangePrompt: "pending",
+    includeTopicContext: true,
+    state: {
+      status: "starting",
+      interruptRequested: false,
+      latestSummary: null,
+      latestSummaryKind: null,
+      progress: {
+        queueUpdate() {},
+      },
+    },
+    startedAt: new Date().toISOString(),
+    progressMessageId: null,
+    progressTimer: null,
+    runtimeProfileInputs: {},
+  });
+
+  let settled = false;
+  const shutdownPromise = workerPool.shutdown({
+    drainTimeoutMs: 50,
+    interruptActiveRuns: true,
+  }).then(() => {
+    settled = true;
+  });
+
+  await sleep(200);
+
+  assert.equal(settled, true);
+  assert.equal(workerPool.activeRuns.get(sessionKey)?.state.interruptRequested, true);
+
+  lifecycle.resolve();
+  workerPool.activeRuns.clear();
+  await shutdownPromise;
 });

@@ -118,6 +118,7 @@ make service-restart-live
 ```
 
 `make service-restart-live` теперь каноничный путь для обычного живого рестарта: он перезапускает `Omni`, а `Spike` прокатывает через мягкий session-aware rollout. Raw `systemctl restart codex-telegram-gateway.service` не использовать, если не нужен именно слепой жёсткий рестарт.
+Если предыдущий rollout уже успел перевести leader traffic, но retiring generation ещё дренирует retained topics, повторный `make service-restart-live` теперь честно запускает следующий soft rollout вместо фальшивого стопора `already-shifted`.
 
 ## Что делать при проблемах
 
@@ -132,10 +133,11 @@ make service-restart-live
 - на native Windows для этого используй `scripts\windows\admin.cmd ...`, а не Linux-only `make admin`
 - перед ручным редактированием state сверяй `runtime-events.ndjson`, `meta.json`, `exchange-log.jsonl` и `active-brief.md`
 - после ручного `/compact` ожидай, что следующий свежий run будет стартовать из `active-brief.md`
+- для тяжёлой живой проверки сначала используй `make test-live`, `make user-e2e` и `make user-spike-audit`, а уже потом пытайся руками диагностировать один сломанный topic
 
 ## Нюансы восстановления
 
-- если сохранённый `codex_thread_id` больше не резюмится нормально, runtime один раз попробует retry и только потом уйдёт в compact recovery
+- если сохранённый `codex_thread_id` больше не резюмится нормально, runtime сначала попробует починить continuity через реальные Codex history surfaces: `thread/list`, `provider_session_id`, rollout metadata и `session_key`; compact recovery остаётся последним bounded fallback, а не первым ходом
 - если Omni глобально выключен, старое topic `auto_mode` состояние остаётся на диске, но становится inert
 - если `zoo/topic.json` пропал, остался неполным или ушёл в quarantine, живой callback из меню Zoo теперь сам восстанавливает сохранённую chat/topic/menu привязку; до этого симптом выглядел как тихие no-op на Zoo-кнопках или деградация Zoo-топика в обычный session routing
 - если Telegram сообщает, что тема недоступна, сессия может перейти в `parked`

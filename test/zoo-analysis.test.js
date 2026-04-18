@@ -47,7 +47,7 @@ test("buildAnalysisPrompt enforces the selected language and creature persona", 
       creature_kind: "cat",
       character_name: "Rainbow Dash",
       temperament_id: "paladin",
-      cwd: "/workspace/project",
+      cwd: "/home/bloob/atlas/project",
     },
     previousSnapshot: null,
   });

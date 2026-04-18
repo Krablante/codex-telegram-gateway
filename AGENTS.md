@@ -15,6 +15,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - `transport/` responsibility stays Telegram-specific
 - `session-manager/` owns routing, lifecycle, and persistence
 - `pty-worker/` owns the Codex `app-server` transport, live steer, rollout recovery, and worker lifecycle
+- native resume/recovery now follows real Codex history surfaces first: `thread/list`, `provider_session_id`, rollout path, and `session_key` before any compact fallback
 - `telegram/command-handlers/` owns domain-specific command behavior; keep central routers thin
 - `emergency/` owns the operator-only private-chat fallback built on isolated `codex exec`
 - `rollout/` owns session-aware Spike handoff checks for soft service restarts
@@ -35,6 +36,8 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - `make run`
 - `make smoke`
 - `make soak`
+- `make user-e2e`
+- `make user-spike-audit`
 - `make service-install`
 - `make service-rollout`
 - `make service-restart-live`

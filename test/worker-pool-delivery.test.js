@@ -19,15 +19,15 @@ test("CodexWorkerPool does not surface completed command output in progress with
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 18901,
     topicName: "Command-only progress test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -136,15 +136,15 @@ test("CodexWorkerPool keeps commentary agent messages in progress and only final
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1891,
     topicName: "Agent message phase test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -260,15 +260,15 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 190,
     topicName: "Progress shell cleanup test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -276,7 +276,7 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
   const editedMessages = [];
   const deferred = createDeferred();
   const noisyTelegramCommand =
-    `/bin/bash -lc "sleep 29 && node --input-type=module -e 'const payload = { chat_id: -1001234567890, message_thread_id: 1560, text: \\"Тест\\" }; const res = await fetch(\\"https://api.telegram.org/botTOKEN/sendMessage\\", { method: \\"POST\\" });'"`;
+    `/bin/bash -lc "sleep 29 && node --input-type=module -e 'const payload = { chat_id: -1003577434463, message_thread_id: 1560, text: \\"Тест\\" }; const res = await fetch(\\"https://api.telegram.org/botTOKEN/sendMessage\\", { method: \\"POST\\" });'"`;
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
@@ -380,15 +380,15 @@ test("CodexWorkerPool retries the final reply once after a Telegram rate limit",
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 191,
     topicName: "Final reply retry test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -477,15 +477,15 @@ test("CodexWorkerPool retries the final reply after a transient transport hiccup
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1911,
     topicName: "Final reply transient retry test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -577,22 +577,22 @@ test("CodexWorkerPool keeps the final answer in the progress bubble when transie
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1912,
     topicName: "Final reply progress fallback test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "2234567890",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -690,22 +690,22 @@ test("CodexWorkerPool preserves already-delivered final chunks in Spike metadata
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1913,
     topicName: "Final reply partial delivery metadata test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "2234567890",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -805,15 +805,15 @@ test("CodexWorkerPool parks the session when final reply delivery discovers an u
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1914,
     topicName: "Final reply parked topic test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -910,15 +910,15 @@ test("CodexWorkerPool falls back to a plain topic send when the reply target dis
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 1931,
     topicName: "Reply target fallback",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -1011,15 +1011,15 @@ test("CodexWorkerPool keeps running when the initial progress bubble cannot be s
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 194,
     topicName: "Initial progress failure test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -1104,15 +1104,15 @@ test("CodexWorkerPool does not start when initial progress delivery parks the to
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 195,
     topicName: "Initial progress parked topic test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -1167,22 +1167,22 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 192,
     topicName: "Final reply failure state test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "2234567890",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -1285,22 +1285,22 @@ test("CodexWorkerPool persists failure text into session state, exchange log, an
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 193,
     topicName: "Failure persistence test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "2234567890",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -1367,22 +1367,22 @@ test("CodexWorkerPool skips late Spike final events after auto mode is turned of
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 194,
     topicName: "Late final event off test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   session = await sessionStore.patch(session, {
     auto_mode: {
       enabled: true,
       phase: "running",
-      omni_bot_id: "2234567890",
+      omni_bot_id: "8603043042",
     },
   });
 
@@ -1458,15 +1458,15 @@ test("CodexWorkerPool passes image attachments to codex and file attachments via
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 189,
     topicName: "Attachment prompt test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 
@@ -1550,39 +1550,39 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const sessionA = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 201,
     topicName: "Parallel A",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   const sessionB = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 202,
     topicName: "Parallel B",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
   const sessionC = await sessionStore.ensure({
-    chatId: -1001234567890,
+    chatId: -1003577434463,
     topicId: 203,
     topicName: "Parallel C",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/example/workspace",
-      cwd: "/home/example/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/home/example/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
   });
 

@@ -214,6 +214,50 @@ test("runCodexTask waits for async final message handling before resolving turn 
   assert.equal(finalMessageHandled, true);
 });
 
+test("runCodexTask treats turn/completed with interrupted status as interrupted instead of success", async () => {
+  const child = createMockChild();
+  const ws = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Проверь interrupted turn/completed.",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43139);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "root-thread",
+      turn: {
+        id: "root-turn",
+        status: "interrupted",
+      },
+    },
+  });
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, "SIGINT");
+  assert.equal(result.interrupted, true);
+  assert.equal(result.abortReason, "interrupted");
+  assert.deepEqual(result.resumeReplacement, {
+    requestedThreadId: "root-thread",
+    replacementThreadId: null,
+    reason: "transport-disconnect",
+  });
+});
+
 test("runCodexTask waits briefly for a late final message after turn completion", async () => {
   const child = createMockChild();
   const ws = createMockWebSocket({

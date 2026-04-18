@@ -6,15 +6,15 @@ import { normalizeAutoModeState } from "../src/session-manager/auto-mode.js";
 
 function buildSession(autoMode = {}) {
   return {
-    session_key: "-1001234567890:77",
-    chat_id: "-1001234567890",
+    session_key: "-1003577434463:77",
+    chat_id: "-1003577434463",
     topic_id: "77",
     topic_name: "Omni delivery test",
     workspace_binding: {
-      repo_root: "/workspace",
-      cwd: "/workspace",
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
       branch: "main",
-      worktree_path: "/workspace",
+      worktree_path: "/home/bloob/atlas",
     },
     auto_mode: normalizeAutoModeState({
       enabled: true,

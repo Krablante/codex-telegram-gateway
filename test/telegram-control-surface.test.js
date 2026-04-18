@@ -6,10 +6,10 @@ import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembl
 import { handleIncomingMessage } from "../src/telegram/command-router.js";
 
 const config = {
-  telegramAllowedUserId: "1234567890",
-  telegramAllowedUserIds: ["1234567890"],
-  telegramAllowedBotIds: ["2234567890"],
-  telegramForumChatId: "-1001234567890",
+  telegramAllowedUserId: "5825672398",
+  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedBotIds: ["8603043042"],
+  telegramForumChatId: "-1003577434463",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -121,8 +121,8 @@ function buildGeneralCommandMessage(text, overrides = {}) {
     message_id: 779,
     text,
     entities: [{ type: "bot_command", offset: 0, length: text.length }],
-    from: { id: 1234567890, is_bot: false },
-    chat: { id: -1001234567890 },
+    from: { id: 5825672398, is_bot: false },
+    chat: { id: -1003577434463 },
     ...overrides,
   };
 }
@@ -212,7 +212,7 @@ test("createTrackedGeneralApi tracks General messages when Telegram uses thread 
   }, config, ledgerStore);
 
   await trackedApi.sendMessage({
-    chat_id: -1001234567890,
+    chat_id: -1003577434463,
     message_thread_id: 0,
     text: "General notice",
   });

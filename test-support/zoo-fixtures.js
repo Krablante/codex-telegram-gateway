@@ -5,12 +5,12 @@ import path from "node:path";
 export function buildConfig(stateRoot) {
   return {
     stateRoot,
-    atlasWorkspaceRoot: "/workspace",
+    atlasWorkspaceRoot: "/home/bloob/atlas",
     codexBinPath: "codex",
-    telegramAllowedUserId: "1234567890",
-    telegramAllowedUserIds: ["1234567890"],
-    telegramAllowedBotIds: ["2234567890"],
-    telegramForumChatId: "-1001234567890",
+    telegramAllowedUserId: "5825672398",
+    telegramAllowedUserIds: ["5825672398"],
+    telegramAllowedBotIds: ["8603043042"],
+    telegramForumChatId: "-1003577434463",
   };
 }
 
