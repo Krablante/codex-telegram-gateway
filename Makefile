@@ -75,7 +75,15 @@ service-rollout:
 service-restart: service-rollout
 
 service-restart-live:
-	@$(MAKE) service-restart-omni
+	@load_state="$$(systemctl --user show codex-telegram-gateway-omni.service --property LoadState --value 2>/dev/null || true)"; \
+	if [ "$$load_state" = "loaded" ]; then \
+		$(MAKE) service-restart-omni; \
+	elif [ "$$load_state" = "not-found" ] || [ -z "$$load_state" ]; then \
+		echo "codex-telegram-gateway-omni.service is not installed; skipping Omni restart"; \
+	else \
+		echo "Unable to determine codex-telegram-gateway-omni.service load state: $$load_state" >&2; \
+		exit 1; \
+	fi
 	@$(MAKE) service-rollout
 
 service-hard-restart:

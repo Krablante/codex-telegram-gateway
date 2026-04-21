@@ -20,6 +20,7 @@ import { TOPIC_CONTROL_PANEL_COMMAND } from "../topic-control-panel.js";
 import { resolveGeneralUiLanguage } from "./control-surface.js";
 import {
   AUTO_MODE_ALLOWED_HUMAN_COMMANDS,
+  buildAutoModeCommandBlockedMessage,
   buildNoSessionTopicMessage,
   buildOmniUnavailableMessage,
   buildQueueAutoUnavailableMessage,
@@ -222,19 +223,21 @@ export async function maybeHandlePromptCommandRouting({
     !canAutoModeAcceptPromptFromMessage(autoCommandLockSession, message) &&
     !AUTO_MODE_ALLOWED_HUMAN_COMMANDS.has(command.name)
   ) {
-    if (command.name === "q") {
-      await safeSendMessage(
-        api,
-        buildReplyMessageParams(
-          message,
-          buildQueueAutoUnavailableMessage(
-            getSessionUiLanguage(autoCommandLockSession),
-          ),
-        ),
-        autoCommandLockSession,
-        lifecycleManager,
-      );
-    }
+    await safeSendMessage(
+      api,
+      buildReplyMessageParams(
+        message,
+        command.name === "q"
+          ? buildQueueAutoUnavailableMessage(
+              getSessionUiLanguage(autoCommandLockSession),
+            )
+          : buildAutoModeCommandBlockedMessage(
+              getSessionUiLanguage(autoCommandLockSession),
+            ),
+      ),
+      autoCommandLockSession,
+      lifecycleManager,
+    );
     return { handled: true, reason: "auto-topic-human-command-blocked" };
   }
 

@@ -362,3 +362,77 @@ test("loadRuntimeConfig reads a repo-local .env when ENV_FILE is unset", async (
   assert.equal(config.envFilePath, path.join(repoRoot, ".env"));
   assert.equal(config.atlasWorkspaceRoot, "O:/workspace");
 });
+
+test("loadRuntimeConfig uses shell STATE_ROOT to discover the canonical runtime env", async () => {
+  const repoRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-load-config-"),
+  );
+  const stateRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-state-root-"),
+  );
+  const runtimeEnvPath = path.join(stateRoot, "runtime.env");
+  await fs.writeFile(
+    runtimeEnvPath,
+    [
+      "TELEGRAM_BOT_TOKEN=secret-token",
+      "TELEGRAM_ALLOWED_USER_ID=5825672398",
+      "TELEGRAM_FORUM_CHAT_ID=-1003577434463",
+      "WORKSPACE_ROOT=/srv/workspace",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const previousEnvFile = process.env.ENV_FILE;
+  const previousStateRoot = process.env.STATE_ROOT;
+  delete process.env.ENV_FILE;
+  process.env.STATE_ROOT = stateRoot;
+
+  const config = await loadRuntimeConfig({
+    repoRoot,
+  });
+
+  restoreEnvVar("ENV_FILE", previousEnvFile);
+  restoreEnvVar("STATE_ROOT", previousStateRoot);
+
+  assert.equal(config.envFilePath, runtimeEnvPath);
+  assert.equal(config.stateRoot, stateRoot);
+  assert.equal(config.atlasWorkspaceRoot, "/srv/workspace");
+});
+
+test("loadRuntimeConfig lets shell STATE_ROOT override the env file value", async () => {
+  const repoRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-load-config-"),
+  );
+  const stateRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-shell-state-root-"),
+  );
+  const runtimeEnvPath = path.join(stateRoot, "runtime.env");
+  await fs.writeFile(
+    runtimeEnvPath,
+    [
+      "TELEGRAM_BOT_TOKEN=secret-token",
+      "TELEGRAM_ALLOWED_USER_ID=5825672398",
+      "TELEGRAM_FORUM_CHAT_ID=-1003577434463",
+      "STATE_ROOT=/tmp/file-state-root",
+      "WORKSPACE_ROOT=/srv/workspace",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const previousEnvFile = process.env.ENV_FILE;
+  const previousStateRoot = process.env.STATE_ROOT;
+  process.env.ENV_FILE = runtimeEnvPath;
+  process.env.STATE_ROOT = "/tmp/shell-state-root";
+
+  const config = await loadRuntimeConfig({
+    repoRoot,
+  });
+
+  restoreEnvVar("ENV_FILE", previousEnvFile);
+  restoreEnvVar("STATE_ROOT", previousStateRoot);
+
+  assert.equal(config.envFilePath, runtimeEnvPath);
+  assert.equal(config.stateRoot, "/tmp/shell-state-root");
+});

@@ -6,6 +6,30 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.44] - 2026-04-21
+
+Fixed:
+
+- stale-running startup recovery is stricter now: interrupted stale recovery no longer replays the previous run reply, older rollout finals are ignored after a newer `task_started`, and unterminated final rollout tails at EOF are still recoverable
+- operator status is more honest: stale heartbeat is surfaced explicitly, pid liveness is checked, and the status view now shows both configured and resolved `CODEX_BIN_PATH`
+- blocked human Spike commands in active `/auto` topics now get an explicit reply instead of disappearing silently, and `/q` becomes available again after `/auto` reaches a terminal `done` phase
+- topic `/menu` recreation no longer risks deleting a neighboring Telegram message id
+- continuity handoff is tighter: worker-pool resume passes the known rollout path through, and stale `provider_session_id` metadata is cleared when a fresh thread starts without a replacement provider id yet
+
+Ops:
+
+- `make smoke` and `make smoke-omni` now fail closed when local `systemctl --user` health cannot be determined
+- `make service-restart-live` now skips the Omni restart cleanly when the Omni unit is not installed instead of failing the whole live restart path
+
+Docs:
+
+- refreshed README, AGENTS, deployment, Telegram surface, runbook, and testing docs so the public operator contract matches the current restart, status, `/auto`, and smoke behavior
+
+Tests:
+
+- public `node --test`: 634 pass, 0 fail, 4 skip
+- public `npm run test:live`: 4 pass, 0 fail
+
 ## [0.3.43] - 2026-04-21
 
 Fixed:

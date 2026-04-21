@@ -134,7 +134,6 @@ export async function ensureTopicControlPanelMessage({
   if (resolvedMessageId !== messageId) {
     await deleteTopicControlMessagesBestEffort(api, resolvedSession.chat_id, [
       messageId,
-      Number.isInteger(messageId) ? messageId + 1 : null,
     ]);
   }
   if (pin || resolvedMessageId !== messageId) {

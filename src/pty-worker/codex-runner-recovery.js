@@ -116,10 +116,34 @@ export function summarizeRolloutLine(
   return null;
 }
 
+export function extractRolloutTaskStartedTurnId(line) {
+  const event = safeJsonParse(line);
+  if (event?.type !== "event_msg" || !event.payload) {
+    return {
+      seen: false,
+      turnId: null,
+    };
+  }
+
+  if (event.payload.type !== "task_started") {
+    return {
+      seen: false,
+      turnId: null,
+    };
+  }
+
+  const normalizedTurnId = String(event.payload.turn_id ?? "").trim();
+  return {
+    seen: true,
+    turnId: normalizedTurnId || null,
+  };
+}
+
 export async function readRolloutDelta({
   filePath,
   offset,
   carryover,
+  flushTailAtEof = false,
 }) {
   const handle = await fs.open(filePath, "r");
   try {
@@ -133,6 +157,28 @@ export async function readRolloutDelta({
       nextCarryover = Buffer.alloc(0);
     }
     if (stats.size === nextOffset) {
+      if (flushTailAtEof && nextCarryover.length > 0) {
+        let lineBuffer = nextCarryover;
+        if (
+          lineBuffer.length > 0 &&
+          lineBuffer[lineBuffer.length - 1] === 0x0D
+        ) {
+          lineBuffer = lineBuffer.subarray(0, lineBuffer.length - 1);
+        }
+        const text = lineBuffer.toString("utf8").trim();
+        return {
+          lines: text
+            ? [{
+                text,
+                startOffset: nextOffset - nextCarryover.length,
+                endOffset: nextOffset,
+              }]
+            : [],
+          nextOffset,
+          carryover: Buffer.alloc(0),
+        };
+      }
+
       return {
         lines: [],
         nextOffset,
@@ -173,6 +219,24 @@ export async function readRolloutDelta({
       lineStartIndex = index + 1;
     }
     nextCarryover = chunk.subarray(lineStartIndex);
+    if (flushTailAtEof && nextCarryover.length > 0) {
+      let lineBuffer = nextCarryover;
+      if (
+        lineBuffer.length > 0 &&
+        lineBuffer[lineBuffer.length - 1] === 0x0D
+      ) {
+        lineBuffer = lineBuffer.subarray(0, lineBuffer.length - 1);
+      }
+      const text = lineBuffer.toString("utf8").trim();
+      if (text) {
+        lines.push({
+          text,
+          startOffset: chunkStartOffset + lineStartIndex,
+          endOffset: chunkStartOffset + chunk.length,
+        });
+      }
+      nextCarryover = Buffer.alloc(0);
+    }
     return {
       lines,
       nextOffset: nextOffset + bytesRead,
@@ -256,27 +320,50 @@ export async function watchRolloutForTaskComplete({
     offset = delta.nextOffset;
     carryover = delta.carryover;
 
+    let currentActiveTurnId = getActiveTurnId?.() ?? null;
+    let terminalSummary = null;
     for (const line of delta.lines) {
+      const taskStarted = extractRolloutTaskStartedTurnId(line.text);
+      if (taskStarted.seen) {
+        terminalSummary = null;
+        currentActiveTurnId = taskStarted.turnId || currentActiveTurnId;
+        continue;
+      }
+
       const primaryThreadId = getPrimaryThreadId() || getLatestThreadId();
       const latestThreadId = getLatestThreadId();
       const summary = summarizeRolloutLine(line.text, {
         primaryThreadId,
-        activeTurnId: getActiveTurnId?.() ?? null,
+        activeTurnId: currentActiveTurnId,
       });
-      const terminalSummary =
+      if (
+        summary?.eventType === "rollout.task_complete"
+        && currentActiveTurnId
+        && summary.turnId
+        && summary.turnId !== currentActiveTurnId
+      ) {
+        continue;
+      }
+      const isTerminalSummary =
         summary?.eventType === "rollout.task_complete"
         || summary?.messagePhase === "final_answer";
-      if (!terminalSummary) {
+      if (!isTerminalSummary) {
         continue;
       }
 
       const shouldEmit = !getHasPrimaryFinalAnswer?.();
       const isNewSummary = rememberSummary(summary, { primaryThreadId, latestThreadId });
-      if (shouldEmit && isNewSummary && summary.text) {
+      if (!isNewSummary) {
+        continue;
+      }
+      terminalSummary = summary;
+      if (shouldEmit && summary.text) {
         await emitSummary(summary);
       }
+    }
 
-      await onTaskComplete(summary);
+    if (terminalSummary) {
+      await onTaskComplete(terminalSummary);
       return {
         completed: true,
         rolloutPath: resolvedRolloutPath,
@@ -359,12 +446,14 @@ export async function followRolloutAfterDisconnect({
 
   while (!getSettled()) {
     const previousOffset = offset;
+    const recoveryChildExit = getRecoveryChildExit?.();
     let delta = null;
     try {
       delta = await readRolloutDelta({
         filePath: resolvedRolloutPath,
         offset,
         carryover,
+        flushTailAtEof: Boolean(recoveryChildExit),
       });
     } catch (error) {
       if (error?.code === "ENOENT") {
@@ -379,8 +468,17 @@ export async function followRolloutAfterDisconnect({
       lastObservedGrowthAt = Date.now();
     }
 
+    let currentActiveTurnId = getActiveTurnId?.() ?? null;
+    let terminalSummary = null;
     for (const line of delta.lines) {
       if (line.endOffset <= replayFloorOffset) {
+        continue;
+      }
+
+      const taskStarted = extractRolloutTaskStartedTurnId(line.text);
+      if (taskStarted.seen) {
+        terminalSummary = null;
+        currentActiveTurnId = taskStarted.turnId || currentActiveTurnId;
         continue;
       }
 
@@ -388,9 +486,17 @@ export async function followRolloutAfterDisconnect({
       const latestThreadId = getLatestThreadId();
       const summary = summarizeRolloutLine(line.text, {
         primaryThreadId,
-        activeTurnId: getActiveTurnId?.() ?? null,
+        activeTurnId: currentActiveTurnId,
       });
       if (!summary) {
+        continue;
+      }
+      if (
+        (summary.eventType === "rollout.task_complete" || summary.eventType === "turn.aborted")
+        && currentActiveTurnId
+        && summary.turnId
+        && summary.turnId !== currentActiveTurnId
+      ) {
         continue;
       }
       if (!rememberSummary(summary, { primaryThreadId, latestThreadId })) {
@@ -408,16 +514,19 @@ export async function followRolloutAfterDisconnect({
 
       await emitSummary(summary);
       if (summary.messagePhase === "final_answer") {
-        await onFinalAnswer();
-        return {
-          completed: true,
-          rolloutPath: resolvedRolloutPath,
-          offset,
-        };
+        terminalSummary = summary;
       }
     }
 
-    const recoveryChildExit = getRecoveryChildExit?.();
+    if (terminalSummary) {
+      await onFinalAnswer();
+      return {
+        completed: true,
+        rolloutPath: resolvedRolloutPath,
+        offset,
+      };
+    }
+
     const recoveryStalledForMs = Date.now() - lastObservedGrowthAt;
     if (
       recoveryChildExit &&

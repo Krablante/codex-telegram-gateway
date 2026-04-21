@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { runCodexTask } from "../src/pty-worker/codex-runner.js";
-import { summarizeRolloutLine } from "../src/pty-worker/codex-runner-recovery.js";
+import {
+  readRolloutDelta,
+  summarizeRolloutLine,
+  watchRolloutForTaskComplete,
+} from "../src/pty-worker/codex-runner-recovery.js";
 import {
   createMockChild,
   createMockWebSocket,
@@ -29,6 +34,116 @@ test("summarizeRolloutLine keeps phase-less rollout agent messages non-terminal"
   );
 
   assert.equal(summary?.messagePhase, null);
+});
+
+test("readRolloutDelta can flush an unterminated final record at EOF", async (t) => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-tail-read-"),
+  );
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const rolloutPath = path.join(root, "rollout.jsonl");
+  await fs.writeFile(
+    rolloutPath,
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-1",
+        last_agent_message: "EOF final without newline.",
+      },
+    }),
+    "utf8",
+  );
+
+  const delta = await readRolloutDelta({
+    filePath: rolloutPath,
+    offset: 0,
+    carryover: Buffer.alloc(0),
+    flushTailAtEof: true,
+  });
+
+  assert.equal(delta.lines.length, 1);
+  assert.match(delta.lines[0].text, /EOF final without newline/u);
+  assert.equal(delta.carryover.length, 0);
+});
+
+test("watchRolloutForTaskComplete ignores an older final before a newer task_started in the same rollout", async (t) => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-watch-"),
+  );
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const rolloutPath = path.join(root, "rollout.jsonl");
+  await fs.writeFile(
+    rolloutPath,
+    [
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+          turn_id: "old-turn",
+          last_agent_message: "OLD FINAL FROM EARLIER TURN",
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "task_started",
+          turn_id: "new-turn",
+        },
+      }),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  let settled = false;
+  let completedSummary = null;
+  const watchPromise = watchRolloutForTaskComplete({
+    codexSessionsRoot: root,
+    rolloutPollIntervalMs: 20,
+    getSettled: () => settled,
+    getWatchingDisabled: () => false,
+    getActiveTurnId: () => null,
+    getHasPrimaryFinalAnswer: () => false,
+    getPrimaryThreadId: () => "root-thread",
+    getProviderSessionId: () => null,
+    getLatestThreadId: () => "root-thread",
+    getRolloutPath: () => rolloutPath,
+    setContextSnapshot() {},
+    setProviderSessionId() {},
+    setRolloutPath() {},
+    getRolloutObservedOffset: () => 0,
+    rememberSummary: () => true,
+    emitSummary() {},
+    onTaskComplete(summary) {
+      completedSummary = summary;
+      settled = true;
+    },
+  });
+
+  await sleep(50);
+  assert.equal(completedSummary, null);
+
+  await fs.appendFile(
+    rolloutPath,
+    `${JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "new-turn",
+        last_agent_message: "Fresh final from the current turn.",
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  const result = await watchPromise;
+  assert.equal(result.completed, true);
+  assert.equal(completedSummary?.text, "Fresh final from the current turn.");
 });
 
 test("runCodexTask turns an unexpected websocket disconnect into a resume path when a thread is known", async (t) => {
@@ -1104,6 +1219,104 @@ test("runCodexTask completes from rollout task_complete while the websocket stay
   assert.deepEqual(child.killCalls, ["SIGTERM"]);
   assert.equal(
     summaries.some((summary) => summary.text === "Финал из live task_complete watcher."),
+    true,
+  );
+});
+
+test("runCodexTask ignores preexisting rollout finals when a known rollout path is already stored", async (t) => {
+  const child = createMockChild();
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-known-path-"),
+  );
+  t.after(async () => {
+    await fs.rm(codexSessionsRoot, { recursive: true, force: true });
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "21");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-04-21T14-19-46-root-thread.jsonl",
+  );
+  await fs.writeFile(
+    rolloutPath,
+    `${JSON.stringify({
+      timestamp: "2026-04-21T14:21:02.118Z",
+      type: "event_msg",
+      payload: {
+        type: "agent_message",
+        phase: "final_answer",
+        message: "Старый финал из предыдущего turn.",
+      },
+    })}\n${JSON.stringify({
+      timestamp: "2026-04-21T14:21:02.203Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "older-turn",
+        last_agent_message: "Старый task_complete из предыдущего turn.",
+      },
+    })}\n`,
+  );
+
+  const ws = createMockWebSocket({
+    requestHandlers: createStandardRequestHandlers(),
+  });
+  const summaries = [];
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Игнорируй старый финал и дождись текущего.",
+    knownRolloutPath: rolloutPath,
+    onEvent(summary) {
+      summaries.push(summary);
+    },
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+    codexSessionsRoot,
+    rolloutPollIntervalMs: 20,
+  });
+
+  let settled = false;
+  void run.finished.then(() => {
+    settled = true;
+  });
+
+  emitListenBanner(child, 43130);
+  await waitForCondition(
+    () => ws.sentMessages.some((message) => message.method === "turn/start"),
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(settled, false);
+  assert.equal(
+    summaries.some((summary) => summary.text === "Старый финал из предыдущего turn."),
+    false,
+  );
+  assert.equal(
+    summaries.some((summary) => summary.text === "Старый task_complete из предыдущего turn."),
+    false,
+  );
+
+  await fs.appendFile(
+    rolloutPath,
+    `${JSON.stringify({
+      timestamp: "2026-04-21T15:18:00.914Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "root-turn",
+        last_agent_message: "Новый финал только для текущего turn.",
+      },
+    })}\n`,
+  );
+
+  const result = await run.finished;
+  assert.equal(result.exitCode, 0);
+  assert.equal(
+    summaries.some((summary) => summary.text === "Новый финал только для текущего turn."),
     true,
   );
 });

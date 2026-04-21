@@ -58,6 +58,8 @@ Healthy runtime means:
 
 - `lifecycle_state: running`
 - fresh `observed_at`
+- `heartbeat_fresh: true`
+- `heartbeat_pid_alive: true`
 - sensible `active_run_count`
 - expected bot usernames and forum chat id
 
@@ -88,7 +90,7 @@ scripts\windows\admin.cmd reactivate -1003577434463 12345
 scripts\windows\admin.cmd purge -1003577434463 12345
 ```
 
-`make admin ARGS='status'` now also prints the resolved `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and the MCP server names parsed from that config. Use it first when Codex suddenly appears to have lost `pitlane`, `tavily`, or another MCP.
+`make admin ARGS='status'` now also prints heartbeat freshness, pid liveness, the configured and resolved `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and the MCP server names parsed from that config. Use it first when Codex suddenly appears to have lost `pitlane`, `tavily`, or another MCP.
 
 ## Services
 
@@ -117,7 +119,7 @@ make service-restart-omni
 make service-restart-live
 ```
 
-`make service-restart-live` is the canonical live-runtime restart: it restarts `Omni` and then rolls `Spike` through the soft session-aware path. Avoid raw `systemctl restart codex-telegram-gateway.service` unless you explicitly want the blind hard-restart behavior.
+`make service-restart-live` is the canonical live-runtime restart: it restarts `Omni` when that unit is installed and then rolls `Spike` through the soft session-aware path. Avoid raw `systemctl restart codex-telegram-gateway.service` unless you explicitly want the blind hard-restart behavior.
 If the previous rollout already shifted leader traffic but a retiring generation is still draining retained topics, rerunning `make service-restart-live` now chains the next soft rollout instead of getting stuck behind a fake `already-shifted` stop.
 
 ## Failure Handling

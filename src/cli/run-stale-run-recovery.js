@@ -1,6 +1,7 @@
 import { readLatestContextSnapshot } from "../session-manager/context-snapshot.js";
 import { clearSessionOwnershipPatch } from "../rollout/session-ownership.js";
 import {
+  extractRolloutTaskStartedTurnId,
   readRolloutDelta,
   summarizeRolloutLine,
 } from "../pty-worker/codex-runner-recovery.js";
@@ -146,6 +147,7 @@ async function inspectRecoveredRunOutcome({
       filePath: rolloutPath,
       offset: 0,
       carryover: Buffer.alloc(0),
+      flushTailAtEof: true,
     });
   } catch (error) {
     if (error?.code === "ENOENT") {
@@ -163,11 +165,32 @@ async function inspectRecoveredRunOutcome({
 
   let finalReplyText = null;
   let hasFinalAnswer = false;
+  let currentTurnId = null;
   for (const line of delta.lines) {
+    const taskStarted = extractRolloutTaskStartedTurnId(line.text);
+    if (taskStarted.seen) {
+      hasFinalAnswer = false;
+      finalReplyText = null;
+      currentTurnId = taskStarted.turnId || currentTurnId;
+      continue;
+    }
+
     const summary = summarizeRolloutLine(line.text, {
       primaryThreadId: threadId,
+      activeTurnId: currentTurnId,
     });
-    if (summary?.messagePhase !== "final_answer") {
+    if (
+      summary?.eventType === "rollout.task_complete"
+      && currentTurnId
+      && summary.turnId
+      && summary.turnId !== currentTurnId
+    ) {
+      continue;
+    }
+    if (
+      summary?.messagePhase !== "final_answer"
+      && summary?.eventType !== "rollout.task_complete"
+    ) {
       continue;
     }
     hasFinalAnswer = true;
@@ -219,9 +242,7 @@ export async function recoverStaleRunningSessions({
       codexSessionsRoot,
       session,
     });
-    const recoveredFinalReply =
-      normalizeStoredText(inspection.finalReplyText)
-      || normalizeStoredText(session.last_agent_reply);
+    const recoveredFinalReply = normalizeStoredText(inspection.finalReplyText);
     const hasRecoverableContinuity = Boolean(
       inspection.providerSessionId
         || inspection.latestSnapshot?.session_id
@@ -259,16 +280,12 @@ export async function recoverStaleRunningSessions({
               ?? null,
           }
         : {}),
-      ...(recoveryStatus === "completed"
-        ? {
-            last_agent_reply: recoveredFinalReply,
-          }
-        : !hasRecoverableContinuity
-        ? {
-            last_agent_reply:
-              recoveredFinalReply || recoveryText,
-          }
-        : {}),
+      last_agent_reply:
+        recoveryStatus === "completed"
+          ? recoveredFinalReply ?? null
+          : !hasRecoverableContinuity
+            ? recoveryText
+            : null,
     });
     const finalized = await persistRecoveredRunArtifacts({
       appendExchangeLog: inspection.hasFinalAnswer || !hasRecoverableContinuity,
@@ -278,8 +295,8 @@ export async function recoverStaleRunningSessions({
       finalReplyText: inspection.hasFinalAnswer
         ? recoveredFinalReply
         : hasRecoverableContinuity
-          ? normalizeStoredText(updated.last_agent_reply)
-        : recoveryText,
+          ? null
+          : recoveryText,
       finishedAt,
       recoveryText,
       session: updated,

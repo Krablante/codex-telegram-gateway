@@ -152,6 +152,195 @@ test("CodexWorkerPool preserves continuity metadata when native resume stays una
   assert.equal(deletedMessages.length, 1);
 });
 
+test("CodexWorkerPool passes the stored rollout path into runTask for continuity-aware runs", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-rollout-path-pass-through-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 145,
+    topicName: "Known rollout path",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+  const resumedSession = await sessionStore.patch(session, {
+    codex_thread_id: "resume-thread",
+    provider_session_id: "provider-session",
+    codex_rollout_path: "/tmp/stored-rollout-path.jsonl",
+  });
+
+  const runCalls = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        return { message_id: payload.reply_to_message_id ?? 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ knownRolloutPath, onEvent }) => {
+      runCalls.push({ knownRolloutPath });
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onEvent(
+            {
+              kind: "agent_message",
+              text: "Продолжение дошло до конца.",
+              messagePhase: "final_answer",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Продолжение дошло до конца.",
+              },
+            },
+          );
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "resume-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  const started = await workerPool.startPromptRun({
+    session: resumedSession,
+    prompt: "Продолжай с уже известным rollout path.",
+    message: {
+      message_id: 1001,
+    },
+  });
+  assert.equal(started.ok, true);
+  await waitFor(() => workerPool.getActiveRun(resumedSession.session_key) === null);
+  assert.equal(runCalls.length, 1);
+  assert.equal(runCalls[0].knownRolloutPath, "/tmp/stored-rollout-path.jsonl");
+});
+
+test("CodexWorkerPool clears stale provider session metadata when a fresh thread starts without a new provider id yet", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-thread-switch-provider-clear-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 146,
+    topicName: "Fresh thread without provider session",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/home/bloob/atlas",
+      cwd: "/home/bloob/atlas",
+      branch: "main",
+      worktree_path: "/home/bloob/atlas",
+    },
+  });
+  const resumedSession = await sessionStore.patch(session, {
+    codex_thread_id: "stale-thread",
+    provider_session_id: "stale-provider-session",
+    codex_rollout_path: "/tmp/stale-rollout.jsonl",
+    last_context_snapshot: {
+      thread_id: "stale-thread",
+      session_id: "stale-provider-session",
+      rollout_path: "/tmp/stale-rollout.jsonl",
+    },
+  });
+
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        return { message_id: payload.reply_to_message_id ?? 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ onRuntimeState, onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onRuntimeState({
+          threadId: "fresh-thread",
+        });
+        await onEvent(
+          {
+            kind: "agent_message",
+            eventType: "item.completed",
+            text: "Fresh thread finished.",
+            messagePhase: "final_answer",
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              text: "Fresh thread finished.",
+            },
+          },
+        );
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "fresh-thread",
+          warnings: [],
+        };
+      })(),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session: resumedSession,
+    prompt: "Continue after a fresh thread switch.",
+    message: {
+      message_id: 101,
+      message_thread_id: 146,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(resumedSession.session_key) === null);
+
+  const reloaded = await sessionStore.load(resumedSession.chat_id, resumedSession.topic_id);
+  assert.equal(reloaded.codex_thread_id, "fresh-thread");
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_context_snapshot, null);
+});
+
 
 
 test("CodexWorkerPool keeps commentary progress visible even after later command and turn events", async () => {

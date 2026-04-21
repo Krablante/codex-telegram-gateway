@@ -1126,6 +1126,10 @@ export async function runAttempt(
       state.threadId = nextThreadId;
       patch.codex_thread_id = nextThreadId;
     }
+    if (threadChanged && !nextProviderSessionId) {
+      state.providerSessionId = null;
+      patch.provider_session_id = null;
+    }
     if (nextActiveTurnId) {
       state.activeTurnId = nextActiveTurnId;
     }
@@ -1170,6 +1174,7 @@ export async function runAttempt(
     sessionKey: run.session.session_key,
     sessionThreadId,
     providerSessionId: state.providerSessionId,
+    knownRolloutPath: state.rolloutPath,
     skipThreadHistoryLookup,
     model: runtimeProfile.model,
     reasoningEffort: runtimeProfile.reasoningEffort,
@@ -1187,6 +1192,7 @@ export async function runAttempt(
         const threadChanged = summary.threadId !== run.session.codex_thread_id;
         state.threadId = summary.threadId;
         if (threadChanged) {
+          state.providerSessionId = null;
           state.rolloutPath = null;
           state.contextSnapshot = null;
         }
@@ -1194,6 +1200,7 @@ export async function runAttempt(
           codex_thread_id: summary.threadId,
           ...(threadChanged
             ? {
+                provider_session_id: null,
                 codex_rollout_path: null,
                 last_context_snapshot: null,
               }

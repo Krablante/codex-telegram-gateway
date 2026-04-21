@@ -66,7 +66,7 @@ export function getDefaultConfigRoot(options = {}) {
 
 export function getDefaultEnvFilePath(options = {}) {
   return path.join(
-    options.configRoot || options.stateRoot || getDefaultConfigRoot(options),
+    options.stateRoot || options.configRoot || getDefaultConfigRoot(options),
     "runtime.env",
   );
 }
@@ -97,7 +97,7 @@ async function fileExists(filePath) {
 }
 
 export async function resolveRuntimeEnvFilePath({
-  explicitEnvFilePath = process.env.ENV_FILE || process.env.CODEX_TELEGRAM_GATEWAY_ENV_FILE,
+  explicitEnvFilePath = process.env.ENV_FILE,
   repoRoot = getDefaultRepoRoot(),
   configRoot = getDefaultConfigRoot(),
   stateRoot = null,

@@ -14,6 +14,7 @@ import {
 } from "./codex-runner-common.js";
 import {
   createSummaryTracker,
+  extractRolloutTaskStartedTurnId,
   followRolloutAfterDisconnect,
   readRolloutDelta,
   summarizeRolloutLine,
@@ -678,6 +679,7 @@ export function runCodexTask({
         filePath: rolloutPath,
         offset: 0,
         carryover: Buffer.alloc(0),
+        flushTailAtEof: true,
       });
     } catch (error) {
       if (error?.code === "ENOENT") {
@@ -687,12 +689,31 @@ export function runCodexTask({
     }
     rolloutObservedOffset = delta.nextOffset;
 
+    let replayActiveTurnId = activeTurnId;
+    let terminalSummary = null;
+    let terminalKind = null;
     for (const line of delta.lines) {
+      const taskStarted = extractRolloutTaskStartedTurnId(line.text);
+      if (taskStarted.seen) {
+        terminalSummary = null;
+        terminalKind = null;
+        replayActiveTurnId = taskStarted.turnId || replayActiveTurnId;
+        continue;
+      }
+
       const summary = summarizeRolloutLine(line.text, {
         primaryThreadId: primaryThreadId || latestThreadId || threadId,
-        activeTurnId,
+        activeTurnId: replayActiveTurnId,
       });
       if (!summary) {
+        continue;
+      }
+      if (
+        (summary.eventType === "turn.aborted" || summary.eventType === "rollout.task_complete")
+        && replayActiveTurnId
+        && summary.turnId
+        && summary.turnId !== replayActiveTurnId
+      ) {
         continue;
       }
       if (!summaryTracker.rememberSummary(summary, { primaryThreadId, latestThreadId })) {
@@ -701,24 +722,35 @@ export function runCodexTask({
 
       await emitFallbackSummary(summary);
       if (summary.eventType === "turn.aborted") {
-        activeTurnId = null;
-        finishAbortedTurn({
-          threadId: summary.threadId || latestThreadId || threadId,
-          interruptReason: interruptRequested ? "user" : "upstream",
-          abortReason: summary.abortReason || null,
-          resumeReplacement: interruptRequested
-            ? null
-            : buildTransportResumeReplacement(
-                summary.threadId || latestThreadId || threadId,
-              ),
-        });
-        return { completed: true };
+        terminalSummary = summary;
+        terminalKind = "aborted";
+        continue;
       }
 
       if (summary.messagePhase === "final_answer") {
-        finishCompletedTurn();
-        return { completed: true };
+        terminalSummary = summary;
+        terminalKind = "completed";
       }
+    }
+
+    if (terminalSummary && terminalKind === "aborted") {
+      activeTurnId = null;
+      finishAbortedTurn({
+        threadId: terminalSummary.threadId || latestThreadId || threadId,
+        interruptReason: interruptRequested ? "user" : "upstream",
+        abortReason: terminalSummary.abortReason || null,
+        resumeReplacement: interruptRequested
+          ? null
+          : buildTransportResumeReplacement(
+              terminalSummary.threadId || latestThreadId || threadId,
+            ),
+      });
+      return { completed: true };
+    }
+
+    if (terminalSummary && terminalKind === "completed") {
+      finishCompletedTurn();
+      return { completed: true };
     }
 
     return { completed: false };

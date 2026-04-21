@@ -88,6 +88,16 @@ export function buildQueueAutoUnavailableMessage(language = DEFAULT_UI_LANGUAGE)
   return "Очередь Spike недоступна, пока этим топиком управляет /auto.";
 }
 
+export function buildAutoModeCommandBlockedMessage(
+  language = DEFAULT_UI_LANGUAGE,
+) {
+  if (isEnglish(language)) {
+    return "This topic is currently owned by /auto. Use /interrupt, /status, or turn /auto off first.";
+  }
+
+  return "Сейчас этим топиком управляет /auto. Используй /interrupt, /status или сначала выключи /auto.";
+}
+
 export function buildOmniUnavailableMessage(
   language = DEFAULT_UI_LANGUAGE,
   commandName = "omni",

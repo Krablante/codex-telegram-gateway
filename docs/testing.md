@@ -28,6 +28,7 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 
 - `make doctor` — env, Telegram auth, webhook state, basic runtime checks
 - `make test` — full automated suite
+- `node --test test/admin-status.test.js` — focused operator-status coverage for stale-heartbeat detection, pid liveness, and configured-vs-resolved Codex binary reporting
 - `npm run guidebook:build -- --language rus --output /tmp/guidebook-rus.pdf` — manual PDF build for the beginner guidebook
 - `node --test test/telegram-command-parsing.test.js test/telegram-status-view.test.js` — fast pure-surface checks for command parsing and status rendering ownership
 - `node --test test/codex-limits.test.js` — focused Codex limits parsing/cache behavior, including stale-fast UI reads with background refresh
@@ -44,8 +45,8 @@ On native Windows, leave `CODEX_BIN_PATH` empty unless you need a custom shim pa
 - `node --test test/prompt-queue.test.js` — focused `/q` queue semantics, including busy-retry after finalization and corrupt-queue quarantine
 - `node --test test/omni-coordinator.test.js test/omni-coordinator-*.test.js test/omni-decision.test.js test/omni-memory.test.js test/omni-prompting.test.js test/omni-prompt-handoff.test.js test/session-compactor.test.js test/session-service.test.js` — focused Omni v2 coverage with a compact coordinator spine plus split setup/cycle/input/sleep/shutdown ownership, compact runtime-profile regressions, prompt-shape checks, and active-rule preservation in rebuilt briefs
 - `node --test test/zoo-service.test.js test/zoo-service-menu.test.js test/zoo-service-add-flow.test.js test/zoo-service-refresh.test.js test/zoo-render.test.js test/zoo-analysis.test.js test/zoo-model-response.test.js test/zoo-store.test.js` — focused Zoo ownership slices for topic/menu, missing-topic-state callback recovery, add-flow, refresh, render, and store behavior
-- `make smoke` — focused Spike smoke path
-- `make smoke-omni` — focused Omni smoke path
+- `make smoke` — focused Spike smoke path, now fail-closed when local `systemctl --user` health cannot be determined
+- `make smoke-omni` — focused Omni smoke path, with the same fail-closed service-health behavior
 - `make soak` — multi-topic concurrency validation
 - `make test-live` — real Codex continuity validation for interrupt, reattach, and resume semantics
 - `make user-e2e` — real Telegram user-account baseline scenarios

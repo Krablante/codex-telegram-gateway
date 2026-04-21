@@ -58,6 +58,8 @@ scripts\windows\run-omni.cmd
 
 - `lifecycle_state: running`
 - свежий `observed_at`
+- `heartbeat_fresh: true`
+- `heartbeat_pid_alive: true`
 - вменяемый `active_run_count`
 - ожидаемые usernames ботов и forum chat id
 
@@ -88,7 +90,7 @@ scripts\windows\admin.cmd reactivate -1003577434463 12345
 scripts\windows\admin.cmd purge -1003577434463 12345
 ```
 
-`make admin ARGS='status'` теперь ещё показывает реальный `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH` и список MCP server names, распарсенных из этого конфига. Это первый быстрый чек, если кажется, что у Codex внезапно пропал `pitlane`, `tavily` или другой MCP.
+`make admin ARGS='status'` теперь ещё показывает свежесть heartbeat, жив ли pid, сконфигурированный и реальный `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH` и список MCP server names, распарсенных из этого конфига. Это первый быстрый чек, если кажется, что у Codex внезапно пропал `pitlane`, `tavily` или другой MCP.
 
 ## Сервисы
 
@@ -117,7 +119,7 @@ make service-restart-omni
 make service-restart-live
 ```
 
-`make service-restart-live` теперь каноничный путь для обычного живого рестарта: он перезапускает `Omni`, а `Spike` прокатывает через мягкий session-aware rollout. Raw `systemctl restart codex-telegram-gateway.service` не использовать, если не нужен именно слепой жёсткий рестарт.
+`make service-restart-live` теперь каноничный путь для обычного живого рестарта: он перезапускает `Omni`, если этот unit установлен, а `Spike` прокатывает через мягкий session-aware rollout. Raw `systemctl restart codex-telegram-gateway.service` не использовать, если не нужен именно слепой жёсткий рестарт.
 Если предыдущий rollout уже успел перевести leader traffic, но retiring generation ещё дренирует retained topics, повторный `make service-restart-live` теперь честно запускает следующий soft rollout вместо фальшивого стопора `already-shifted`.
 
 ## Что делать при проблемах

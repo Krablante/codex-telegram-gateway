@@ -138,6 +138,7 @@ Rules:
 - if a run is still in the short finalizing window, `/q` stays queued and starts on the next drain after teardown
 - otherwise queued prompts start in FIFO order right after the current run finishes
 - `/q` is Spike-only and stays unavailable while `/auto` owns the topic
+- blocked human Spike commands during active `/auto` now reply explicitly instead of disappearing silently
 
 ## Prompt Suffixes
 

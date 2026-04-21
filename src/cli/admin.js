@@ -1,12 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
 import { RuntimeObserver } from "../runtime/runtime-observer.js";
+import { resolveExecutablePathSync } from "../runtime/executable-path.js";
 import { ensureStateLayout } from "../state/layout.js";
 import { SessionAdmin, buildSessionCounts } from "../session-manager/session-admin.js";
 import { SessionStore } from "../session-manager/session-store.js";
+
+const HEARTBEAT_STALE_MIN_MS = 60_000;
 
 function printLine(label, value) {
   console.log(`${label}: ${value}`);
@@ -100,6 +104,82 @@ async function readJsonIfExists(filePath) {
   }
 }
 
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return null;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      return false;
+    }
+    return null;
+  }
+}
+
+export function summarizeHeartbeat(
+  heartbeat,
+  {
+    nowMs = Date.now(),
+    pollTimeoutSecs = 30,
+  } = {},
+) {
+  if (!heartbeat || typeof heartbeat !== "object") {
+    return {
+      observedAt: null,
+      lifecycleState: "unknown",
+      activeRunCount: 0,
+      lastUpdateId: null,
+      lastCommandName: null,
+      mode: null,
+      stale: true,
+      fresh: false,
+      pidAlive: null,
+    };
+  }
+
+  const observedAt = heartbeat.observed_at || null;
+  const observedMs = Date.parse(observedAt || "");
+  const staleAfterMs = Math.max(
+    HEARTBEAT_STALE_MIN_MS,
+    Number.isFinite(pollTimeoutSecs) && pollTimeoutSecs > 0
+      ? Math.trunc(pollTimeoutSecs * 3000)
+      : HEARTBEAT_STALE_MIN_MS,
+  );
+  const stale =
+    !Number.isFinite(observedMs) || nowMs - observedMs > staleAfterMs;
+  const pidAlive = isPidAlive(heartbeat.pid);
+  const lifecycleState =
+    stale || pidAlive === false
+      ? "stale"
+      : heartbeat.lifecycle_state || "unknown";
+
+  return {
+    observedAt,
+    lifecycleState,
+    activeRunCount: heartbeat.service_state?.active_run_count ?? 0,
+    lastUpdateId: heartbeat.service_state?.last_update_id ?? null,
+    lastCommandName: heartbeat.service_state?.last_command_name ?? null,
+    mode: heartbeat.mode ?? null,
+    stale,
+    fresh: !stale,
+    pidAlive,
+  };
+}
+
+export function resolveCodexBinPathForStatus(config = {}) {
+  try {
+    return resolveExecutablePathSync(config.codexBinPath, {
+      cwd: config.repoRoot,
+    });
+  } catch {
+    return config.codexBinPath || null;
+  }
+}
+
 function createCliRuntimeObserver({ logsDir, config }) {
   return new RuntimeObserver({
     logsDir,
@@ -154,19 +234,27 @@ function formatSessionLine(session) {
 }
 
 function buildStatusReport({ heartbeat, counts, config }) {
+  const heartbeatSummary = summarizeHeartbeat(heartbeat, {
+    pollTimeoutSecs: config.telegramPollTimeoutSecs,
+  });
+  const resolvedCodexBinPath = resolveCodexBinPathForStatus(config);
   return {
     heartbeat: heartbeat
       ? {
-          observed_at: heartbeat.observed_at,
-          lifecycle_state: heartbeat.lifecycle_state,
-          active_run_count: heartbeat.service_state?.active_run_count ?? null,
-          last_update_id: heartbeat.service_state?.last_update_id ?? null,
-          last_command_name: heartbeat.service_state?.last_command_name ?? null,
-          mode: heartbeat.mode ?? null,
+          observed_at: heartbeatSummary.observedAt,
+          lifecycle_state: heartbeatSummary.lifecycleState,
+          active_run_count: heartbeatSummary.activeRunCount,
+          last_update_id: heartbeatSummary.lastUpdateId,
+          last_command_name: heartbeatSummary.lastCommandName,
+          mode: heartbeatSummary.mode,
+          fresh: heartbeatSummary.fresh,
+          stale: heartbeatSummary.stale,
+          pid_alive: heartbeatSummary.pidAlive,
         }
       : null,
     codex: {
-      bin_path: config.codexBinPath,
+      bin_path: resolvedCodexBinPath,
+      configured_bin_path: config.codexBinPath,
       config_path: config.codexConfigPath,
       mcp_servers: Array.isArray(config.codexMcpServerNames)
         ? config.codexMcpServerNames
@@ -182,6 +270,10 @@ async function runStatus({ sessionAdmin, layout, config, json }) {
   const heartbeat = await readJsonIfExists(
     path.join(layout.logs, "runtime-heartbeat.json"),
   );
+  const heartbeatSummary = summarizeHeartbeat(heartbeat, {
+    pollTimeoutSecs: config.telegramPollTimeoutSecs,
+  });
+  const resolvedCodexBinPath = resolveCodexBinPathForStatus(config);
   const report = buildStatusReport({ heartbeat, counts, config });
 
   if (json) {
@@ -191,21 +283,30 @@ async function runStatus({ sessionAdmin, layout, config, json }) {
 
   printLine(
     "service_state",
-    heartbeat?.lifecycle_state || "unknown",
+    heartbeatSummary.lifecycleState,
   );
   printLine(
     "heartbeat_observed_at",
-    heartbeat?.observed_at || "missing",
+    heartbeatSummary.observedAt || "missing",
+  );
+  printLine(
+    "heartbeat_fresh",
+    String(heartbeatSummary.fresh),
+  );
+  printLine(
+    "heartbeat_pid_alive",
+    heartbeatSummary.pidAlive === null ? "unknown" : String(heartbeatSummary.pidAlive),
   );
   printLine(
     "active_run_count",
-    String(heartbeat?.service_state?.active_run_count ?? 0),
+    String(heartbeatSummary.activeRunCount),
   );
   printLine(
     "last_update_id",
-    heartbeat?.service_state?.last_update_id ?? "none",
+    heartbeatSummary.lastUpdateId ?? "none",
   );
-  printLine("codex_bin_path", config.codexBinPath || "unknown");
+  printLine("codex_bin_path", resolvedCodexBinPath || "unknown");
+  printLine("codex_configured_bin_path", config.codexBinPath || "unknown");
   printLine("codex_config_path", config.codexConfigPath || "unknown");
   printLine(
     "codex_mcp_servers",
@@ -349,7 +450,13 @@ async function main() {
   throw new Error(`Unknown admin command: ${parsed.command}`);
 }
 
-main().catch((error) => {
-  console.error(`admin failed: ${error.message}`);
-  process.exitCode = 1;
-});
+const isDirectRun =
+  process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error(`admin failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}

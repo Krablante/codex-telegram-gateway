@@ -1,4 +1,5 @@
 import { getSessionUiLanguage } from "../../i18n/ui-language.js";
+import { isAutoModeHumanInputLocked } from "../../session-manager/auto-mode.js";
 import { composePromptWithSuffixes } from "../../session-manager/prompt-suffix.js";
 import { summarizeQueuedPrompt } from "../../session-manager/prompt-queue.js";
 import { buildReplyMessageParams } from "../command-parsing.js";
@@ -107,7 +108,7 @@ async function queueTopicPrompt({
       handledSession: session,
     };
   }
-  if (config.omniEnabled !== false && session.auto_mode?.enabled) {
+  if (config.omniEnabled !== false && isAutoModeHumanInputLocked(session)) {
     await safeSendMessage(
       api,
       buildReplyMessageParams(

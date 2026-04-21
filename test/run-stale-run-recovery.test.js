@@ -105,6 +105,40 @@ test("recoverStaleRunningSessions keeps recoverable dead-owner runs resumable", 
   assert.equal(spikeFinalEvent.thread_id, "thread-stale-123");
 });
 
+test("recoverStaleRunningSessions does not replay the previous run reply for interrupted stale recovery", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-recovery-old-final-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    lastAgentReply: "OLD FINAL FROM PREVIOUS RUN",
+  });
+  await recoverStaleRunningSessions({
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(reloaded.last_run_status, "interrupted");
+  assert.equal(reloaded.last_agent_reply, null);
+  assert.equal(spikeFinalEvent.status, "interrupted");
+  assert.equal(spikeFinalEvent.final_reply_text, null);
+});
+
 test("recoverStaleRunningSessions completes dead-owner runs when rollout already has the final answer", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-complete-"));
   t.after(async () => {
@@ -233,6 +267,129 @@ test("recoverStaleRunningSessions completes dead-owner runs when rollout already
     "The recovered run had already finished cleanly.",
   );
   assert.equal(spikeFinalEvent.thread_id, "thread-stale-123");
+});
+
+test("recoverStaleRunningSessions ignores old terminal rollout records before a newer task_started", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-old-terminal-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const codexSessionsRoot = path.join(root, "codex-sessions");
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "18");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-provider-session-stale-123.jsonl",
+  );
+  await fs.writeFile(
+    rolloutPath,
+    `${JSON.stringify({
+      timestamp: "2026-04-05T18:09:50.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "old-turn",
+        last_agent_message: "OLD FINAL FROM EARLIER TURN",
+      },
+    })}\n${JSON.stringify({
+      timestamp: "2026-04-05T18:09:58.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: "new-turn",
+        model_context_window: 200000,
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    lastAgentReply: "OLD FINAL FROM PREVIOUS RUN",
+    rolloutPath: null,
+  });
+  await recoverStaleRunningSessions({
+    codexSessionsRoot,
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(reloaded.last_run_status, "interrupted");
+  assert.equal(reloaded.last_agent_reply, null);
+  assert.equal(spikeFinalEvent.final_reply_text, null);
+});
+
+test("recoverStaleRunningSessions accepts an unterminated task_complete line at EOF", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-tail-final-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const codexSessionsRoot = path.join(root, "codex-sessions");
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "04", "18");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-provider-session-stale-123.jsonl",
+  );
+  await fs.writeFile(
+    rolloutPath,
+    JSON.stringify({
+      timestamp: "2026-04-05T18:09:59.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-stale-123",
+        last_agent_message: "Recovered from unterminated EOF final.",
+      },
+    }),
+    "utf8",
+  );
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    lastUserPrompt: "Audit the continuity path.",
+    rolloutPath: null,
+  });
+  await recoverStaleRunningSessions({
+    codexSessionsRoot,
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.last_agent_reply, "Recovered from unterminated EOF final.");
+  assert.equal(
+    spikeFinalEvent.final_reply_text,
+    "Recovered from unterminated EOF final.",
+  );
 });
 
 test("recoverStaleRunningSessions keeps live-owned running sessions untouched", async (t) => {

@@ -333,8 +333,8 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
 }
 
 export async function loadRuntimeConfig(options = {}) {
-  const repoRoot = options.repoRoot || getDefaultRepoRoot();
-  const stateRoot = options.stateRoot || getDefaultStateRoot();
+  const repoRoot = options.repoRoot || process.env.REPO_ROOT || getDefaultRepoRoot();
+  const stateRoot = options.stateRoot || process.env.STATE_ROOT || getDefaultStateRoot();
   const envFilePath = await resolveRuntimeEnvFilePath({
     explicitEnvFilePath: options.envFilePath || process.env.ENV_FILE || null,
     repoRoot,
@@ -345,8 +345,8 @@ export async function loadRuntimeConfig(options = {}) {
     ...fileEnv,
     ...process.env,
     ENV_FILE: envFilePath,
-    REPO_ROOT: fileEnv.REPO_ROOT || process.env.REPO_ROOT || repoRoot,
-    STATE_ROOT: fileEnv.STATE_ROOT || process.env.STATE_ROOT || stateRoot,
+    REPO_ROOT: process.env.REPO_ROOT || fileEnv.REPO_ROOT || repoRoot,
+    STATE_ROOT: process.env.STATE_ROOT || fileEnv.STATE_ROOT || stateRoot,
   };
   const codexConfigPath =
     mergedEnv.CODEX_CONFIG_PATH?.trim() || DEFAULT_CODEX_CONFIG_PATH;

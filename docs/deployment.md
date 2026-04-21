@@ -200,7 +200,7 @@ make service-restart-omni
 - if the Omni unit is installed but `OMNI_ENABLED=false`, it may idle safely after clearing stale Omni slash commands
 - for Spike on Linux, `make service-rollout` and `make service-restart` use the repo-local session-aware rollout command and return only after the replacement generation has taken leader traffic; `make service-hard-restart` is the explicit blind restart path
 - Spike `service-install` requires `systemd >= 250` because the user unit depends on `ExitType=cgroup`
-- `make admin ARGS='status'` now shows the resolved `CODEX_CONFIG_PATH` and parsed MCP server names, which is the fastest operator check before treating missing `pitlane` or `tavily` access as a runtime bug
+- `make admin ARGS='status'` now shows heartbeat freshness, pid liveness, the configured and resolved `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and parsed MCP server names, which is the fastest operator check before treating missing `pitlane` or `tavily` access as a runtime bug
 - container-backed MCP tools such as `pitlane` and `large_file` may see the workspace through a `/workspace/...` mirror instead of host paths; teach Codex that mapping or translate paths manually when those tools are in play
 - on native Windows, do not use WSL just to get the bot online unless you already know your WSL networking and file-path setup is healthy
 - on native Windows, the practical install path is `scripts\windows\install.cmd`, which keeps dependency install reproducible and skips non-essential transitive package scripts

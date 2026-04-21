@@ -209,10 +209,11 @@ test("handleIncomingMessage ignores /omni because it belongs to Omni", async () 
 });
 
 test("handleIncomingMessage blocks destructive human Spike commands in auto topics", async () => {
+  const sent = [];
   const result = await handleIncomingMessage({
     api: {
-      async sendMessage() {
-        throw new Error("blocked auto-topic command should stay silent");
+      async sendMessage(payload) {
+        sent.push(payload);
       },
     },
     botUsername: "gatewaybot",
@@ -249,6 +250,9 @@ test("handleIncomingMessage blocks destructive human Spike commands in auto topi
   });
 
   assert.equal(result.reason, "auto-topic-human-command-blocked");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /\/auto/u);
+  assert.match(sent[0].text, /выключи|turn .*off/i);
 });
 
 test("handleIncomingMessage rejects /q while /auto owns the topic", async () => {
@@ -297,6 +301,112 @@ test("handleIncomingMessage rejects /q while /auto owns the topic", async () => 
   assert.equal(result.reason, "auto-topic-human-command-blocked");
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /Очередь Spike недоступна/u);
+});
+
+test("handleIncomingMessage allows /q again after /auto reaches done", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 1 };
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/q подготовь следующий шаг после done",
+      entities: [{ type: "bot_command", offset: 0, length: 2 }],
+      from: { id: 5825672398, is_bot: false },
+      chat: { id: -1003577434463 },
+      message_id: 779,
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return {
+          session_key: "-1003577434463:77",
+          chat_id: "-1003577434463",
+          topic_id: "77",
+          auto_mode: {
+            enabled: true,
+            phase: "done",
+            omni_bot_id: "8603043042",
+          },
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1003577434463:77",
+          chat_id: "-1003577434463",
+          topic_id: "77",
+          auto_mode: {
+            enabled: true,
+            phase: "done",
+            omni_bot_id: "8603043042",
+          },
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async getGlobalPromptSuffix() {
+        return {
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async getPendingPromptAttachments() {
+        return [];
+      },
+      async enqueuePromptQueue() {
+        return {
+          position: 1,
+          size: 1,
+        };
+      },
+      async drainPromptQueue() {
+        return [
+          {
+            sessionKey: "-1003577434463:77",
+            result: { reason: "busy" },
+          },
+        ];
+      },
+      async clearPendingPromptAttachments() {
+        return {
+          session_key: "-1003577434463:77",
+          chat_id: "-1003577434463",
+          topic_id: "77",
+          auto_mode: {
+            enabled: true,
+            phase: "done",
+            omni_bot_id: "8603043042",
+          },
+        };
+      },
+      async recordHandledSession(_state, session) {
+        return session;
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+    },
+  });
+
+  assert.equal(result.reason, "prompt-queued");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /очередь|queued/i);
 });
 
 test("handleIncomingMessage ignores stale auto human-input locks when Omni is globally disabled", async () => {
@@ -495,5 +605,4 @@ test("handleIncomingMessage does not buffer internal Omni handoff prompts", asyn
   assert.equal(result.reason, "prompt-started");
   assert.equal(started, 1);
 });
-
 
