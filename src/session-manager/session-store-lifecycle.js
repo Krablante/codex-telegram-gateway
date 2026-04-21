@@ -11,6 +11,9 @@ import { buildTopicContextFileText } from "./topic-context.js";
 import {
   buildPurgedStub,
   buildRuntimeStateFields,
+  CorruptSessionMetaError,
+  getCorruptSessionMetaMarkerPath,
+  hasCorruptSessionMetaMarker,
   META_LOCK_RETRY_MS,
   META_LOCK_STALE_MS,
   META_LOCK_TIMEOUT_MS,
@@ -20,6 +23,18 @@ import {
   sleep,
   stripLegacyMetaFields,
 } from "./session-store-common.js";
+
+async function throwIfCorruptMetaMarkerExists(metaPath) {
+  if (await hasCorruptSessionMetaMarker(metaPath)) {
+    throw new CorruptSessionMetaError(metaPath);
+  }
+}
+
+async function loadCurrentMetaOrFallback(store, meta) {
+  const metaPath = store.getMetaPath(meta.chat_id, meta.topic_id);
+  await throwIfCorruptMetaMarkerExists(metaPath);
+  return (await readMetaJson(metaPath)) || meta;
+}
 
 export async function withMetaLock(store, chatId, topicId, fn) {
   const sessionDir = store.getSessionDir(chatId, topicId);
@@ -82,6 +97,12 @@ export async function saveUnlocked(store, meta) {
       ),
     }),
   );
+  await fs.rm(
+    getCorruptSessionMetaMarkerPath(
+      store.getMetaPath(normalizedMeta.chat_id, normalizedMeta.topic_id),
+    ),
+    { force: true },
+  ).catch(() => {});
 }
 
 export async function ensureSession(
@@ -99,7 +120,9 @@ export async function ensureSession(
 ) {
   const ids = normalizeSessionIds(chatId, topicId);
   return withMetaLock(store, ids.chatId, ids.topicId, async () => {
-    const existing = await readMetaJson(store.getMetaPath(ids.chatId, ids.topicId));
+    const metaPath = store.getMetaPath(ids.chatId, ids.topicId);
+    await throwIfCorruptMetaMarkerExists(metaPath);
+    const existing = await readMetaJson(metaPath);
     const now = new Date().toISOString();
 
     if (existing) {
@@ -150,8 +173,7 @@ export async function ensureSession(
 export async function touchCommand(store, meta, commandName) {
   return withMetaLock(store, meta.chat_id, meta.topic_id, async () => {
     const commandAt = new Date().toISOString();
-    const current =
-      (await readMetaJson(store.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
+    const current = await loadCurrentMetaOrFallback(store, meta);
     const updated = {
       ...current,
       updated_at: commandAt,
@@ -165,8 +187,7 @@ export async function touchCommand(store, meta, commandName) {
 
 export async function patchWithCurrent(store, meta, patch) {
   return withMetaLock(store, meta.chat_id, meta.topic_id, async () => {
-    const current =
-      (await readMetaJson(store.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
+    const current = await loadCurrentMetaOrFallback(store, meta);
     const resolvedPatch =
       typeof patch === "function"
         ? await patch(current)
