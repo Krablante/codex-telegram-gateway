@@ -8,18 +8,36 @@ import {
 } from "../state/file-utils.js";
 import {
   buildArtifactFileName,
+  CorruptSessionMetaError,
+  hasCorruptSessionMetaMarker,
+  isCorruptSessionMetaError,
   normalizeExchangeLogEntry,
   readMetaJson,
   readOptionalText,
   stripLegacyMetaFields,
 } from "./session-store-common.js";
 
+async function throwIfCorruptMetaMarkerExists(store, chatId, topicId) {
+  const metaPath = store.getMetaPath(chatId, topicId);
+  if (await hasCorruptSessionMetaMarker(metaPath)) {
+    throw new CorruptSessionMetaError(metaPath);
+  }
+}
+
 function toStoredRelativePath(fromPath, toPath) {
   return path.relative(fromPath, toPath).split(path.sep).join(path.posix.sep);
 }
 
 export async function loadSessionMeta(store, chatId, topicId) {
-  return readMetaJson(store.getMetaPath(chatId, topicId));
+  try {
+    return await readMetaJson(store.getMetaPath(chatId, topicId));
+  } catch (error) {
+    if (isCorruptSessionMetaError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 export async function listSessions(store) {
@@ -50,7 +68,14 @@ export async function listSessions(store) {
 
       const topicDir = path.join(chatDir, topicEntry.name);
       const metaPath = path.join(topicDir, "meta.json");
-      const session = await readMetaJson(metaPath);
+      let session = null;
+      try {
+        session = await readMetaJson(metaPath);
+      } catch (error) {
+        if (!isCorruptSessionMetaError(error)) {
+          throw error;
+        }
+      }
       if (session) {
         sessions.push(session);
       }
@@ -142,6 +167,7 @@ export async function loadExchangeLog(store, meta) {
 
 export async function appendExchangeLogEntry(store, meta, entry) {
   return store.withMetaLock(meta.chat_id, meta.topic_id, async () => {
+    await throwIfCorruptMetaMarkerExists(store, meta.chat_id, meta.topic_id);
     const current =
       (await readMetaJson(store.getMetaPath(meta.chat_id, meta.topic_id))) || meta;
     const normalizedEntry = normalizeExchangeLogEntry(entry);

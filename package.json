@@ -1,6 +1,6 @@
 {
   "name": "codex-telegram-gateway",
-  "version": "0.3.42",
+  "version": "0.3.43",
   "description": "Telegram forum-topic gateway for the real Codex CLI runtime.",
   "keywords": [
     "telegram",

@@ -108,16 +108,6 @@ export async function pinTopicControlPanelMessageSafe(api, session, messageId) {
       message_id: messageId,
       disable_notification: true,
     });
-    // In forum topics Telegram emits a separate pin service message right after the pinned menu.
-    await deleteTopicControlMessagesBestEffort(
-      api,
-      session.chat_id,
-      [messageId + 1],
-      {
-        attempts: 4,
-        retryDelayMs: 250,
-      },
-    );
     return true;
   } catch {
     return false;

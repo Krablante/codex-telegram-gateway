@@ -78,7 +78,7 @@ Current panel coverage:
 Stable values are handled directly by buttons. Free-form values such as the global suffix text or a custom global wait value are entered by replying to the pinned menu message.
 If a model change makes the previously saved reasoning level unsupported in the same scope, that stale reasoning value is cleared automatically.
 
-`/menu` works only inside a topic. It opens or recreates one persistent topic-local control panel there, repins it, removes the replaced menu, and cleans up the transient Telegram pin notices. Telegram-style command suggestions such as `/menu@YourBot` are accepted too.
+`/menu` works only inside a topic. It opens or recreates one persistent topic-local control panel there, repins it, and removes the replaced menu. Telegram-style command suggestions such as `/menu@YourBot` are accepted too. Telegram may still emit its own pin service notice, but the gateway no longer guesses and deletes the next message id just to hide it.
 
 New topics created via `/new` now get that local menu automatically right after the bootstrap message.
 Explicit `/new cwd=...` bindings also accept quoted paths, so Windows paths with spaces work too, for example `/new cwd="C:/Users/Example User/Source Repos" Audit topic`.
@@ -130,7 +130,7 @@ Rules:
 - `/q <text>` — put a Spike prompt into the topic queue
 - `/q status` — show queued items with short previews
 - `/q delete <position>` — remove one queued item by 1-based position
-- plain follow-up text during an active Spike run is live-steered into that same run; if live steer hits a short transient failure, the gateway retries briefly, and only then queues the follow-up as the next prompt instead of dropping it behind a generic busy reply; if upstream aborts the turn after already accepting that steer, the gateway restarts the same top-level run on a fresh thread instead of surfacing a false terminal interruption
+- plain follow-up text during an active Spike run is live-steered into that same run; if live steer hits a short transient failure, the gateway retries briefly, and only then queues the follow-up as the next prompt instead of dropping it behind a generic busy reply
 - queued prompts may include the same Telegram attachments as normal prompts
 - attachment-only `/q` files stay reserved for the next `/q ...` text and are not consumed by a plain direct Spike prompt
 - long `/q ...` messages and media groups use the same fragment buffering path before they are queued
@@ -174,6 +174,12 @@ Omni:
 `/compact` uses a separate global model/reasoning pair from `General -> /global -> Bot Settings`. That profile is menu-only today and affects only the temporary summarizer that rebuilds `active-brief.md`, including still-active user-specific rules and delivery instructions when they are present in the exchange log.
 
 `/status` shows the effective profile after topic/global/default merge and includes the same live limits summary that the root menus use.
+
+`/status` now separates configured limits from live rollout limits when they differ:
+
+- `context window` and `auto-compact` come from the current Codex config file
+- `effective context window` appears only when the active session snapshot is running under an older or different live window
+- token usage lines still reflect the live run snapshot
 
 ## Rendering And Delivery
 

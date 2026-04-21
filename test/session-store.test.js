@@ -334,6 +334,57 @@ test("SessionStore skips malformed meta files and quarantines them", async () =>
   assert.equal(sessions[0].session_key, valid.session_key);
 });
 
+test("SessionStore ensure fails closed after quarantining corrupt meta instead of recreating a fresh session", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const store = new SessionStore(sessionsRoot);
+  const corruptDir = store.getSessionDir("-1003577434463", "101");
+  await fs.mkdir(corruptDir, { recursive: true });
+  await fs.writeFile(path.join(corruptDir, "meta.json"), "{", "utf8");
+
+  await assert.rejects(
+    store.ensure({
+      chatId: -1003577434463,
+      topicId: 101,
+      topicName: "Corrupt session",
+      createdVia: "command/new",
+      workspaceBinding: buildBinding(),
+    }),
+    /Corrupt session meta quarantined/u,
+  );
+
+  const filesAfterEnsure = await fs.readdir(corruptDir);
+  assert.equal(filesAfterEnsure.includes("meta.json"), false);
+  assert.equal(
+    filesAfterEnsure.some((entry) => entry.startsWith("meta.json.corrupt-")),
+    true,
+  );
+  assert.equal(await store.load("-1003577434463", "101"), null);
+});
+
+test("SessionStore keeps fail-closed behavior after listSessions quarantines a corrupt meta", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const store = new SessionStore(sessionsRoot);
+  const corruptDir = store.getSessionDir("-1003577434463", "102");
+  await fs.mkdir(corruptDir, { recursive: true });
+  await fs.writeFile(path.join(corruptDir, "meta.json"), "{", "utf8");
+
+  assert.deepEqual(await store.listSessions(), []);
+  await assert.rejects(
+    store.ensure({
+      chatId: -1003577434463,
+      topicId: 102,
+      topicName: "Corrupt after scan",
+      createdVia: "command/new",
+      workspaceBinding: buildBinding(),
+    }),
+    /Corrupt session meta quarantined/u,
+  );
+});
+
 test("SessionStore quarantines malformed exchange logs instead of treating them as empty history", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),

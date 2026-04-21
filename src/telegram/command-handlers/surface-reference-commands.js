@@ -163,6 +163,19 @@ function buildGuideGenerationFailureMessage(
     : `Сейчас не смог собрать guidebook.${detail}`;
 }
 
+function buildGuideDeliveryFailureMessage(
+  language = DEFAULT_UI_LANGUAGE,
+  delivery = null,
+) {
+  const reason = String(delivery?.reason || "").trim();
+  const detail = reason
+    ? `\n\n${isEnglish(language) ? "Reason" : "Причина"}: ${reason}`
+    : "";
+  return isEnglish(language)
+    ? `Could not deliver the guidebook right now.${detail}`
+    : `Сейчас не смог доставить guidebook.${detail}`;
+}
+
 export async function maybeHandleReferenceSurfaceCommand({
   api,
   command,
@@ -275,6 +288,9 @@ export async function maybeHandleReferenceSurfaceCommand({
           if (parkedResult) {
             return parkedResult;
           }
+          if (!delivery?.delivered) {
+            throw new Error(delivery?.reason || "help-card-delivery-failed");
+          }
           deliveredPages += 1;
         }
       } catch {
@@ -375,6 +391,28 @@ export async function maybeHandleReferenceSurfaceCommand({
     });
     if (parkedResult) {
       return parkedResult;
+    }
+    if (!delivery?.delivered) {
+      const failureDelivery = await safeSendMessage(
+        api,
+        buildReplyMessageParams(
+          message,
+          buildGuideDeliveryFailureMessage(language, delivery),
+        ),
+        handledSession,
+        lifecycleManager,
+      );
+      const failureParkedResult = await maybeFinalizeParkedDelivery({
+        commandName: command.name,
+        delivery: failureDelivery,
+        handledSession,
+        markCommandHandled,
+        serviceState,
+        sessionService,
+      });
+      if (failureParkedResult) {
+        return failureParkedResult;
+      }
     }
   } catch (error) {
     const delivery = await safeSendMessage(

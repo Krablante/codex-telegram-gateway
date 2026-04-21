@@ -743,6 +743,72 @@ test("OmniCoordinator recovers parked exact-token sessions when a newer complete
   assert.equal(harness.execPrompts.length, 0);
 });
 
+test("OmniCoordinator parks exact-token completion when the topic is unavailable", async () => {
+  const transportError = new Error("Telegram API sendMessage failed: topic unavailable");
+  let sessionStoreRef = null;
+  const harness = await buildHarness({
+    sendMessageImpl() {
+      throw transportError;
+    },
+    sessionLifecycleManager: {
+      async handleTransportError(session, error) {
+        assert.equal(error, transportError);
+        const parked = await sessionStoreRef.park(
+          session,
+          "telegram/topic-unavailable",
+        );
+        return {
+          handled: true,
+          parked: true,
+          session: parked,
+        };
+      },
+    },
+  });
+  sessionStoreRef = harness.sessionStore;
+  const baseSession = await ensureSession(harness.sessionStore);
+  let session = await harness.sessionService.activateAutoMode(baseSession, {
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
+  });
+  session = await harness.sessionService.captureAutoGoal(
+    session,
+    "Goal: finish only when the worker reply contains exactly LIVE_DONE_TOKEN_99.",
+  );
+  session = await harness.sessionService.captureAutoInitialPrompt(
+    session,
+    "Initial Spike prompt",
+  );
+  session = await harness.sessionService.updateAutoMode(session, {
+    ...session.auto_mode,
+    phase: "running",
+    last_spike_exchange_log_entries: 1,
+    last_evaluated_exchange_log_entries: 1,
+  });
+  session = await harness.sessionStore.patch(session, {
+    last_user_prompt: "Initial Spike prompt",
+    last_agent_reply: "LIVE_DONE_TOKEN_99",
+    exchange_log_entries: 2,
+  });
+  await harness.spikeFinalEventStore.write(session, {
+    exchange_log_entries: 2,
+    status: "completed",
+    finished_at: "2026-04-01T16:41:00.000Z",
+    final_reply_text: "LIVE_DONE_TOKEN_99",
+    telegram_message_ids: ["912"],
+    reply_to_message_id: "700",
+    thread_id: "thread-done-parked",
+  });
+
+  const result = await harness.coordinator.evaluateSession(session);
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
+
+  assert.equal(result.reason, "topic-unavailable");
+  assert.equal(stored.lifecycle_state, "parked");
+  assert.equal(stored.auto_mode.phase, "done");
+});
+
 test("OmniCoordinator evaluates a newer Spike final even if phase is stale failed", async () => {
   const harness = await buildHarness({
     decisionReply: JSON.stringify({
@@ -803,4 +869,154 @@ test("OmniCoordinator evaluates a newer Spike final even if phase is stale faile
     pendingPrompt.prompt,
     /Continue from the newly completed pass after the failed phase/u,
   );
+});
+
+test("OmniCoordinator does not dispatch a continuation to Spike after the topic gets parked during delivery", async () => {
+  const transportError = new Error("Telegram API sendMessage failed: topic unavailable");
+  let sessionStoreRef = null;
+  const harness = await buildHarness({
+    decisionReply: JSON.stringify({
+      status: "continue",
+      summary: "Need another pass.",
+      next_prompt: "Continue after the delivery recovers.",
+      user_message: null,
+      blocked_reason: null,
+    }),
+    sendMessageImpl() {
+      throw transportError;
+    },
+    sessionLifecycleManager: {
+      async handleTransportError(session, error) {
+        assert.equal(error, transportError);
+        const parked = await sessionStoreRef.park(
+          session,
+          "telegram/topic-unavailable",
+        );
+        return {
+          handled: true,
+          parked: true,
+          session: parked,
+        };
+      },
+    },
+  });
+  sessionStoreRef = harness.sessionStore;
+  const baseSession = await ensureSession(harness.sessionStore);
+  let session = await harness.sessionService.activateAutoMode(baseSession, {
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
+  });
+  session = await harness.sessionService.captureAutoGoal(
+    session,
+    "Ship Omni auto mode safely.",
+  );
+  session = await harness.sessionService.captureAutoInitialPrompt(
+    session,
+    "Initial Spike prompt",
+  );
+  session = await harness.sessionService.updateAutoMode(session, {
+    ...session.auto_mode,
+    phase: "running",
+    last_spike_exchange_log_entries: 1,
+    last_evaluated_exchange_log_entries: 1,
+  });
+  session = await harness.sessionStore.patch(session, {
+    last_user_prompt: "Initial Spike prompt",
+    last_agent_reply: "Need another pass.",
+    exchange_log_entries: 2,
+  });
+  await harness.spikeFinalEventStore.write(session, {
+    exchange_log_entries: 2,
+    status: "completed",
+    finished_at: "2026-04-01T16:39:00.000Z",
+    final_reply_text: "Need another pass.",
+    telegram_message_ids: ["909"],
+    reply_to_message_id: "700",
+    thread_id: "thread-parked-delivery",
+  });
+
+  const result = await harness.coordinator.evaluateSession(session);
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
+  const pendingPrompt = await harness.promptHandoffStore.load(stored);
+
+  assert.equal(result.reason, "topic-unavailable");
+  assert.equal(stored.lifecycle_state, "parked");
+  assert.equal(harness.execPrompts.length, 1);
+  assert.equal(pendingPrompt, null);
+});
+
+test("OmniCoordinator parks a pre-decision failure when the topic is unavailable", async () => {
+  const transportError = new Error("Telegram API sendMessage failed: topic unavailable");
+  let sessionStoreRef = null;
+  const harness = await buildHarness({
+    startExecRun() {
+      return {
+        child: null,
+        done: Promise.resolve({
+          ok: false,
+          stderr: "Omni decision failed",
+        }),
+      };
+    },
+    sendMessageImpl() {
+      throw transportError;
+    },
+    sessionLifecycleManager: {
+      async handleTransportError(session, error) {
+        assert.equal(error, transportError);
+        const parked = await sessionStoreRef.park(
+          session,
+          "telegram/topic-unavailable",
+        );
+        return {
+          handled: true,
+          parked: true,
+          session: parked,
+        };
+      },
+    },
+  });
+  sessionStoreRef = harness.sessionStore;
+  const baseSession = await ensureSession(harness.sessionStore);
+  let session = await harness.sessionService.activateAutoMode(baseSession, {
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
+  });
+  session = await harness.sessionService.captureAutoGoal(
+    session,
+    "Ship Omni auto mode safely.",
+  );
+  session = await harness.sessionService.captureAutoInitialPrompt(
+    session,
+    "Initial Spike prompt",
+  );
+  session = await harness.sessionService.updateAutoMode(session, {
+    ...session.auto_mode,
+    phase: "running",
+    last_spike_exchange_log_entries: 1,
+    last_evaluated_exchange_log_entries: 1,
+  });
+  session = await harness.sessionStore.patch(session, {
+    last_user_prompt: "Initial Spike prompt",
+    last_agent_reply: "Need another pass.",
+    exchange_log_entries: 2,
+  });
+  await harness.spikeFinalEventStore.write(session, {
+    exchange_log_entries: 2,
+    status: "completed",
+    finished_at: "2026-04-01T16:39:00.000Z",
+    final_reply_text: "Need another pass.",
+    telegram_message_ids: ["913"],
+    reply_to_message_id: "700",
+    thread_id: "thread-pre-decision-parked",
+  });
+
+  const result = await harness.coordinator.evaluateSession(session);
+  const stored = await harness.sessionStore.load("-1003577434463", "77");
+
+  assert.equal(result.reason, "topic-unavailable");
+  assert.equal(stored.lifecycle_state, "parked");
+  assert.equal(stored.auto_mode.phase, "failed");
 });

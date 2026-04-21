@@ -65,17 +65,7 @@ function extractLeadingBotCommand(message) {
       ? message.caption_entities
       : null;
 
-  if (!entities) {
-    if (commandMatch) {
-      const rawCommand = commandMatch[0];
-      return {
-        name: commandMatch[1].toLowerCase(),
-        raw: rawCommand,
-        args: text.slice(rawCommand.length).trim(),
-        target: commandMatch[2] ? commandMatch[2].toLowerCase() : null,
-      };
-    }
-
+  if (!commandMatch) {
     const bareWaitMatch = text.trim().match(/^wait(?:\s+(.+))?$/iu);
     if (!bareWaitMatch) {
       return null;
@@ -90,6 +80,16 @@ function extractLeadingBotCommand(message) {
       name: "wait",
       raw: "wait",
       args,
+    };
+  }
+
+  if (!entities) {
+    const rawCommand = commandMatch[0];
+    return {
+      name: commandMatch[1].toLowerCase(),
+      raw: rawCommand,
+      args: text.slice(rawCommand.length).trim(),
+      target: commandMatch[2] ? commandMatch[2].toLowerCase() : null,
     };
   }
 

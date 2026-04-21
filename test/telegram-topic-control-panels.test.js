@@ -318,8 +318,7 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
     false,
   );
   assert.equal(pinned.length, 1);
-  assert.equal(deleted.length, 1);
-  assert.equal(deleted[0].message_id, 778);
+  assert.equal(deleted.length, 0);
   assert.deepEqual(limitsRequests, [{ allowStale: true }]);
   assert.equal(topicControlPanelStore.getState(session).menu_message_id, 777);
 });
@@ -412,10 +411,9 @@ test("handleIncomingMessage recreates the local topic control menu when an expli
   assert.equal(sent[0].message_thread_id, 2203);
   assert.match(sent[0].text, /Topic control panel/u);
   assert.equal(pinned.length, 1);
-  assert.equal(deleted.length, 3);
+  assert.equal(deleted.length, 2);
   assert.equal(deleted[0].message_id, 6871);
   assert.equal(deleted[1].message_id, 6872);
-  assert.equal(deleted[2].message_id, 6890);
   assert.equal(topicControlPanelStore.getState(session).menu_message_id, 6889);
 });
 

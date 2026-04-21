@@ -190,3 +190,61 @@ test("OmniCoordinator can re-arm /auto cleanly after /auto off", async () => {
   assert.equal(stored.auto_mode.phase, "await_goal");
   assert.equal(stored.auto_mode.literal_goal_text, null);
 });
+
+test("OmniCoordinator shutdown interrupts an active direct Omni query child", async () => {
+  let resolveQuery;
+  let killSignal = null;
+  const harness = await buildHarness({
+    startExecRun() {
+      return {
+        child: {
+          kill(signal) {
+            killSignal = signal;
+          },
+        },
+        done: new Promise((resolve) => {
+          resolveQuery = resolve;
+        }),
+      };
+    },
+  });
+  const baseSession = await ensureSession(harness.sessionStore);
+  let session = await harness.sessionService.activateAutoMode(baseSession, {
+    activatedByUserId: "5825672398",
+    omniBotId: "8603043042",
+    spikeBotId: "8537834861",
+  });
+  session = await harness.sessionService.captureAutoGoal(
+    session,
+    "Ship Omni auto mode safely.",
+  );
+  session = await harness.sessionService.captureAutoInitialPrompt(
+    session,
+    "Initial Spike prompt",
+  );
+
+  const queryPromise = harness.coordinator.handleOmniQueryCommand(
+    buildHumanTopicMessage({
+      text: "/omni what next?",
+      messageId: 111,
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+    }),
+    "what next?",
+  );
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (typeof resolveQuery === "function") {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(typeof resolveQuery, "function");
+  await harness.coordinator.shutdown();
+  resolveQuery({
+    ok: true,
+    finalReply: "Next step is ready.",
+  });
+  await queryPromise;
+
+  assert.equal(killSignal, "SIGINT");
+});

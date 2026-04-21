@@ -131,6 +131,9 @@ export class SessionService {
       this.defaultBindingPromise = resolveWorkspaceBinding({
         atlasWorkspaceRoot: this.config.atlasWorkspaceRoot,
         requestedPath: this.config.defaultSessionBindingPath,
+      }).catch((error) => {
+        this.defaultBindingPromise = null;
+        throw error;
       });
     }
 
@@ -243,19 +246,20 @@ export class SessionService {
       ttlMs = DEFAULT_PENDING_PROMPT_ATTACHMENT_TTL_MS,
     } = {},
   ) {
-    const current =
-      (await this.sessionStore.load(session.chat_id, session.topic_id)) || session;
-    const pendingState = readPendingPromptAttachmentsState(current, scope);
-    const nextAttachments = [
-      ...pendingState.attachments,
-      ...normalizePendingPromptAttachments(attachments),
-    ];
-    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
     const fields = resolvePendingAttachmentFieldNames(scope);
+    const normalizedAttachments = normalizePendingPromptAttachments(attachments);
+    return this.sessionStore.patchWithCurrent(session, (current) => {
+      const pendingState = readPendingPromptAttachmentsState(current, scope);
+      const nextAttachments = [
+        ...pendingState.attachments,
+        ...normalizedAttachments,
+      ];
+      const expiresAt = new Date(Date.now() + ttlMs).toISOString();
 
-    return this.sessionStore.patch(current, {
-      [fields.attachments]: nextAttachments,
-      [fields.expiresAt]: nextAttachments.length > 0 ? expiresAt : null,
+      return {
+        [fields.attachments]: nextAttachments,
+        [fields.expiresAt]: nextAttachments.length > 0 ? expiresAt : null,
+      };
     });
   }
 

@@ -16,6 +16,10 @@ export {
 } from "./session-store-meta.js";
 export {
   buildArtifactFileName,
+  CorruptSessionMetaError,
+  getCorruptSessionMetaMarkerPath,
+  hasCorruptSessionMetaMarker,
+  isCorruptSessionMetaError,
   normalizeExchangeLogEntry,
   readMetaJson,
   readOptionalText,

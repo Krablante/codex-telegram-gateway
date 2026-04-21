@@ -145,3 +145,23 @@ test("spawnReplacementGeneration preserves the runtime env and injects rollout i
     "gen-old",
   );
 });
+
+test("spawnReplacementGeneration does not inherit process execArgv unless explicitly passed", () => {
+  const launches = [];
+  spawnReplacementGeneration({
+    config: {
+      repoRoot: "/repo",
+      envFilePath: "/state/runtime.env",
+    },
+    generationId: "gen-next",
+    scriptPath: "/repo/src/cli/run.js",
+    execPath: "/usr/bin/node",
+    spawnCommand(command, args, options) {
+      launches.push({ command, args, options });
+      return { unref() {} };
+    },
+  });
+
+  assert.equal(launches.length, 1);
+  assert.deepEqual(launches[0].args, ["/repo/src/cli/run.js"]);
+});

@@ -6,6 +6,29 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.43] - 2026-04-21
+
+Fixed:
+
+- corrupt `sessions/.../meta.json` now fails closed after quarantine during `ensure()` instead of being treated like a missing session and silently recreating fresh active state
+- global Codex settings and global prompt suffix stores now serialize overlapping writes, matching the safer store patterns already used elsewhere in the runtime
+- pending prompt attachment buffering now merges under the session meta lock, so overlapping attachment-first prompts stop dropping each other
+- `SessionService.getDefaultBinding()` now clears failed resolution cache so a transient bad path does not poison later successful calls
+- bare `wait 60` / `wait 600` aliases now still parse when Telegram attaches unrelated entities to the same message
+- topic `/menu` repins are safer: the gateway no longer guesses and deletes `message_id + 1`, so it stops risking accidental deletion of an unrelated neighboring message
+- direct `/help` and `/guide` delivery paths now handle undelivered document results explicitly instead of silently pretending success
+- Omni reply sends now have the same missing-reply-target fallback as topic sends, direct Omni-query children are tracked for shutdown, and auto continuation paths stop queueing fresh Spike work after Telegram already parked the topic
+- replacement rollout generations no longer inherit ambient `process.execArgv` flags unless the caller passes them explicitly
+
+Docs:
+
+- refreshed README, AGENTS, Telegram surface, runbook, and testing docs for the safer `/menu` repin behavior, the `CODEX_BIN_PATH` + `CODEX_CONFIG_PATH` + MCP triage flow, and `/status` configured-vs-effective context reporting
+
+Tests:
+
+- public `node --test`: 621 pass, 0 fail, 4 skip
+- public `npm run test:live`: 4 pass, 0 fail
+
 ## [0.3.42] - 2026-04-18
 
 Fixed:

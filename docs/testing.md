@@ -97,7 +97,7 @@ Once the bot is running in a normal work topic:
 2. Run `/menu@YourBot`.
 3. Confirm a fresh menu appears near the latest messages.
 4. Confirm the replaced menu disappears instead of piling up.
-5. Confirm the Telegram pin service notices do not remain in the topic.
+5. Confirm the gateway does not delete unrelated neighbor messages while repinning the menu. Telegram may still leave its own pin service notice behind.
 6. Tap the in-menu `Status` button and confirm it renders the same state as `/status`.
 
 ## General `/clear` Manual Sanity

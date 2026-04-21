@@ -17,6 +17,24 @@ export class GlobalCodexSettingsStore {
   constructor(settingsRoot) {
     this.filePath = path.join(settingsRoot, GLOBAL_CODEX_SETTINGS_FILE_NAME);
     this.cachedState = null;
+    this.writeChain = null;
+  }
+
+  async runExclusive(operation) {
+    const previous = this.writeChain || Promise.resolve();
+    const current = previous
+      .catch(() => {})
+      .then(operation);
+
+    this.writeChain = current;
+
+    try {
+      return await current;
+    } finally {
+      if (this.writeChain === current) {
+        this.writeChain = null;
+      }
+    }
   }
 
   async load({ force = false } = {}) {
@@ -44,7 +62,7 @@ export class GlobalCodexSettingsStore {
     }
   }
 
-  async save(nextState) {
+  async saveUnlocked(nextState) {
     const normalized = normalizeGlobalCodexSettingsState({
       ...nextState,
       updated_at: new Date().toISOString(),
@@ -58,11 +76,35 @@ export class GlobalCodexSettingsStore {
     return cloneJson(this.cachedState);
   }
 
+  async save(nextState) {
+    return this.runExclusive(() => this.saveUnlocked(nextState));
+  }
+
   async patch(patch) {
-    const current = await this.load();
-    return this.save({
-      ...current,
-      ...patch,
+    return this.patchWithCurrent(patch);
+  }
+
+  async patchWithCurrent(patch) {
+    return this.runExclusive(async () => {
+      const current = await this.load({ force: true });
+      const resolvedPatch =
+        typeof patch === "function"
+          ? await patch(current)
+          : patch;
+      if (resolvedPatch === null || resolvedPatch === undefined) {
+        return cloneJson(current);
+      }
+      if (
+        typeof resolvedPatch !== "object"
+        || Array.isArray(resolvedPatch)
+      ) {
+        throw new Error("GlobalCodexSettingsStore patch must be an object or null");
+      }
+
+      return this.saveUnlocked({
+        ...current,
+        ...resolvedPatch,
+      });
     });
   }
 }

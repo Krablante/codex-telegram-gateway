@@ -150,7 +150,7 @@ export function getDefaultCodexBinPath(platform = process.platform) {
   return platform === "win32" ? "codex.cmd" : "codex";
 }
 
-async function loadCodexConfigProfile(configPath) {
+export async function loadCodexConfigProfile(configPath) {
   try {
     const text = await fs.readFile(configPath, "utf8");
     return parseCodexConfigProfile(text, configPath);
@@ -173,10 +173,7 @@ async function loadCodexConfigProfile(configPath) {
 export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
   const repoRoot = rawEnv.REPO_ROOT?.trim() || getDefaultRepoRoot();
   const stateRoot = rawEnv.STATE_ROOT?.trim() || getDefaultStateRoot();
-  const envFilePath =
-    rawEnv.ENV_FILE?.trim()
-    || rawEnv.CODEX_TELEGRAM_GATEWAY_ENV_FILE?.trim()
-    || DEFAULT_ENV_FILE;
+  const envFilePath = rawEnv.ENV_FILE?.trim() || DEFAULT_ENV_FILE;
   const atlasWorkspaceRoot =
     rawEnv.WORKSPACE_ROOT?.trim()
     || rawEnv.ATLAS_WORKSPACE_ROOT?.trim()
@@ -339,12 +336,9 @@ export async function loadRuntimeConfig(options = {}) {
   const repoRoot = options.repoRoot || getDefaultRepoRoot();
   const stateRoot = options.stateRoot || getDefaultStateRoot();
   const envFilePath = await resolveRuntimeEnvFilePath({
-    explicitEnvFilePath:
-      options.envFilePath
-      || process.env.ENV_FILE
-      || process.env.CODEX_TELEGRAM_GATEWAY_ENV_FILE
-      || null,
+    explicitEnvFilePath: options.envFilePath || process.env.ENV_FILE || null,
     repoRoot,
+    stateRoot,
   });
   const fileEnv = await loadEnvFile(envFilePath);
   const mergedEnv = {

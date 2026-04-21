@@ -124,9 +124,10 @@ export async function answerOmniQuery(
       model: runtimeProfile.model,
       reasoningEffort: runtimeProfile.reasoningEffort,
     });
+    coordinator.activeOperatorQueryChildren.set(sessionKey, run.child);
     const result = await run.done;
     if (!result.ok) {
-      await coordinator.sendReplyMessage(
+      const failureDelivery = await coordinator.sendReplyMessage(
         message,
         buildOmniQueryFailureMessage(
           result.stderr || result.stdout || "Omni query failed",
@@ -134,17 +135,24 @@ export async function answerOmniQuery(
         ),
         { session },
       );
+      if (failureDelivery?.parked) {
+        return { handled: true, reason: "topic-unavailable" };
+      }
       return { handled: true, reason: "omni-query-failed" };
     }
 
-    await coordinator.sendReplyMessage(
+    const answerDelivery = await coordinator.sendReplyMessage(
       message,
       String(result.finalReply || "").trim()
         || buildOmniQueryFailureMessage("Empty Omni query reply", language),
       { session },
     );
+    if (answerDelivery?.parked) {
+      return { handled: true, reason: "topic-unavailable" };
+    }
     return { handled: true, reason: "omni-query-answered" };
   } finally {
+    coordinator.activeOperatorQueryChildren.delete(sessionKey);
     coordinator.activeOperatorQueries.delete(sessionKey);
   }
 }
@@ -219,13 +227,20 @@ export async function evaluateSession(coordinator, session, { force = false } = 
           clearPendingUserInput: true,
         },
       );
-      await coordinator.sendTopicMessage(
+      const doneDelivery = await coordinator.sendTopicMessage(
         doneSession,
         buildAutoDoneMessage(
           doneSummary,
           getSessionUiLanguage(doneSession),
         ),
       );
+      if (doneDelivery?.parked) {
+        return {
+          handled: true,
+          reason: "topic-unavailable",
+          session: doneDelivery.session || doneSession,
+        };
+      }
       return {
         handled: true,
         reason: "auto-done-exact-token",
@@ -281,13 +296,20 @@ export async function evaluateSession(coordinator, session, { force = false } = 
           resultSummary: result.stderr || result.stdout || "Omni decision failed",
         },
       );
-      await coordinator.sendTopicMessage(
+      const failedDelivery = await coordinator.sendTopicMessage(
         failedSession,
         buildAutoFailedMessage(
           result.stderr || result.stdout || "Omni decision failed",
           getSessionUiLanguage(failedSession),
         ),
       );
+      if (failedDelivery?.parked) {
+        return {
+          handled: true,
+          reason: "topic-unavailable",
+          session: failedDelivery.session || failedSession,
+        };
+      }
       return { handled: true, reason: "omni-decision-failed" };
     }
 
@@ -311,13 +333,20 @@ export async function evaluateSession(coordinator, session, { force = false } = 
           resultSummary: error.message,
         },
       );
-      await coordinator.sendTopicMessage(
+      const failedDelivery = await coordinator.sendTopicMessage(
         failedSession,
         buildAutoFailedMessage(
           error.message,
           getSessionUiLanguage(failedSession),
         ),
       );
+      if (failedDelivery?.parked) {
+        return {
+          handled: true,
+          reason: "topic-unavailable",
+          session: failedDelivery.session || failedSession,
+        };
+      }
       return { handled: true, reason: "omni-decision-invalid" };
     }
 
@@ -362,7 +391,7 @@ export async function evaluateSession(coordinator, session, { force = false } = 
             clearPendingUserInput: true,
           },
         );
-        await coordinator.sendTopicMessage(
+        const sleepingDelivery = await coordinator.sendTopicMessage(
           sleepingSession,
           buildAutoSleepingMessage({
             sleepMinutes: decision.sleepMinutes,
@@ -372,6 +401,13 @@ export async function evaluateSession(coordinator, session, { force = false } = 
             omniMemory: continuationMemory,
           }),
         );
+        if (sleepingDelivery?.parked) {
+          return {
+            handled: true,
+            reason: "topic-unavailable",
+            session: sleepingDelivery.session || sleepingSession,
+          };
+        }
         return {
           handled: true,
           reason: "auto-sleeping",
@@ -379,7 +415,7 @@ export async function evaluateSession(coordinator, session, { force = false } = 
         };
       }
 
-      await coordinator.sendTopicMessage(
+      const continuationDelivery = await coordinator.sendTopicMessage(
         continuationSession,
         buildAutoContinuationDispatchMessage({
           nextPrompt,
@@ -389,6 +425,13 @@ export async function evaluateSession(coordinator, session, { force = false } = 
           decisionMode: decision.mode,
         }),
       );
+      if (continuationDelivery?.parked) {
+        return {
+          handled: true,
+          reason: "topic-unavailable",
+          session: continuationDelivery.session || continuationSession,
+        };
+      }
       const nextSession = await coordinator.sendPromptToSpike(
         continuationSession,
         nextPrompt,
@@ -421,7 +464,7 @@ export async function evaluateSession(coordinator, session, { force = false } = 
           clearPendingUserInput: true,
         },
       );
-      await coordinator.sendTopicMessage(
+      const doneDelivery = await coordinator.sendTopicMessage(
         doneSession,
         decision.userMessage
           || buildAutoDoneMessage(
@@ -429,6 +472,13 @@ export async function evaluateSession(coordinator, session, { force = false } = 
             getSessionUiLanguage(doneSession),
           ),
       );
+      if (doneDelivery?.parked) {
+        return {
+          handled: true,
+          reason: "topic-unavailable",
+          session: doneDelivery.session || doneSession,
+        };
+      }
       return { handled: true, reason: "auto-done", session: doneSession };
     }
 
@@ -441,7 +491,7 @@ export async function evaluateSession(coordinator, session, { force = false } = 
           resultSummary: decision.summary || decision.blockedReason,
         },
       );
-      await coordinator.sendTopicMessage(
+      const blockedDelivery = await coordinator.sendTopicMessage(
         blockedSession,
         decision.userMessage
           || buildAutoBlockedMessage(
@@ -449,6 +499,13 @@ export async function evaluateSession(coordinator, session, { force = false } = 
             getSessionUiLanguage(blockedSession),
           ),
       );
+      if (blockedDelivery?.parked) {
+        return {
+          handled: true,
+          reason: "topic-unavailable",
+          session: blockedDelivery.session || blockedSession,
+        };
+      }
       return { handled: true, reason: "auto-blocked", session: blockedSession };
     }
 
@@ -459,7 +516,7 @@ export async function evaluateSession(coordinator, session, { force = false } = 
         resultSummary: decision.summary,
       },
     );
-    await coordinator.sendTopicMessage(
+    const failedDelivery = await coordinator.sendTopicMessage(
       failedSession,
       decision.userMessage
         || buildAutoFailedMessage(
@@ -467,6 +524,13 @@ export async function evaluateSession(coordinator, session, { force = false } = 
           getSessionUiLanguage(failedSession),
         ),
     );
+    if (failedDelivery?.parked) {
+      return {
+        handled: true,
+        reason: "topic-unavailable",
+        session: failedDelivery.session || failedSession,
+      };
+    }
     return { handled: true, reason: "auto-failed", session: failedSession };
   } finally {
     coordinator.activeDecisionChildren.delete(sessionKey);
@@ -559,7 +623,7 @@ export async function resumeDueSleepingSessions(coordinator) {
     }
 
     const wakeMemory = await coordinator.loadOmniMemory(continuationSession);
-    await coordinator.sendTopicMessage(
+    const wakeDelivery = await coordinator.sendTopicMessage(
       continuationSession,
       buildAutoContinuationDispatchMessage({
         nextPrompt: continuationAutoMode.sleep_next_prompt,
@@ -569,6 +633,9 @@ export async function resumeDueSleepingSessions(coordinator) {
         decisionMode: wakeMemory.last_decision_mode,
       }),
     );
+    if (wakeDelivery?.parked) {
+      continue;
+    }
     await coordinator.sendPromptToSpike(continuationSession, continuationAutoMode.sleep_next_prompt, {
       mode: "continuation",
       pendingUserInput: continuationAutoMode.pending_user_input,

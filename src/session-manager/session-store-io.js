@@ -1,7 +1,36 @@
 import fs from "node:fs/promises";
 
-import { quarantineCorruptFile } from "../state/file-utils.js";
+import { quarantineCorruptFile, writeTextAtomic } from "../state/file-utils.js";
 import { normalizeStoredSessionMeta } from "./session-store-meta.js";
+
+export class CorruptSessionMetaError extends Error {
+  constructor(filePath, cause = null) {
+    super(`Corrupt session meta quarantined: ${filePath}`, cause ? { cause } : undefined);
+    this.name = "CorruptSessionMetaError";
+    this.code = "SESSION_META_CORRUPT";
+    this.filePath = filePath;
+  }
+}
+
+export function isCorruptSessionMetaError(error) {
+  return error?.code === "SESSION_META_CORRUPT";
+}
+
+export function getCorruptSessionMetaMarkerPath(filePath) {
+  return `${filePath}.quarantined`;
+}
+
+export async function hasCorruptSessionMetaMarker(filePath) {
+  try {
+    await fs.access(getCorruptSessionMetaMarkerPath(filePath));
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
 
 export async function readMetaJson(filePath) {
   try {
@@ -21,7 +50,15 @@ export async function readMetaJson(filePath) {
 
     if (error instanceof SyntaxError) {
       await quarantineCorruptFile(filePath);
-      return null;
+      await writeTextAtomic(
+        getCorruptSessionMetaMarkerPath(filePath),
+        `${JSON.stringify({
+          schema_version: 1,
+          reason: "corrupt-session-meta",
+          quarantined_at: new Date().toISOString(),
+        }, null, 2)}\n`,
+      );
+      throw new CorruptSessionMetaError(filePath, error);
     }
 
     throw error;

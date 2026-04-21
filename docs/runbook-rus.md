@@ -88,7 +88,7 @@ scripts\windows\admin.cmd reactivate -1003577434463 12345
 scripts\windows\admin.cmd purge -1003577434463 12345
 ```
 
-`make admin ARGS='status'` теперь ещё показывает реальный `CODEX_CONFIG_PATH` и список MCP server names, распарсенных из этого конфига. Это первый быстрый чек, если кажется, что у Codex внезапно пропал `pitlane`, `tavily` или другой MCP.
+`make admin ARGS='status'` теперь ещё показывает реальный `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH` и список MCP server names, распарсенных из этого конфига. Это первый быстрый чек, если кажется, что у Codex внезапно пропал `pitlane`, `tavily` или другой MCP.
 
 ## Сервисы
 

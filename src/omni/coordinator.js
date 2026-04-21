@@ -87,6 +87,7 @@ export class OmniCoordinator {
     this.startExecRun = startExecRun;
     this.activeEvaluations = new Set();
     this.activeDecisionChildren = new Map();
+    this.activeOperatorQueryChildren = new Map();
     this.activeOperatorQueries = new Set();
     this.omniRunsRoot = path.join(this.config.stateRoot, "omni", "runs");
   }

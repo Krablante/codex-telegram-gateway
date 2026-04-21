@@ -92,6 +92,23 @@ test("extractBotCommand accepts bare wait commands when args are valid", () => {
   );
 });
 
+test("extractBotCommand accepts bare wait commands even when Telegram attached unrelated entities", () => {
+  assert.deepEqual(
+    extractBotCommand(
+      {
+        text: "wait 600",
+        entities: [{ type: "bold", offset: 0, length: 4 }],
+      },
+      "gatewaybot",
+    ),
+    {
+      name: "wait",
+      raw: "wait",
+      args: "600",
+    },
+  );
+});
+
 test("parseQueueCommandArgs distinguishes queue actions from prompt text", () => {
   assert.deepEqual(parseQueueCommandArgs("status"), {
     action: "status",

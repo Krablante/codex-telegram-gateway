@@ -18,6 +18,8 @@ import {
 export function interruptDecision(coordinator, sessionKey) {
   const child = coordinator.activeDecisionChildren.get(sessionKey);
   signalChildProcessTree(child, "SIGINT");
+  const queryChild = coordinator.activeOperatorQueryChildren?.get(sessionKey);
+  signalChildProcessTree(queryChild, "SIGINT");
 }
 
 export async function sendTopicMessage(
@@ -63,27 +65,36 @@ export async function sendReplyMessage(
   { session = null } = {},
 ) {
   const params = buildReplyMessageParams(message, text);
+  let allowReplyTargetFallback = Boolean(params.reply_to_message_id);
 
-  try {
-    return await coordinator.api.sendMessage(params);
-  } catch (error) {
-    if (!session) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await coordinator.api.sendMessage(params);
+    } catch (error) {
+      if (allowReplyTargetFallback && isMissingReplyTargetError(error)) {
+        delete params.reply_to_message_id;
+        allowReplyTargetFallback = false;
+        continue;
+      }
+
+      if (!session) {
+        throw error;
+      }
+
+      const lifecycleResult = await coordinator.sessionLifecycleManager?.handleTransportError(
+        session,
+        error,
+      );
+      if (lifecycleResult?.handled) {
+        return {
+          parked: true,
+          session: lifecycleResult.session || session,
+          message_id: null,
+        };
+      }
+
       throw error;
     }
-
-    const lifecycleResult = await coordinator.sessionLifecycleManager?.handleTransportError(
-      session,
-      error,
-    );
-    if (lifecycleResult?.handled) {
-      return {
-        parked: true,
-        session: lifecycleResult.session || session,
-        message_id: null,
-      };
-    }
-
-    throw error;
   }
 }
 
@@ -188,6 +199,9 @@ export async function failBrokenSleepState(coordinator, session, reason) {
 
 export async function shutdown(coordinator) {
   for (const child of coordinator.activeDecisionChildren.values()) {
+    signalChildProcessTree(child, "SIGINT");
+  }
+  for (const child of coordinator.activeOperatorQueryChildren?.values() || []) {
     signalChildProcessTree(child, "SIGINT");
   }
 }

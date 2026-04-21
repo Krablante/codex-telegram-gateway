@@ -166,6 +166,7 @@ function buildStatusReport({ heartbeat, counts, config }) {
         }
       : null,
     codex: {
+      bin_path: config.codexBinPath,
       config_path: config.codexConfigPath,
       mcp_servers: Array.isArray(config.codexMcpServerNames)
         ? config.codexMcpServerNames
@@ -204,6 +205,7 @@ async function runStatus({ sessionAdmin, layout, config, json }) {
     "last_update_id",
     heartbeat?.service_state?.last_update_id ?? "none",
   );
+  printLine("codex_bin_path", config.codexBinPath || "unknown");
   printLine("codex_config_path", config.codexConfigPath || "unknown");
   printLine(
     "codex_mcp_servers",

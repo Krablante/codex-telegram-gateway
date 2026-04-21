@@ -166,6 +166,39 @@ test("OmniCoordinator falls back to a plain topic send when the reply target dis
   assert.equal(sent[1].text, "Fallback reply target test.");
 });
 
+test("OmniCoordinator falls back to a plain reply send when the reply target disappeared", async () => {
+  const sent = [];
+  let attempts = 0;
+  const harness = await buildHarness({
+    sendMessageImpl(payload, { nextMessageId }) {
+      attempts += 1;
+      if (attempts === 1) {
+        sent.push(payload);
+        assert.equal(payload.reply_to_message_id, 700);
+        throw new Error(
+          "Telegram API sendMessage failed: Bad Request: message to be replied not found",
+        );
+      }
+
+      sent.push(payload);
+      return { message_id: nextMessageId };
+    },
+  });
+
+  const delivered = await harness.coordinator.sendReplyMessage(
+    buildHumanTopicMessage({
+      text: "what changed?",
+      messageId: 700,
+    }),
+    "Reply fallback test.",
+  );
+
+  assert.equal(attempts, 2);
+  assert.equal(delivered.message_id, 500);
+  assert.equal(sent[1].reply_to_message_id, undefined);
+  assert.equal(sent[1].text, "Reply fallback test.");
+});
+
 test("OmniCoordinator ignores bare wait flush shortcuts during auto setup", async () => {
   const harness = await buildHarness();
   const baseSession = await ensureSession(harness.sessionStore);

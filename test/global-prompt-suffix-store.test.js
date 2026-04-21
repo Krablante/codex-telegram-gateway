@@ -37,3 +37,46 @@ test("GlobalPromptSuffixStore quarantines malformed state files and falls back t
   assert.equal(saved.prompt_suffix_enabled, true);
   assert.equal(saved.prompt_suffix_text, "P.S.\nKeep it short.");
 });
+
+test("GlobalPromptSuffixStore patchWithCurrent serializes overlapping writes", async () => {
+  const settingsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
+  );
+  const store = new GlobalPromptSuffixStore(settingsRoot);
+
+  let enteredFirstPatch;
+  let releaseFirstPatch;
+  const firstPatchEnteredPromise = new Promise((resolve) => {
+    enteredFirstPatch = resolve;
+  });
+  const releaseFirstPatchPromise = new Promise((resolve) => {
+    releaseFirstPatch = resolve;
+  });
+
+  const firstPatch = store.patchWithCurrent(async () => {
+    enteredFirstPatch();
+    await releaseFirstPatchPromise;
+    return {
+      prompt_suffix_text: "Use terse diffs.",
+      prompt_suffix_enabled: true,
+    };
+  });
+
+  await firstPatchEnteredPromise;
+  let secondFinished = false;
+  const secondPatch = store.patchWithCurrent((current) => ({
+    prompt_suffix_enabled: Boolean(current.prompt_suffix_text),
+  })).then(() => {
+    secondFinished = true;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(secondFinished, false);
+
+  releaseFirstPatch();
+  await Promise.all([firstPatch, secondPatch]);
+
+  const loaded = await store.load({ force: true });
+  assert.equal(loaded.prompt_suffix_text, "Use terse diffs.");
+  assert.equal(loaded.prompt_suffix_enabled, true);
+});

@@ -1130,6 +1130,111 @@ test("SessionService buffers and clears pending prompt attachments", async () =>
   assert.equal(cleared.pending_prompt_attachments_expires_at, null);
 });
 
+test("SessionService retries default binding resolution after a transient failure", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const validRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-workspace-"),
+  );
+  const service = new SessionService({
+    sessionStore: new SessionStore(sessionsRoot),
+    config: {
+      atlasWorkspaceRoot: validRoot,
+      defaultSessionBindingPath: "missing-dir",
+    },
+  });
+
+  await assert.rejects(
+    service.getDefaultBinding(),
+    /ENOENT/u,
+  );
+
+  service.config.defaultSessionBindingPath = ".";
+  const binding = await service.getDefaultBinding();
+  assert.equal(binding.cwd, validRoot);
+  assert.equal(binding.repo_root, validRoot);
+});
+
+test("SessionService preserves overlapping pending attachment buffers", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      atlasWorkspaceRoot: "/home/bloob/atlas",
+      defaultSessionBindingPath: "/home/bloob/atlas",
+    },
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1003577434463,
+    topicId: 307,
+    topicName: "Attachment overlap",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+
+  const originalPatchWithCurrent = sessionStore.patchWithCurrent.bind(sessionStore);
+  let firstPatchHeld = false;
+  let enteredFirstPatch;
+  const firstPatchEnteredPromise = new Promise((resolve) => {
+    enteredFirstPatch = resolve;
+  });
+  let releaseFirstPatch;
+  const releaseFirstPatchPromise = new Promise((resolve) => {
+    releaseFirstPatch = resolve;
+  });
+
+  sessionStore.patchWithCurrent = async (meta, patch) => {
+    if (firstPatchHeld) {
+      return originalPatchWithCurrent(meta, patch);
+    }
+
+    firstPatchHeld = true;
+    return originalPatchWithCurrent(meta, async (current) => {
+      enteredFirstPatch();
+      await releaseFirstPatchPromise;
+      return typeof patch === "function"
+        ? patch(current)
+        : patch;
+    });
+  };
+
+  try {
+    const firstBuffer = service.bufferPendingPromptAttachments(
+      session,
+      [{ file_path: "/tmp/first.txt", is_image: false }],
+    );
+    await firstPatchEnteredPromise;
+
+    let secondFinished = false;
+    const secondBuffer = service.bufferPendingPromptAttachments(
+      session,
+      [{ file_path: "/tmp/second.txt", is_image: false }],
+    ).then((value) => {
+      secondFinished = true;
+      return value;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(secondFinished, false);
+
+    releaseFirstPatch();
+    await Promise.all([firstBuffer, secondBuffer]);
+  } finally {
+    sessionStore.patchWithCurrent = originalPatchWithCurrent;
+  }
+
+  const pending = await service.getPendingPromptAttachments(session);
+  assert.deepEqual(
+    pending.map((entry) => entry.file_path),
+    ["/tmp/first.txt", "/tmp/second.txt"],
+  );
+});
+
 test("SessionService keeps queued attachments separate from direct prompt attachments", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),

@@ -50,7 +50,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 
 - for “restart the live bot”, use `make service-restart-live`; it restarts `Omni` and rolls `Spike` softly
 - never use raw `systemctl restart codex-telegram-gateway.service` for ordinary live updates; that is the blind hard-restart path and can cut an active run
-- `make admin ARGS='status'` is also the fastest operator check for the resolved `CODEX_CONFIG_PATH` and parsed MCP server list before assuming `pitlane` is broken
+- `make admin ARGS='status'` is also the fastest operator check for the resolved `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and parsed MCP server list before assuming `pitlane` is broken
 
 ## Agent Prompt Guidance
 

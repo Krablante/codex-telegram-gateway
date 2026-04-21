@@ -99,7 +99,7 @@ export function spawnReplacementGeneration({
   scriptPath,
   spawnCommand = spawnRuntimeCommand,
   execPath = process.execPath,
-  execArgv = process.execArgv,
+  execArgv = [],
   env = process.env,
   stdio = "inherit",
 }) {

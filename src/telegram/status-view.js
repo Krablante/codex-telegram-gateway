@@ -4,6 +4,7 @@ import {
   getSessionUiLanguage,
   normalizeUiLanguage,
 } from "../i18n/ui-language.js";
+import { loadCodexConfigProfile } from "../config/runtime-config.js";
 import {
   formatReasoningEffort,
   loadAvailableCodexModels,
@@ -97,13 +98,53 @@ async function resolveStatusRuntimeProfile(
   });
 }
 
-function buildContextStatusLines(contextSnapshot, language = DEFAULT_UI_LANGUAGE) {
+async function loadStatusDisplayConfig(state) {
+  const configPath =
+    typeof state?.codexConfigPath === "string" && state.codexConfigPath.trim()
+      ? state.codexConfigPath.trim()
+      : null;
+  if (!configPath) {
+    return null;
+  }
+
+  try {
+    const profile = await loadCodexConfigProfile(configPath);
+    return {
+      contextWindow: Number.isInteger(profile.contextWindow)
+        ? profile.contextWindow
+        : null,
+      autoCompactTokenLimit: Number.isInteger(profile.autoCompactTokenLimit)
+        ? profile.autoCompactTokenLimit
+        : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildContextStatusLines(
+  contextSnapshot,
+  language = DEFAULT_UI_LANGUAGE,
+  { configuredContextWindow = null } = {},
+) {
   const usage = contextSnapshot?.last_token_usage ?? null;
   const contextWindow = contextSnapshot?.model_context_window ?? null;
   const english = isEnglish(language);
+  const lines = [];
+
+  if (
+    Number.isInteger(configuredContextWindow) &&
+    Number.isInteger(contextWindow) &&
+    configuredContextWindow !== contextWindow
+  ) {
+    lines.push(
+      `${english ? "effective context window" : "effective context window"}: ${formatNumber(contextWindow, language)}`,
+    );
+  }
 
   if (!usage) {
     return [
+      ...lines,
       english
         ? "context usage: no completed turn yet"
         : "использование контекста: ещё нет завершённого turn",
@@ -124,12 +165,12 @@ function buildContextStatusLines(contextSnapshot, language = DEFAULT_UI_LANGUAGE
       ? (totalTokens / contextWindow) * 100
       : null;
 
-  const lines = [
+  lines.push(
     `${english ? "context usage" : "использование контекста"}: ${formatPercent(usagePercent, language)}`,
     `${english ? "context tokens" : "токены контекста"}: ${formatNumber(totalTokens, language)} / ${formatNumber(contextWindow, language)}`,
     `${english ? "available tokens" : "доступно токенов"}: ${formatNumber(availableTokens, language)}`,
     `${english ? "input/cached/output" : "вход/кэш/выход"}: ${formatNumber(usage.input_tokens, language)} / ${formatNumber(usage.cached_input_tokens, language)} / ${formatNumber(usage.output_tokens, language)}`,
-  ];
+  );
 
   if (usage.reasoning_tokens !== null) {
     lines.push(
@@ -149,6 +190,7 @@ export function buildStatusMessage(
   runtimeProfiles = null,
   language = getSessionUiLanguage(session),
   limitsSummary = null,
+  displayConfig = null,
 ) {
   const english = isEnglish(language);
   const omniEnabled = isOmniEnabled(state);
@@ -160,8 +202,18 @@ export function buildStatusMessage(
     contextSnapshot,
   );
   const contextWindow =
+    (Number.isInteger(displayConfig?.contextWindow)
+      ? displayConfig.contextWindow
+      : null) ??
     effectiveContextSnapshot?.model_context_window ??
     (Number.isInteger(state.codexContextWindow) ? state.codexContextWindow : null);
+  const autoCompactTokenLimit =
+    (Number.isInteger(displayConfig?.autoCompactTokenLimit)
+      ? displayConfig.autoCompactTokenLimit
+      : null) ??
+    (Number.isInteger(state.codexAutoCompactTokenLimit)
+      ? state.codexAutoCompactTokenLimit
+      : null);
   const spikeProfile = runtimeProfiles?.spike ?? {
     model: state.codexModel ?? null,
     reasoningEffort: state.codexReasoningEffort ?? null,
@@ -190,11 +242,15 @@ export function buildStatusMessage(
         ]
       : []),
     `${english ? "context window" : "context window"}: ${formatNumber(contextWindow, language)}`,
-    `${english ? "auto-compact" : "auto-compact"}: ${formatNumber(state.codexAutoCompactTokenLimit, language)}`,
+    `${english ? "auto-compact" : "auto-compact"}: ${formatNumber(autoCompactTokenLimit, language)}`,
     "",
     ...buildCodexLimitsStatusLines(limitsSummary, language),
     "",
-    ...buildContextStatusLines(effectiveContextSnapshot, language),
+    ...buildContextStatusLines(effectiveContextSnapshot, language, {
+      configuredContextWindow: Number.isInteger(displayConfig?.contextWindow)
+        ? displayConfig.contextWindow
+        : null,
+    }),
   ].join("\n");
 }
 
@@ -253,6 +309,7 @@ export async function resolveStatusView({
     spike: spikeRuntimeProfile,
     ...(isOmniEnabled(state) ? { omni: omniRuntimeProfile } : {}),
   };
+  const displayConfig = await loadStatusDisplayConfig(state);
 
   return {
     session: handledSession,
@@ -270,6 +327,7 @@ export async function resolveStatusView({
       runtimeProfiles,
       language,
       limitsSummary,
+      displayConfig,
     ),
   };
 }

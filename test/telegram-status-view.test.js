@@ -193,3 +193,55 @@ test("buildStatusMessage prefers rollout context snapshot over static config", (
   assert.match(text, /вход\/кэш\/выход: 18220 \/ 5504 \/ 42/u);
   assert.match(text, /reasoning tokens: 30/u);
 });
+
+test("buildStatusMessage can show configured limits separately from effective rollout window", () => {
+  const text = buildStatusMessage(
+    {
+      codexModel: "gpt-5.4",
+      codexReasoningEffort: "xhigh",
+      codexContextWindow: 290000,
+      codexAutoCompactTokenLimit: 270000,
+    },
+    {
+      chat: { id: -1003577434463 },
+      message_thread_id: 7,
+    },
+    {
+      session_key: "-1003577434463:7",
+      topic_name: "Configured vs effective",
+      lifecycle_state: "active",
+      codex_thread_id: "thread-3",
+      last_run_status: "running",
+      workspace_binding: {
+        repo_root: "/home/bloob/atlas",
+        cwd: "/home/bloob/atlas",
+        branch: "main",
+        worktree_path: "/home/bloob/atlas",
+      },
+    },
+    null,
+    {
+      captured_at: "2026-04-21T12:00:00.000Z",
+      model_context_window: 332500,
+      last_token_usage: {
+        input_tokens: 154531,
+        cached_input_tokens: 154240,
+        output_tokens: 60,
+        reasoning_tokens: 0,
+        total_tokens: 154591,
+      },
+    },
+    null,
+    "rus",
+    buildWindowedLimitsSummary({ unlimited: true }),
+    {
+      contextWindow: 350000,
+      autoCompactTokenLimit: 335000,
+    },
+  );
+
+  assert.match(text, /context window: 350000/u);
+  assert.match(text, /auto-compact: 335000/u);
+  assert.match(text, /effective context window: 332500/u);
+  assert.match(text, /токены контекста: 154591 \/ 332500/u);
+});
