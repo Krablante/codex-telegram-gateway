@@ -1137,6 +1137,7 @@ test("SessionService retries default binding resolution after a transient failur
   const validRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-workspace-"),
   );
+  const canonicalValidRoot = await fs.realpath(validRoot);
   const service = new SessionService({
     sessionStore: new SessionStore(sessionsRoot),
     config: {
@@ -1152,8 +1153,8 @@ test("SessionService retries default binding resolution after a transient failur
 
   service.config.defaultSessionBindingPath = ".";
   const binding = await service.getDefaultBinding();
-  assert.equal(binding.cwd, validRoot);
-  assert.equal(binding.repo_root, validRoot);
+  assert.equal(binding.cwd, canonicalValidRoot);
+  assert.equal(binding.repo_root, canonicalValidRoot);
 });
 
 test("SessionService preserves overlapping pending attachment buffers", async () => {
