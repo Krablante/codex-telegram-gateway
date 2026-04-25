@@ -329,7 +329,6 @@ function createAbortSignalWithTimeout(signal, timeoutMs) {
     timer = setTimeout(() => {
       abort(new Error(`Telegram file download timed out after ${normalizedTimeoutMs} ms`));
     }, normalizedTimeoutMs);
-    timer.unref?.();
   }
 
   return {

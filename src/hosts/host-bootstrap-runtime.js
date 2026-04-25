@@ -47,10 +47,22 @@ function expandHomePath(value, homeDir = os.homedir()) {
     return homeDir;
   }
   if (value.startsWith("~/")) {
-    return path.join(homeDir, value.slice(2));
+    return joinHomePath(homeDir, value.slice(2));
   }
 
   return value;
+}
+
+function isWindowsPath(value) {
+  return /^[A-Za-z]:[\\/]/u.test(String(value || "")) || String(value || "").includes("\\");
+}
+
+function joinHomePath(homeDir, childPath) {
+  if (isWindowsPath(homeDir)) {
+    return path.join(homeDir, childPath);
+  }
+
+  return path.posix.join(homeDir, String(childPath || "").replace(/\\/gu, "/"));
 }
 
 function parseKeyValueLines(text) {
@@ -293,6 +305,26 @@ function replaceAll(text, sourceValue, targetValue) {
   return text.split(sourceValue).join(targetValue);
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function normalizeRemoteTargetPathSeparators(text, targetValues) {
+  const remotePrefixes = Array.from(new Set(
+    targetValues
+      .filter((value) => typeof value === "string" && value.startsWith("/"))
+      .sort((left, right) => right.length - left.length),
+  ));
+  let normalized = text;
+  for (const prefix of remotePrefixes) {
+    normalized = normalized.replace(
+      new RegExp(`${escapeRegExp(prefix)}[^"\\r\\n]*`, "gu"),
+      (match) => match.replace(/\\/gu, "/"),
+    );
+  }
+  return normalized;
+}
+
 function normalizeCodexConfigText(
   configText,
   {
@@ -319,7 +351,10 @@ function normalizeCodexConfigText(
   for (const [sourceValue, targetValue] of replacements) {
     normalized = replaceAll(normalized, sourceValue, targetValue);
   }
-  return normalized;
+  return normalizeRemoteTargetPathSeparators(
+    normalized,
+    replacements.map(([, targetValue]) => targetValue),
+  );
 }
 
 function resolveRemoteCustomCodexPath({
