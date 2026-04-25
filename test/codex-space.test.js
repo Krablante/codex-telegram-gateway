@@ -57,7 +57,7 @@ test("renderCodexSpace writes shared and per-host rendered outputs", async () =>
 
   assert.deepEqual(
     result.files
-      .map((filePath) => path.relative(codexSpaceRoot, filePath))
+      .map((filePath) => path.relative(codexSpaceRoot, filePath).replace(/\\/gu, "/"))
       .sort(),
     [
       "hosts/controller/rendered/health.json",

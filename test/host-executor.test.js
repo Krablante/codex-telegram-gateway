@@ -18,9 +18,9 @@ test("buildRunCodexTaskArgs forwards baseInstructions into runCodexTask", () => 
     args.baseInstructions,
     "Context:\n- host: worker-b, cwd: /home/worker-b/workspace",
   );
-  assert.match(args.cwd, /\/workspace$/u);
-  assert.match(args.imagePaths[0], /\/input\.png$/u);
-  assert.match(args.knownRolloutPath, /\/rollout\.jsonl$/u);
+  assert.match(args.cwd, /[\\/]workspace$/u);
+  assert.match(args.imagePaths[0], /[\\/]input\.png$/u);
+  assert.match(args.knownRolloutPath, /[\\/]rollout\.jsonl$/u);
   assert.equal(args.contextWindow, 400000);
   assert.equal(args.autoCompactTokenLimit, 375000);
 });

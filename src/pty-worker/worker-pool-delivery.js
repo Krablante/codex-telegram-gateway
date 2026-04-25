@@ -220,6 +220,10 @@ async function stageRemoteDocumentForDelivery(
         normalizeRsyncLocalPath(localFilePath),
       ],
       {
+        execFileImpl:
+          typeof pool?.config?.hostExecFileImpl === "function"
+            ? pool.config.hostExecFileImpl
+            : undefined,
         timeoutMs: 30_000,
       },
     );

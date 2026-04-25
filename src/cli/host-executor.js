@@ -1,5 +1,6 @@
 import process from "node:process";
 import readline from "node:readline";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,11 +39,12 @@ function expandHomePath(value) {
     return null;
   }
 
+  const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
   if (normalized === "~") {
-    return process.env.HOME || normalized;
+    return homeDir || normalized;
   }
   if (normalized.startsWith("~/")) {
-    return path.join(process.env.HOME || "", normalized.slice(2));
+    return homeDir ? path.join(homeDir, normalized.slice(2)) : normalized;
   }
 
   return normalized;

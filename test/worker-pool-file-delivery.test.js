@@ -11,6 +11,20 @@ import {
 } from "../test-support/worker-pool-fixtures.js";
 import { mkdtempForTest } from "../test-support/tmp.js";
 
+function resolveRsyncLocalPathForTest(filePath) {
+  if (process.platform !== "win32") {
+    return filePath;
+  }
+
+  const drivePath = String(filePath || "").match(/^\/([a-z])(?:\/(.*))?$/iu);
+  if (!drivePath) {
+    return String(filePath || "").replace(/\//gu, "\\");
+  }
+
+  const [, drive, rest = ""] = drivePath;
+  return `${drive.toUpperCase()}:\\${rest.replace(/\//gu, "\\")}`;
+}
+
 test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram delivery", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -388,33 +402,22 @@ test("CodexWorkerPool delivers remote telegram-file directives through private s
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
-  const remoteWorkspaceRoot = await fs.mkdtemp(
+  const localRemoteWorkspaceRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-remote-workspace-"),
   );
-  const fakeBinRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-fake-bin-"),
+  const remoteWorkspaceRoot = "/home/worker-a/workspace";
+  const remoteWorktree = path.posix.join(remoteWorkspaceRoot, "work", "public", "demo");
+  const remoteFilePath = path.posix.join(remoteWorktree, "remote report.txt");
+  const localRemoteWorktree = path.join(
+    localRemoteWorkspaceRoot,
+    "work",
+    "public",
+    "demo",
   );
-  const remoteWorktree = path.join(remoteWorkspaceRoot, "work", "public", "demo");
-  const remoteFilePath = path.join(remoteWorktree, "remote report.txt");
-  await fs.mkdir(remoteWorktree, { recursive: true });
-  await fs.writeFile(remoteFilePath, "remote report\n", "utf8");
-  const fakeRsyncPath = path.join(fakeBinRoot, "rsync");
-  await fs.writeFile(
-    fakeRsyncPath,
-    [
-      "#!/usr/bin/env bash",
-      "set -euo pipefail",
-      "src=\"${@: -2:1}\"",
-      "dest=\"${@: -1}\"",
-      "src=\"${src#*:}\"",
-      "mkdir -p \"$(dirname \"$dest\")\"",
-      "cp \"$src\" \"$dest\"",
-    ].join("\n"),
-  );
-  await fs.chmod(fakeRsyncPath, 0o755);
+  const localRemoteFilePath = path.join(localRemoteWorktree, "remote report.txt");
+  await fs.mkdir(localRemoteWorktree, { recursive: true });
+  await fs.writeFile(localRemoteFilePath, "remote report\n", "utf8");
 
-  const originalPath = process.env.PATH;
-  process.env.PATH = `${fakeBinRoot}${path.delimiter}${originalPath || ""}`;
   try {
     const sessionStore = new SessionStore(sessionsRoot);
     const session = await sessionStore.ensure({
@@ -457,6 +460,27 @@ test("CodexWorkerPool delivers remote telegram-file directives through private s
       config: {
         codexBinPath: "codex",
         currentHostId: "controller",
+        hostExecFileImpl(command, args, _options, callback) {
+          if (command !== "rsync") {
+            callback(new Error(`unexpected command: ${command}`), "", "");
+            return;
+          }
+
+          const remoteSource = String(args.at(-2) || "").replace(/^worker-a:/u, "");
+          const localDestination = resolveRsyncLocalPathForTest(args.at(-1));
+          const relativeRemoteSource = path.posix.relative(
+            remoteWorkspaceRoot,
+            remoteSource,
+          );
+          const localSource = path.join(
+            localRemoteWorkspaceRoot,
+            ...relativeRemoteSource.split("/").filter(Boolean),
+          );
+          fs.mkdir(path.dirname(localDestination), { recursive: true })
+            .then(() => fs.copyFile(localSource, localDestination))
+            .then(() => callback(null, "", ""))
+            .catch((error) => callback(error, "", ""));
+        },
         hostSshConnectTimeoutSecs: 1,
         maxParallelSessions: 1,
       },
@@ -467,7 +491,7 @@ test("CodexWorkerPool delivers remote telegram-file directives through private s
             host_id: "worker-a",
             ssh_target: "worker-a",
             workspace_root: remoteWorkspaceRoot,
-            worker_runtime_root: path.join(remoteWorkspaceRoot, "state"),
+            worker_runtime_root: path.posix.join(remoteWorkspaceRoot, "state"),
           };
         },
       },
@@ -523,9 +547,7 @@ test("CodexWorkerPool delivers remote telegram-file directives through private s
     assert.equal(deliveredContent, "remote report\n");
     assert.equal(sentMessages.at(-1).text, "Отправил файл: remote-report.txt.");
   } finally {
-    process.env.PATH = originalPath;
-    await fs.rm(remoteWorkspaceRoot, { recursive: true, force: true });
-    await fs.rm(fakeBinRoot, { recursive: true, force: true });
+    await fs.rm(localRemoteWorkspaceRoot, { recursive: true, force: true });
     await fs.rm(sessionsRoot, { recursive: true, force: true });
   }
 });

@@ -8,6 +8,20 @@ import path from "node:path";
 import { runHostBootstrapRuntime } from "../src/hosts/host-bootstrap-runtime.js";
 import { HostRegistryService } from "../src/hosts/host-registry-service.js";
 
+function resolveRsyncLocalPathForTest(filePath) {
+  if (process.platform !== "win32") {
+    return filePath;
+  }
+
+  const drivePath = String(filePath || "").match(/^\/([a-z])(?:\/(.*))?$/iu);
+  if (!drivePath) {
+    return String(filePath || "").replace(/\//gu, "\\");
+  }
+
+  const [, drive, rest = ""] = drivePath;
+  return `${drive.toUpperCase()}:\\${rest.replace(/\//gu, "\\")}`;
+}
+
 function createExecFileRecorder() {
   const calls = [];
   let capturedConfigText = null;
@@ -53,7 +67,10 @@ function createExecFileRecorder() {
       const destination = Array.isArray(args) ? args.at(-1) : "";
       if (destination === "worker-a:~/.codex/config.toml") {
         const localPath = args.at(-2);
-        capturedConfigText = fsSync.readFileSync(localPath, "utf8");
+        capturedConfigText = fsSync.readFileSync(
+          resolveRsyncLocalPathForTest(localPath),
+          "utf8",
+        );
       }
       callback(null, "", "");
       return;

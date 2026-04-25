@@ -44,6 +44,10 @@ class FakeChild extends EventEmitter {
   }
 }
 
+function assertSshCommand(command) {
+  assert.match(path.basename(String(command || "")).toLowerCase(), /^ssh(?:\.exe)?$/u);
+}
+
 test("buildCodexExecTaskArgs uses the 0.124.0 CLI shape for fresh and resume turns", () => {
   assert.deepEqual(buildCodexExecTaskArgs({ cwd: "/srv/codex-workspace" }), [
     "exec",
@@ -461,7 +465,7 @@ test("runRemoteCodexExecTask expands remote tilde paths before launching ssh exe
   assert.deepEqual(runtimeStates, [{ threadId: "remote-thread" }]);
   assert.equal(execFileCalls[0].command, "ssh");
   assert.match(execFileCalls[0].args.at(-1), /expand_path/u);
-  assert.equal(spawnCalls[0].command, "ssh");
+  assertSshCommand(spawnCalls[0].command);
   assert.match(sshCommand, /\/home\/worker-a\/workspace\/state\/oss\/forks\/codex\/bin\/codex/u);
   assert.match(sshCommand, /-C/u);
   assert.match(sshCommand, /\/home\/worker-a\/workspace/u);
@@ -619,7 +623,7 @@ test("runRemoteCodexExecTask treats requested steer exit code 1 as controlled in
   child.close(1, null);
 
   const result = await task.finished;
-  assert.equal(spawnCalls[0].command, "ssh");
+  assertSshCommand(spawnCalls[0].command);
   assert.equal(result.interrupted, true);
   assert.equal(result.interruptReason, "upstream");
   assert.equal(result.abortReason, "interrupted");

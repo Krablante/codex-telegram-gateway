@@ -34,7 +34,7 @@ function resolveWorkspaceRelativePath(workspaceBinding, absolutePath) {
     return null;
   }
 
-  return path.relative(workspaceRoot, normalizedAbsolutePath) || ".";
+  return toPosixRelativePath(path.relative(workspaceRoot, normalizedAbsolutePath) || ".");
 }
 
 export function resolveBindingRelativeCwd(workspaceBinding) {

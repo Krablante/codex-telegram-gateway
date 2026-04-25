@@ -18,17 +18,23 @@ function normalizeOptionalText(value) {
   return trimmed || null;
 }
 
-export function expandHomePath(value, homeDir = os.homedir()) {
+export function expandHomePath(value, homeDir = null) {
   const normalized = normalizeOptionalText(value);
   if (!normalized) {
     return null;
   }
 
+  const resolvedHomeDir =
+    normalizeOptionalText(homeDir)
+    || normalizeOptionalText(process.env.HOME)
+    || os.homedir();
   if (normalized === "~") {
-    return homeDir;
+    return resolvedHomeDir;
   }
   if (normalized.startsWith("~/")) {
-    return path.join(homeDir, normalized.slice(2));
+    return resolvedHomeDir
+      ? path.join(resolvedHomeDir, normalized.slice(2))
+      : normalized;
   }
 
   return normalized;
