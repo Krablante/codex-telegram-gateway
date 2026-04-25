@@ -33,7 +33,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Run automated test suite
-        run: npm test
+        run: npm test -- --test-concurrency=1 --test-reporter=dot
 
       - name: Build guidebook smoke artifact
         run: npm run guidebook:build -- --language eng --output "${RUNNER_TEMP}/guidebook-eng.pdf"
