@@ -108,6 +108,46 @@ test("LoopbackJsonServer retries a blocked loopback port and binds the next cand
   }
 });
 
+test("LoopbackJsonServer skips beyond adjacent Windows-reserved loopback ports", async () => {
+  const endpoint = "http://127.0.0.1:39000/ipc/forward-spike/retry-token";
+  let listenCalls = 0;
+  const server = new LoopbackJsonServer({
+    endpoint,
+    onRequest: async () => ({ ok: true }),
+    serverFactory() {
+      const server = new EventEmitter();
+      server.listen = () => {
+        listenCalls += 1;
+        setImmediate(() => {
+          if (listenCalls <= 2) {
+            const error = new Error("permission denied");
+            error.code = "EACCES";
+            server.emit("error", error);
+            return;
+          }
+
+          server.emit("listening");
+        });
+      };
+      server.close = (callback) => {
+        callback?.();
+      };
+      return server;
+    },
+  });
+
+  await server.start();
+
+  try {
+    assert.notEqual(server.endpoint, endpoint);
+    const reboundUrl = new URL(server.endpoint);
+    assert.equal(reboundUrl.port, "39258");
+    assert.equal(listenCalls, 3);
+  } finally {
+    await server.stop();
+  }
+});
+
 test("UpdateForwardingServer keeps its public endpoint in sync after a retry bind", async () => {
   const endpoint = "http://127.0.0.1:39000/ipc/forward-spike/retry-token";
   let listenCalls = 0;

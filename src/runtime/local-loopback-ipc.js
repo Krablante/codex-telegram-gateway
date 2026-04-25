@@ -4,8 +4,9 @@ import http from "node:http";
 const LOOPBACK_HOST = "127.0.0.1";
 const PORT_RANGE_START = 39000;
 const PORT_RANGE_SIZE = 20000;
+const RETRY_PORT_STRIDE = 257;
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
-const DEFAULT_BIND_ATTEMPTS = 16;
+const DEFAULT_BIND_ATTEMPTS = 64;
 const RETRYABLE_BIND_ERROR_CODES = new Set([
   "EACCES",
   "EADDRINUSE",
@@ -56,9 +57,11 @@ function formatEndpoint(url) {
 function buildRetryUrl(url, attempt) {
   const next = new URL(url.toString());
   const basePort = Number(url.port);
+  const retryOffset =
+    attempt === 1 ? 1 : 1 + ((attempt - 1) * RETRY_PORT_STRIDE);
   const nextPort =
     PORT_RANGE_START
-    + ((basePort - PORT_RANGE_START + attempt) % PORT_RANGE_SIZE);
+    + ((basePort - PORT_RANGE_START + retryOffset) % PORT_RANGE_SIZE);
   next.port = String(nextPort);
   return next;
 }

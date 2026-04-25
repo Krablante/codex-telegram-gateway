@@ -8,6 +8,10 @@ The format is intentionally simple and human-readable.
 
 ## [0.3.70] - 2026-04-25
 
+Fixed:
+
+- loopback update-forwarding IPC now skips beyond adjacent retry ports after Windows `EACCES` bind failures, avoiding reserved-port blocks on hosted Windows runners
+
 Changed:
 
 - routing/file-delivery context and saved `Work Style` now reach Codex as developer instructions instead of ordinary user prompt text; the live user prompt stays clean and minimal
