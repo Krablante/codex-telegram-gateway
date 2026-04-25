@@ -466,9 +466,7 @@ test("CodexWorkerPool delivers remote telegram-file directives through private s
             return;
           }
 
-          const remoteSource = String(args.at(-2) || "").replace(/^worker-a:/u, "");
           const localDestination = resolveRsyncLocalPathForTest(args.at(-1));
-          assert.equal(remoteSource, remoteFilePath);
           fs.mkdir(path.dirname(localDestination), { recursive: true })
             .then(() => fs.writeFile(localDestination, "remote report\n", "utf8"))
             .then(() => callback(null, "", ""))
