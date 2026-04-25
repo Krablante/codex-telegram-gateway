@@ -56,7 +56,7 @@ export function getDefaultWorkspaceRoot(options = {}) {
   return options.homeDirectory || os.homedir();
 }
 
-export function getDefaultConfigRoot(options = {}) {
+function getDefaultConfigRoot(options = {}) {
   if (isWindows(options.platform)) {
     return path.join(getWindowsLocalAppData(options), APP_DIR_NAME);
   }
@@ -71,7 +71,7 @@ export function getDefaultEnvFilePath(options = {}) {
   );
 }
 
-export function getRepoEnvFilePath(options = {}) {
+function getRepoEnvFilePath(options = {}) {
   return path.join(options.repoRoot || getDefaultRepoRoot(), ".env");
 }
 
@@ -98,13 +98,25 @@ async function fileExists(filePath) {
 
 export async function resolveRuntimeEnvFilePath({
   explicitEnvFilePath = process.env.ENV_FILE,
+  platform = process.platform,
   repoRoot = getDefaultRepoRoot(),
-  configRoot = getDefaultConfigRoot(),
+  configRoot = getDefaultConfigRoot({ platform }),
   stateRoot = null,
+  allowRepoEnvFallback =
+    process.env.CODEX_GATEWAY_ALLOW_REPO_ENV === "1" || isWindows(platform),
 } = {}) {
   const explicit = explicitEnvFilePath?.trim();
   if (explicit) {
     return explicit;
+  }
+
+  const repoEnvFilePath = getRepoEnvFilePath({ repoRoot });
+  if (
+    isWindows(platform)
+    && allowRepoEnvFallback
+    && await fileExists(repoEnvFilePath)
+  ) {
+    return repoEnvFilePath;
   }
 
   const defaultEnvFilePath = getDefaultEnvFilePath({ configRoot, stateRoot });
@@ -112,8 +124,7 @@ export async function resolveRuntimeEnvFilePath({
     return defaultEnvFilePath;
   }
 
-  const repoEnvFilePath = getRepoEnvFilePath({ repoRoot });
-  if (await fileExists(repoEnvFilePath)) {
+  if (allowRepoEnvFallback && await fileExists(repoEnvFilePath)) {
     return repoEnvFilePath;
   }
 

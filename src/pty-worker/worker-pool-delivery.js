@@ -3,9 +3,16 @@ import os from "node:os";
 import path from "node:path";
 
 import { getSessionUiLanguage } from "../i18n/ui-language.js";
+import {
+  buildRsyncBaseArgs,
+  buildRsyncRemotePath,
+  normalizeRsyncLocalPath,
+  runCommand,
+} from "../hosts/host-command-runner.js";
+import { translateWorkspacePathForHost } from "../hosts/host-paths.js";
 import { splitTelegramReply } from "../transport/telegram-reply-normalizer.js";
 import { deliverDocumentToTopic } from "../transport/topic-document-delivery.js";
-import { isAutoModeEnabled } from "../session-manager/auto-mode.js";
+import { sanitizeFileName } from "../telegram/file-name-sanitizer.js";
 import {
   getRetryDelayMs,
   isEnglish,
@@ -91,11 +98,145 @@ async function resolveExistingRealPath(filePath) {
 }
 
 function isPathInsideRoot(targetPath, rootPath) {
-  const relativePath = path.relative(rootPath, targetPath);
+  return isPathInsideRootWithModule(targetPath, rootPath, path);
+}
+
+function isPathInsideRootWithModule(targetPath, rootPath, pathModule) {
+  const relativePath = pathModule.relative(rootPath, targetPath);
   return (
     relativePath === ""
-    || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+    || (!relativePath.startsWith("..") && !pathModule.isAbsolute(relativePath))
   );
+}
+
+function normalizeOptionalText(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+async function resolveRemoteDeliveryHost(pool, session) {
+  const hostId = normalizeOptionalText(session?.execution_host_id);
+  if (!hostId) {
+    return null;
+  }
+
+  const currentHostId = normalizeOptionalText(pool?.config?.currentHostId);
+  if (currentHostId && hostId === currentHostId) {
+    return null;
+  }
+
+  if (typeof pool?.hostRegistryService?.getHost !== "function") {
+    return null;
+  }
+
+  const host = await pool.hostRegistryService.getHost(hostId);
+  if (!host?.ssh_target) {
+    return null;
+  }
+
+  return host;
+}
+
+function resolveRemoteDocumentDeliveryRoots(pool, session, host) {
+  const currentHostId = normalizeOptionalText(pool?.config?.currentHostId);
+  const roots = [
+    translateWorkspacePathForHost(
+      session.workspace_binding?.worktree_path ?? null,
+      {
+        workspaceBinding: session.workspace_binding,
+        host,
+        currentHostId,
+      },
+    ),
+    translateWorkspacePathForHost(
+      session.workspace_binding?.cwd ?? null,
+      {
+        workspaceBinding: session.workspace_binding,
+        host,
+        currentHostId,
+      },
+    ),
+  ].filter(Boolean);
+  if (pool?.config?.allowSystemTempDelivery === true) {
+    roots.push("/tmp");
+  }
+  return roots;
+}
+
+function buildOutsideDeliveryRootsMessage(language, { remote = false } = {}) {
+  if (isEnglish(language)) {
+    return remote
+      ? "path is outside allowed delivery roots; copy the file into the bound host worktree first"
+      : "path is outside allowed delivery roots; copy the file into the worktree or session state first";
+  }
+
+  return remote
+    ? "путь вне разрешённых зон доставки; сначала скопируй файл в worktree привязанного хоста"
+    : "путь вне разрешённых зон доставки; сначала скопируй файл в worktree или session state";
+}
+
+async function stageRemoteDocumentForDelivery(
+  pool,
+  session,
+  filePath,
+  document,
+  language,
+) {
+  const host = await resolveRemoteDeliveryHost(pool, session);
+  if (!host) {
+    return null;
+  }
+
+  const remoteAllowedRoots = resolveRemoteDocumentDeliveryRoots(pool, session, host);
+  if (
+    !remoteAllowedRoots.some((rootPath) =>
+      isPathInsideRootWithModule(filePath, path.posix.normalize(rootPath), path.posix),
+    )
+  ) {
+    return {
+      failure: buildOutsideDeliveryRootsMessage(language, { remote: true }),
+    };
+  }
+
+  const localStageDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-remote-document-"),
+  );
+  const localFilePath = path.join(
+    localStageDir,
+    typeof document?.fileName === "string" && document.fileName.trim()
+      ? sanitizeFileName(document.fileName.trim(), "file")
+      : sanitizeFileName(path.posix.basename(filePath), "file"),
+  );
+  try {
+    await runCommand(
+      "rsync",
+      [
+        ...buildRsyncBaseArgs(pool?.config?.hostSshConnectTimeoutSecs || 10),
+        buildRsyncRemotePath(host.ssh_target, filePath),
+        normalizeRsyncLocalPath(localFilePath),
+      ],
+      {
+        timeoutMs: 30_000,
+      },
+    );
+  } catch (error) {
+    await fs.rm(localStageDir, { recursive: true, force: true }).catch(() => null);
+    const details = String(error?.stderr || error?.message || "").trim();
+    return {
+      failure: isEnglish(language)
+        ? details || `file not found on host ${host.host_id}: ${filePath}`
+        : details || `файл не найден на хосте ${host.host_id}: ${filePath}`,
+    };
+  }
+
+  return {
+    resolvedFilePath: await fs.realpath(localFilePath),
+    stageDir: localStageDir,
+  };
 }
 
 function buildReplyParams(session, text, replyToMessageId = null) {
@@ -130,6 +271,7 @@ export async function deliverRunDocuments(pool, session, documents = []) {
   const successes = [];
   const failures = [];
   const allowedRoots = await resolveDocumentDeliveryRoots(pool, session);
+  const remoteDeliveryHost = await resolveRemoteDeliveryHost(pool, session);
   const language = getSessionUiLanguage(session);
 
   for (const document of documents) {
@@ -144,7 +286,10 @@ export async function deliverRunDocuments(pool, session, documents = []) {
       continue;
     }
 
-    if (!path.isAbsolute(filePath)) {
+    const isRemoteDelivery = Boolean(remoteDeliveryHost);
+    const pathModule = isRemoteDelivery ? path.posix : path;
+
+    if (!pathModule.isAbsolute(filePath)) {
       failures.push({
         label,
         error: isEnglish(language)
@@ -154,33 +299,59 @@ export async function deliverRunDocuments(pool, session, documents = []) {
       continue;
     }
 
-    const candidateFilePath = path.resolve(filePath);
-    const resolvedFilePath = await resolveExistingRealPath(candidateFilePath);
-    if (!resolvedFilePath) {
-      failures.push({
-        label,
-        error: isEnglish(language)
-          ? `file not found: ${filePath}`
-          : `файл не найден: ${filePath}`,
-      });
-      continue;
-    }
-
-    if (
-      !allowedRoots.some((rootPath) =>
-        isPathInsideRoot(resolvedFilePath, rootPath),
-      )
-    ) {
-      failures.push({
-        label,
-        error: isEnglish(language)
-          ? "path is outside allowed delivery roots; copy the file into the worktree, session state, or the system temp dir first"
-          : "путь вне разрешённых зон доставки; сначала скопируй файл в worktree, session state или системную temp-директорию",
-      });
-      continue;
+    const candidateFilePath = isRemoteDelivery
+      ? path.posix.normalize(filePath)
+      : path.resolve(filePath);
+    let resolvedFilePath = null;
+    let remoteStageDir = null;
+    if (isRemoteDelivery) {
+      const remoteStage = await stageRemoteDocumentForDelivery(
+        pool,
+        session,
+        candidateFilePath,
+        document,
+        language,
+      );
+      if (remoteStage?.failure) {
+        failures.push({
+          label,
+          error: remoteStage.failure,
+        });
+        continue;
+      }
+      resolvedFilePath = remoteStage?.resolvedFilePath ?? null;
+      remoteStageDir = remoteStage?.stageDir ?? null;
+    } else {
+      resolvedFilePath = await resolveExistingRealPath(candidateFilePath);
     }
 
     try {
+      const deliveryAllowedRoots = remoteStageDir
+        ? [remoteStageDir]
+        : allowedRoots;
+      if (
+        resolvedFilePath &&
+        !deliveryAllowedRoots.some((rootPath) =>
+          isPathInsideRoot(resolvedFilePath, rootPath),
+        )
+      ) {
+        failures.push({
+          label,
+          error: buildOutsideDeliveryRootsMessage(language),
+        });
+        continue;
+      }
+
+      if (!resolvedFilePath) {
+        failures.push({
+          label,
+          error: isEnglish(language)
+            ? `file not found: ${filePath}`
+            : `файл не найден: ${filePath}`,
+        });
+        continue;
+      }
+
       const result = await deliverDocumentToTopic({
         api: pool.api,
         chatId: Number(session.chat_id),
@@ -238,6 +409,10 @@ export async function deliverRunDocuments(pool, session, documents = []) {
         label,
         error: error.message,
       });
+    } finally {
+      if (remoteStageDir) {
+        await fs.rm(remoteStageDir, { recursive: true, force: true }).catch(() => null);
+      }
     }
   }
 
@@ -256,8 +431,10 @@ export async function resolveDocumentDeliveryRoots(pool, session) {
     typeof pool.sessionStore?.getSessionDir === "function"
       ? pool.sessionStore.getSessionDir(session.chat_id, session.topic_id)
       : null,
-    os.tmpdir(),
   ].filter(Boolean);
+  if (pool?.config?.allowSystemTempDelivery === true) {
+    candidates.push(os.tmpdir());
+  }
   const roots = [];
 
   for (const candidate of candidates) {
@@ -285,9 +462,6 @@ export async function emitSpikeFinalEvent(
   const currentSession =
     (await pool.sessionStore?.load?.(run.session.chat_id, run.session.topic_id))
     || run.session;
-  if (!isAutoModeEnabled(currentSession)) {
-    return null;
-  }
 
   return pool.spikeFinalEventStore.write(currentSession, {
     exchange_log_entries: currentSession.exchange_log_entries ?? 0,

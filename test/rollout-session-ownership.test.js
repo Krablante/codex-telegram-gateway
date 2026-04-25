@@ -7,6 +7,7 @@ import {
   isSessionOwnedByDifferentGeneration,
   isSessionOwnedByGeneration,
   normalizeSessionOwnership,
+  resolveSessionOwnerGenerationId,
   shouldForwardSessionToOwner,
 } from "../src/rollout/session-ownership.js";
 
@@ -70,6 +71,17 @@ test("shouldForwardSessionToOwner routes active foreign-owned sessions to a diff
     ),
     true,
   );
+});
+
+test("ownership helpers fall back to spike run owner when session owner is absent", () => {
+  const session = {
+    last_run_status: "running",
+    spike_run_owner_generation_id: "gen-old",
+  };
+  assert.equal(resolveSessionOwnerGenerationId(session), "gen-old");
+  assert.equal(shouldForwardSessionToOwner(session, "gen-new"), true);
+  assert.equal(isSessionOwnedByGeneration(session, "gen-old"), true);
+  assert.equal(isSessionOwnedByDifferentGeneration(session, "gen-new"), true);
 });
 
 test("ownership match helpers distinguish local and foreign owners", () => {

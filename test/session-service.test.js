@@ -5,18 +5,322 @@ import os from "node:os";
 import path from "node:path";
 
 import { GlobalCodexSettingsStore } from "../src/session-manager/global-codex-settings-store.js";
+import { HostRegistryService } from "../src/hosts/host-registry-service.js";
 import { GlobalPromptSuffixStore } from "../src/session-manager/global-prompt-suffix-store.js";
 import { SessionService } from "../src/session-manager/session-service.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
 
-function buildBinding() {
+function buildBinding(workspaceRoot = "/srv/codex-workspace") {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: workspaceRoot,
+    cwd: workspaceRoot,
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: workspaceRoot,
   };
 }
+
+test("SessionService createTopicSession binds the current host and appends a topic suffix", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const workspaceRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-workspace-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot,
+      defaultSessionBindingPath: workspaceRoot,
+      currentHostId: "controller",
+    },
+    hostRegistryService: {
+      async listHosts() {
+        return [{ host_id: "controller" }, { host_id: "worker-a" }, { host_id: "worker-b" }];
+      },
+      async resolveTopicCreationHost() {
+        return {
+          ok: true,
+          hostId: "worker-a",
+          hostLabel: "worker-a",
+          lastReadyAt: "2026-04-21T14:00:00.000Z",
+        };
+      },
+    },
+  });
+  const apiCalls = [];
+
+  const created = await service.createTopicSession({
+    api: {
+      async createForumTopic(payload) {
+        apiCalls.push(payload);
+        return {
+          name: payload.name,
+          message_thread_id: 777,
+        };
+      },
+    },
+    message: {
+      chat: { id: -1001234567890 },
+    },
+    title: "Infrastructure move",
+    workspaceBinding: buildBinding(),
+  });
+
+  assert.deepEqual(apiCalls, [
+    {
+      chat_id: -1001234567890,
+      name: "Infrastructure move (worker-a)",
+    },
+  ]);
+  assert.equal(created.session.execution_host_id, "worker-a");
+  assert.equal(created.session.execution_host_label, "worker-a");
+  assert.equal(
+    created.session.execution_host_last_ready_at,
+    "2026-04-21T14:00:00.000Z",
+  );
+  assert.match(created.session.topic_name, /\(worker-a\)$/u);
+});
+
+test("SessionService createTopicSession can target an explicit execution host", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const requestedHosts = [];
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      currentHostId: "controller",
+    },
+    hostRegistryService: {
+      async listHosts() {
+        return [{ hostId: "controller" }, { hostId: "worker-a" }, { hostId: "worker-b" }];
+      },
+      async resolveTopicCreationHost(hostId) {
+        requestedHosts.push(hostId);
+        return {
+          ok: true,
+          hostId: "worker-a",
+          hostLabel: "worker-a",
+          lastReadyAt: "2026-04-21T14:10:00.000Z",
+        };
+      },
+    },
+  });
+
+  const created = await service.createTopicSession({
+    api: {
+      async createForumTopic(payload) {
+        return {
+          name: payload.name,
+          message_thread_id: 778,
+        };
+      },
+    },
+    executionHostId: "worker-a",
+    message: {
+      chat: { id: -1001234567890 },
+    },
+    title: "Explicit host topic",
+    workspaceBinding: buildBinding(),
+  });
+
+  assert.deepEqual(requestedHosts, ["worker-a"]);
+  assert.equal(created.session.execution_host_id, "worker-a");
+  assert.match(created.session.topic_name, /\(worker-a\)$/u);
+});
+
+test("SessionService createTopicSession replaces a stale host suffix with the selected host", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const apiCalls = [];
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      currentHostId: "controller",
+    },
+    hostRegistryService: {
+      async listHosts() {
+        return [{ hostId: "controller" }, { hostId: "worker-a" }, { hostId: "worker-b" }];
+      },
+      async resolveTopicCreationHost() {
+        return {
+          ok: true,
+          hostId: "worker-a",
+          hostLabel: "worker-a",
+          lastReadyAt: "2026-04-21T14:20:00.000Z",
+        };
+      },
+    },
+  });
+
+  await service.createTopicSession({
+    api: {
+      async createForumTopic(payload) {
+        apiCalls.push(payload);
+        return {
+          name: payload.name,
+          message_thread_id: 779,
+        };
+      },
+    },
+    message: {
+      chat: { id: -1001234567890 },
+    },
+    title: "Infrastructure move (worker-b)",
+    workspaceBinding: buildBinding(),
+  });
+
+  assert.deepEqual(apiCalls, [
+    {
+      chat_id: -1001234567890,
+      name: "Infrastructure move (worker-a)",
+    },
+  ]);
+});
+
+test("SessionService createTopicSession fails closed when the resolved host is unavailable", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      currentHostId: "controller",
+    },
+    hostRegistryService: {
+      async resolveTopicCreationHost() {
+        return {
+          ok: false,
+          hostId: "controller",
+          hostLabel: "controller",
+          failureReason: "host-disabled",
+        };
+      },
+    },
+  });
+
+  await assert.rejects(
+    service.createTopicSession({
+      api: {
+        async createForumTopic() {
+          throw new Error("should not reach Telegram topic creation");
+        },
+      },
+      message: {
+        chat: { id: -1001234567890 },
+      },
+      title: "Blocked topic",
+      workspaceBinding: buildBinding(),
+    }),
+    (error) =>
+      error?.code === "EXECUTION_HOST_UNAVAILABLE"
+      && error?.hostId === "controller"
+      && error?.failureReason === "host-disabled",
+  );
+});
+
+test("SessionService backfills execution host metadata for a legacy topic session", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const workspaceRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-workspace-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot,
+      defaultSessionBindingPath: workspaceRoot,
+      currentHostId: "controller",
+    },
+    hostRegistryService: {
+      async resolveTopicCreationHost() {
+        return {
+          ok: true,
+          hostId: "controller",
+          hostLabel: "controller",
+          lastReadyAt: "2026-04-21T16:00:00.000Z",
+        };
+      },
+    },
+  });
+
+  const legacy = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 304,
+    topicName: "Legacy topic",
+    createdVia: "test",
+    workspaceBinding: buildBinding(workspaceRoot),
+  });
+
+  const ensured = await service.ensureSessionForMessage({
+    chat: { id: -1001234567890 },
+    message_thread_id: 304,
+  });
+
+  assert.equal(ensured.execution_host_id, "controller");
+  assert.equal(ensured.execution_host_label, "controller");
+  assert.equal(
+    ensured.execution_host_last_ready_at,
+    "2026-04-21T16:00:00.000Z",
+  );
+  assert.equal(legacy.execution_host_id, null);
+});
+
+test("SessionService keeps missing topic bindings empty for implicitly attached topics", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const workspaceRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-workspace-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot,
+      defaultSessionBindingPath: workspaceRoot,
+      currentHostId: "controller",
+    },
+    hostRegistryService: {
+      async resolveTopicCreationHost() {
+        return {
+          ok: true,
+          hostId: "controller",
+          hostLabel: "controller",
+          lastReadyAt: "2026-04-21T16:30:00.000Z",
+        };
+      },
+    },
+  });
+
+  const first = await service.ensureSessionForMessage({
+    chat: { id: -1001234567890 },
+    message_thread_id: 404,
+  });
+  const second = await service.ensureRunnableSessionForMessage({
+    chat: { id: -1001234567890 },
+    message_thread_id: 404,
+  });
+
+  assert.equal(first.created_via, "topic/implicit-attach");
+  assert.equal(first.execution_host_id, null);
+  assert.equal(first.execution_host_last_failure, "binding-missing");
+  assert.equal(second.execution_host_id, null);
+  assert.equal(second.execution_host_last_failure, "binding-missing");
+});
 
 test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -27,8 +331,8 @@ test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
     runtimeObserver: {
       async noteSessionLifecycle(event) {
@@ -38,7 +342,7 @@ test("SessionService purgeSession emits runtime lifecycle audit", async () => {
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 301,
     topicName: "Purge audit",
     createdVia: "test",
@@ -60,13 +364,13 @@ test("SessionService purgeSession does not mutate owner-held sessions before rej
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 303,
     topicName: "Owned purge reject",
     createdVia: "test",
@@ -98,21 +402,24 @@ test("SessionService resolveContextSnapshot backfills rollout snapshot into sess
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      codexGatewayBackend: "app-server",
       codexContextWindow: 290000,
       codexSessionsRoot,
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 302,
     topicName: "Context snapshot",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
   const threadedSession = await sessionStore.patch(session, {
+    codex_backend: "app-server",
+    last_run_backend: "app-server",
     provider_session_id: "session-context-1",
     codex_thread_id: "thread-context-1",
   });
@@ -221,21 +528,24 @@ test("SessionService resolveContextSnapshot resolves rollout state from provider
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      codexGatewayBackend: "app-server",
       codexContextWindow: 290000,
       codexSessionsRoot,
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 3021,
     topicName: "Provider-only context snapshot",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
   const providerSession = await sessionStore.patch(session, {
+    codex_backend: "app-server",
+    last_run_backend: "app-server",
     provider_session_id: "session-context-provider-only",
     codex_thread_id: null,
   });
@@ -312,6 +622,151 @@ test("SessionService resolveContextSnapshot resolves rollout state from provider
   });
 });
 
+test("SessionService resolveContextSnapshot clears legacy rollout metadata for exec-json sessions", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-rollouts-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      codexContextWindow: 290000,
+      codexGatewayBackend: "exec-json",
+      codexSessionsRoot,
+    },
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 3022,
+    topicName: "Exec context snapshot",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  const execSession = await sessionStore.patch(session, {
+    codex_backend: "exec-json",
+    last_run_backend: "exec-json",
+    provider_session_id: "stale-provider",
+    codex_thread_id: "exec-thread",
+    codex_rollout_path: "/tmp/stale-rollout.jsonl",
+    last_context_snapshot: {
+      session_id: "stale-provider",
+      thread_id: "exec-thread",
+      rollout_path: "/tmp/stale-rollout.jsonl",
+      model_context_window: 111111,
+    },
+  });
+
+  const resolved = await service.resolveContextSnapshot(execSession);
+  assert.equal(resolved.snapshot.model_context_window, 290000);
+
+  const reloaded = await sessionStore.load(execSession.chat_id, execSession.topic_id);
+  assert.equal(reloaded.codex_thread_id, "exec-thread");
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_context_snapshot, null);
+});
+
+test("SessionService resolveContextSnapshot keeps exec-json snapshots free of provider rollout metadata", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const codexSessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-exec-snapshots-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      codexContextWindow: 290000,
+      codexGatewayBackend: "exec-json",
+      codexSessionsRoot,
+    },
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 3023,
+    topicName: "Exec snapshot sanitize",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  const execSession = await sessionStore.patch(session, {
+    codex_backend: "exec-json",
+    last_run_backend: "exec-json",
+    codex_thread_id: "exec-thread-snapshot",
+  });
+
+  const rolloutDir = path.join(codexSessionsRoot, "2026", "03", "25");
+  await fs.mkdir(rolloutDir, { recursive: true });
+  const rolloutPath = path.join(
+    rolloutDir,
+    "rollout-2026-03-25T10-00-00-exec-thread-snapshot.jsonl",
+  );
+  await fs.writeFile(
+    rolloutPath,
+    [
+      JSON.stringify({
+        timestamp: "2026-03-25T10:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: "provider-should-not-leak",
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-03-25T10:00:01.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            last_token_usage: {
+              input_tokens: 33,
+              cached_input_tokens: 3,
+              output_tokens: 4,
+              reasoning_output_tokens: 2,
+              total_tokens: 37,
+            },
+            model_context_window: 321000,
+          },
+        },
+      }),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const resolved = await service.resolveContextSnapshot(execSession);
+  assert.equal(resolved.snapshot.session_id, null);
+  assert.equal(resolved.snapshot.rollout_path, null);
+  assert.equal(resolved.snapshot.thread_id, "exec-thread-snapshot");
+  assert.equal(resolved.snapshot.model_context_window, 321000);
+
+  const reloaded = await sessionStore.load(execSession.chat_id, execSession.topic_id);
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.deepEqual(reloaded.last_context_snapshot, {
+    captured_at: "2026-03-25T10:00:01.000Z",
+    session_id: null,
+    thread_id: "exec-thread-snapshot",
+    model_context_window: 321000,
+    last_token_usage: {
+      input_tokens: 33,
+      cached_input_tokens: 3,
+      output_tokens: 4,
+      reasoning_tokens: 2,
+      total_tokens: 37,
+    },
+    rollout_path: null,
+  });
+});
+
 test("SessionService updatePromptSuffix and clearPromptSuffix persist topic-level prompt suffix state", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -320,13 +775,13 @@ test("SessionService updatePromptSuffix and clearPromptSuffix persist topic-leve
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 303,
     topicName: "Prompt suffix",
     createdVia: "test",
@@ -353,13 +808,13 @@ test("SessionService updatePromptSuffixTopicState persists topic suffix routing 
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 304,
     topicName: "Prompt suffix routing",
     createdVia: "test",
@@ -389,8 +844,8 @@ test("SessionService updateGlobalPromptSuffix and clearGlobalPromptSuffix persis
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
     globalPromptSuffixStore,
   });
@@ -423,8 +878,8 @@ test("SessionService persists global and topic Codex runtime settings with topic
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
       codexModel: "gpt-5.4",
       codexReasoningEffort: "medium",
     },
@@ -432,7 +887,7 @@ test("SessionService persists global and topic Codex runtime settings with topic
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 306,
     topicName: "Codex runtime settings",
     createdVia: "test",
@@ -487,8 +942,8 @@ test("SessionService resolves compact runtime settings from global defaults", as
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
       codexModel: "gpt-5.4",
       codexReasoningEffort: "medium",
     },
@@ -496,7 +951,7 @@ test("SessionService resolves compact runtime settings from global defaults", as
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 3061,
     topicName: "Compact runtime settings",
     createdVia: "test",
@@ -543,8 +998,8 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
           ],
         },
         {
-          slug: "gpt-5.1-codex-mini",
-          display_name: "GPT-5.1-Codex-Mini",
+          slug: "gpt-5.4-mini",
+          display_name: "GPT-5.4-Mini",
           default_reasoning_level: "medium",
           supported_reasoning_levels: [
             { effort: "medium" },
@@ -561,8 +1016,8 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
       codexConfigPath,
       codexModel: "gpt-5.4",
       codexReasoningEffort: "high",
@@ -571,7 +1026,7 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 307,
     topicName: "Codex runtime compatibility",
     createdVia: "test",
@@ -582,13 +1037,13 @@ test("SessionService clamps inherited reasoning to a value supported by the reso
     session,
     "spike",
     "model",
-    "gpt-5.1-codex-mini",
+    "gpt-5.4-mini",
   );
 
   const profile = await service.resolveCodexRuntimeProfile(session, {
     target: "spike",
   });
-  assert.equal(profile.model, "gpt-5.1-codex-mini");
+  assert.equal(profile.model, "gpt-5.4-mini");
   assert.equal(profile.modelSource, "topic");
   assert.equal(profile.reasoningEffort, "high");
   assert.equal(profile.reasoningSource, "default");
@@ -639,8 +1094,8 @@ test("SessionService falls back from unavailable stored models to an available d
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
       codexConfigPath,
       codexModel: "gpt-5.4",
       codexReasoningEffort: "medium",
@@ -649,7 +1104,7 @@ test("SessionService falls back from unavailable stored models to an available d
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 3071,
     topicName: "Unavailable model fallback",
     createdVia: "test",
@@ -696,8 +1151,8 @@ test("SessionService clears stale global reasoning when the global model changes
           ],
         },
         {
-          slug: "gpt-5.1-codex-mini",
-          display_name: "GPT-5.1-Codex-Mini",
+          slug: "gpt-5.4-mini",
+          display_name: "GPT-5.4-Mini",
           default_reasoning_level: "medium",
           supported_reasoning_levels: [
             { effort: "medium" },
@@ -714,8 +1169,8 @@ test("SessionService clears stale global reasoning when the global model changes
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
       codexConfigPath,
       codexModel: "gpt-5.4",
       codexReasoningEffort: "medium",
@@ -724,7 +1179,7 @@ test("SessionService clears stale global reasoning when the global model changes
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 308,
     topicName: "Compact runtime cleanup",
     createdVia: "test",
@@ -735,15 +1190,15 @@ test("SessionService clears stale global reasoning when the global model changes
   const cleanedSettings = await service.updateGlobalCodexSetting(
     "compact",
     "model",
-    "gpt-5.1-codex-mini",
+    "gpt-5.4-mini",
   );
-  assert.equal(cleanedSettings.compact_model, "gpt-5.1-codex-mini");
+  assert.equal(cleanedSettings.compact_model, "gpt-5.4-mini");
   assert.equal(cleanedSettings.compact_reasoning_effort, null);
 
   const profile = await service.resolveCodexRuntimeProfile(session, {
     target: "compact",
   });
-  assert.equal(profile.model, "gpt-5.1-codex-mini");
+  assert.equal(profile.model, "gpt-5.4-mini");
   assert.equal(profile.reasoningEffort, "medium");
   assert.equal(profile.reasoningSource, "default");
 });
@@ -776,8 +1231,8 @@ test("SessionService clears stale topic reasoning when the topic model changes",
           ],
         },
         {
-          slug: "gpt-5.1-codex-mini",
-          display_name: "GPT-5.1-Codex-Mini",
+          slug: "gpt-5.4-mini",
+          display_name: "GPT-5.4-Mini",
           default_reasoning_level: "medium",
           supported_reasoning_levels: [
             { effort: "medium" },
@@ -794,8 +1249,8 @@ test("SessionService clears stale topic reasoning when the topic model changes",
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
       codexConfigPath,
       codexModel: "gpt-5.4",
       codexReasoningEffort: "medium",
@@ -804,7 +1259,7 @@ test("SessionService clears stale topic reasoning when the topic model changes",
   });
 
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 309,
     topicName: "Topic runtime cleanup",
     createdVia: "test",
@@ -820,269 +1275,268 @@ test("SessionService clears stale topic reasoning when the topic model changes",
     session,
     "spike",
     "model",
-    "gpt-5.1-codex-mini",
+    "gpt-5.4-mini",
   );
-  assert.equal(session.spike_model_override, "gpt-5.1-codex-mini");
+  assert.equal(session.spike_model_override, "gpt-5.4-mini");
   assert.equal(session.spike_reasoning_effort_override, null);
 
   const profile = await service.resolveCodexRuntimeProfile(session, {
     target: "spike",
   });
-  assert.equal(profile.model, "gpt-5.1-codex-mini");
+  assert.equal(profile.model, "gpt-5.4-mini");
   assert.equal(profile.reasoningEffort, "medium");
   assert.equal(profile.reasoningSource, "default");
 });
 
-test("SessionService keeps Omni reasoning high by default while preserving explicit Omni overrides", async () => {
+test("SessionService resolves available models from the bound host config when the topic is host-bound", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
   const settingsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
   );
+  const localCodexRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-local-config-"),
+  );
+  const remoteCodexRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-remote-config-"),
+  );
+  const localCodexConfigPath = path.join(localCodexRoot, "config.toml");
+  const remoteCodexConfigPath = path.join(remoteCodexRoot, "config.toml");
+  await fs.writeFile(localCodexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(remoteCodexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(
+    path.join(localCodexRoot, "models_cache.json"),
+    `${JSON.stringify({
+      models: [
+        { slug: "gpt-5.4", display_name: "GPT-5.4", visibility: "list", priority: 1 },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(remoteCodexRoot, "models_cache.json"),
+    `${JSON.stringify({
+      models: [
+        { slug: "gpt-5.4-mini", display_name: "GPT-5.4-Mini", visibility: "list", priority: 1 },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
   const sessionStore = new SessionStore(sessionsRoot);
   const globalCodexSettingsStore = new GlobalCodexSettingsStore(settingsRoot);
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      codexConfigPath: localCodexConfigPath,
       codexModel: "gpt-5.4",
-      codexReasoningEffort: "xhigh",
+      codexReasoningEffort: "medium",
     },
     globalCodexSettingsStore,
+    hostRegistryService: {
+      async getHost(hostId) {
+        return hostId === "worker-a"
+          ? { host_id: "worker-a", codex_config_path: remoteCodexConfigPath }
+          : null;
+      },
+    },
   });
 
-  let session = await sessionStore.ensure({
-    chatId: -1003577434463,
-    topicId: 308,
-    topicName: "Omni runtime defaults",
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 3091,
+    topicName: "Remote host catalog",
     createdVia: "test",
     workspaceBinding: buildBinding(),
+    executionHostId: "worker-a",
+    executionHostLabel: "worker-a",
   });
 
-  let profile = await service.resolveCodexRuntimeProfile(session, {
-    target: "omni",
+  const profile = await service.resolveCodexRuntimeProfile(session, {
+    target: "spike",
   });
-  assert.equal(profile.model, "gpt-5.4");
+  assert.equal(profile.model, "gpt-5.4-mini");
   assert.equal(profile.modelSource, "default");
-  assert.equal(profile.reasoningEffort, "high");
-  assert.equal(profile.reasoningSource, "default");
-
-  await service.updateGlobalCodexSetting("omni", "reasoning", "high");
-  profile = await service.resolveCodexRuntimeProfile(session, {
-    target: "omni",
-  });
-  assert.equal(profile.reasoningEffort, "high");
-  assert.equal(profile.reasoningSource, "global");
-
-  session = await service.updateSessionCodexSetting(
-    session,
-    "omni",
-    "reasoning",
-    "low",
-  );
-  profile = await service.resolveCodexRuntimeProfile(session, {
-    target: "omni",
-  });
-  assert.equal(profile.reasoningEffort, "low");
-  assert.equal(profile.reasoningSource, "topic");
 });
 
-test("SessionService scheduleAutoSleep ignores stale disabled snapshots and keeps active auto mode alive", async () => {
+test("SessionService expands tilde host config paths for current-host topic model catalogs", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
-  const sessionStore = new SessionStore(sessionsRoot);
-  const service = new SessionService({
-    sessionStore,
-    config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
-    },
-  });
-
-  const staleSession = await sessionStore.ensure({
-    chatId: -1003577434463,
-    topicId: 307,
-    topicName: "Auto stale sleep",
-    createdVia: "test",
-    workspaceBinding: buildBinding(),
-  });
-
-  let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "5825672398",
-    omniBotId: "8603043042",
-    spikeBotId: "8537834861",
-  });
-  liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
-  liveSession = await service.captureAutoInitialPrompt(
-    liveSession,
-    "Initial Spike prompt",
+  const settingsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
   );
-  liveSession = await service.markAutoDecision(liveSession, {
-    phase: "running",
-    resultSummary: "Still active",
-  });
-
-  const sleeping = await service.scheduleAutoSleep(staleSession, {
-    sleepMinutes: 10,
-    nextPrompt: "Keep monitoring the active proof line.",
-    resultSummary: "Healthy run; wake later.",
-  });
-
-  assert.equal(sleeping.auto_mode.enabled, true);
-  assert.equal(sleeping.auto_mode.phase, "sleeping");
-  assert.equal(
-    sleeping.auto_mode.sleep_next_prompt,
-    "Keep monitoring the active proof line.",
+  const stateRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-state-"),
   );
-  assert.match(sleeping.auto_mode.sleep_until, /^\d{4}-\d{2}-\d{2}T/u);
-});
-
-test("SessionService markAutoDecision ignores stale disabled snapshots when recording done", async () => {
-  const sessionsRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  const homeRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-home-"),
   );
-  const sessionStore = new SessionStore(sessionsRoot);
-  const service = new SessionService({
-    sessionStore,
-    config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
-    },
-  });
+  const codexRoot = path.join(homeRoot, ".codex");
+  const codexConfigPath = path.join(codexRoot, "config.toml");
+  const registryPath = path.join(stateRoot, "hosts", "registry.json");
+  const previousHome = process.env.HOME;
 
-  const staleSession = await sessionStore.ensure({
-    chatId: -1003577434463,
-    topicId: 308,
-    topicName: "Auto stale done",
-    createdVia: "test",
-    workspaceBinding: buildBinding(),
-  });
-
-  let liveSession = await service.activateAutoMode(staleSession, {
-    activatedByUserId: "5825672398",
-    omniBotId: "8603043042",
-    spikeBotId: "8537834861",
-  });
-  liveSession = await service.captureAutoGoal(liveSession, "Ship Omni auto mode safely.");
-  liveSession = await service.captureAutoInitialPrompt(
-    liveSession,
-    "Initial Spike prompt",
+  await fs.mkdir(codexRoot, { recursive: true });
+  await fs.writeFile(codexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(
+    path.join(codexRoot, "models_cache.json"),
+    `${JSON.stringify({
+      models: [
+        { slug: "gpt-5.5", display_name: "GPT-5.5", visibility: "list", priority: 0 },
+        { slug: "gpt-5.4", display_name: "GPT-5.4", visibility: "list", priority: 1 },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
   );
 
-  const done = await service.markAutoDecision(staleSession, {
-    phase: "done",
-    resultSummary: "One bounded cycle is complete.",
-    clearPendingUserInput: true,
-  });
-
-  assert.equal(done.auto_mode.enabled, true);
-  assert.equal(done.auto_mode.phase, "done");
-  assert.equal(done.auto_mode.last_result_summary, "One bounded cycle is complete.");
-});
-
-test("SessionService preserves overlapping auto-mode updates across concurrent callers", async () => {
-  const sessionsRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
-  );
-  const sessionStore = new SessionStore(sessionsRoot);
-  const service = new SessionService({
-    sessionStore,
-    config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
-    },
-  });
-
-  let session = await sessionStore.ensure({
-    chatId: -1003577434463,
-    topicId: 309,
-    topicName: "Auto overlap",
-    createdVia: "test",
-    workspaceBinding: buildBinding(),
-  });
-  session = await service.activateAutoMode(session, {
-    activatedByUserId: "5825672398",
-    omniBotId: "8603043042",
-    spikeBotId: "8537834861",
-  });
-  session = await service.captureAutoGoal(session, "Ship Omni auto mode safely.");
-  session = await service.captureAutoInitialPrompt(
-    session,
-    "Initial Spike prompt",
-  );
-  session = await service.markAutoDecision(session, {
-    phase: "running",
-    resultSummary: "Still active",
-  });
-
-  const originalPatchWithCurrent = sessionStore.patchWithCurrent.bind(sessionStore);
-  let firstPatchHeld = false;
-  let enteredFirstPatch;
-  const firstPatchEnteredPromise = new Promise((resolve) => {
-    enteredFirstPatch = resolve;
-  });
-  let releaseFirstPatch;
-  const releaseFirstPatchPromise = new Promise((resolve) => {
-    releaseFirstPatch = resolve;
-  });
-
-  sessionStore.patchWithCurrent = async (meta, patch) => {
-    if (firstPatchHeld) {
-      return originalPatchWithCurrent(meta, patch);
-    }
-
-    firstPatchHeld = true;
-    return originalPatchWithCurrent(meta, async (current) => {
-      enteredFirstPatch();
-      await releaseFirstPatchPromise;
-      return typeof patch === "function"
-        ? patch(current)
-        : patch;
-    });
-  };
-
+  process.env.HOME = homeRoot;
   try {
-    const blockedPromise = service.markAutoDecision(session, {
-      phase: "blocked",
-      blockedReason: "Need fresh logs",
-      resultSummary: "Waiting on operator input.",
+    const sessionStore = new SessionStore(sessionsRoot);
+    const globalCodexSettingsStore = new GlobalCodexSettingsStore(settingsRoot);
+    const hostRegistryService = new HostRegistryService({
+      registryPath,
+      currentHostId: "controller",
     });
-    await firstPatchEnteredPromise;
-
-    let secondFinished = false;
-    const inputPromise = service.queueAutoUserInput(
-      session,
-      "Upload the latest logs.",
-    ).then((value) => {
-      secondFinished = true;
-      return value;
+    await hostRegistryService.upsertHost({
+      host_id: "controller",
+      label: "controller",
+      codex_config_path: "~/.codex/config.toml",
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(
-      secondFinished,
-      false,
-      "second auto-mode update should wait for the locked first mutation",
+    const service = new SessionService({
+      sessionStore,
+      config: {
+        workspaceRoot: "/srv/codex-workspace",
+        defaultSessionBindingPath: "/srv/codex-workspace",
+        stateRoot,
+        codexConfigPath,
+        codexModel: "gpt-5.4",
+        codexReasoningEffort: "medium",
+      },
+      globalCodexSettingsStore,
+      hostRegistryService,
+    });
+
+    await service.updateGlobalCodexSetting("spike", "model", "gpt-5.5");
+    const session = await sessionStore.ensure({
+      chatId: -1001234567890,
+      topicId: 3092,
+      topicName: "Local host catalog",
+      createdVia: "test",
+      workspaceBinding: buildBinding(),
+      executionHostId: "controller",
+      executionHostLabel: "controller",
+    });
+
+    const visible = await service.loadVisibleCodexModels(session);
+    const profile = await service.resolveCodexRuntimeProfile(session, {
+      target: "spike",
+    });
+
+    assert.deepEqual(
+      visible.map((entry) => entry.slug),
+      ["gpt-5.5", "gpt-5.4"],
     );
-
-    releaseFirstPatch();
-    await Promise.all([blockedPromise, inputPromise]);
+    assert.equal(profile.model, "gpt-5.5");
+    assert.equal(profile.modelSource, "global");
   } finally {
-    sessionStore.patchWithCurrent = originalPatchWithCurrent;
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
   }
+});
 
-  const loaded = await sessionStore.load(session.chat_id, session.topic_id);
-  assert.equal(loaded.auto_mode.enabled, true);
-  assert.equal(loaded.auto_mode.phase, "blocked");
-  assert.equal(loaded.auto_mode.blocked_reason, "Need fresh logs");
-  assert.equal(loaded.auto_mode.pending_user_input, "Upload the latest logs.");
-  assert.equal(
-    loaded.auto_mode.last_result_summary,
-    "Waiting on operator input.",
+test("SessionService uses mirrored remote host model catalogs when registry paths stay remote-local", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
+  const settingsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-settings-"),
+  );
+  const stateRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-state-"),
+  );
+  const localCodexRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-local-config-"),
+  );
+  const localCodexConfigPath = path.join(localCodexRoot, "config.toml");
+  const mirrorPath = path.join(
+    stateRoot,
+    "codex-space",
+    "hosts",
+    "worker-a",
+    "rendered",
+    "models_cache.json",
+  );
+  const registryPath = path.join(stateRoot, "hosts", "registry.json");
+
+  await fs.writeFile(localCodexConfigPath, 'model = "gpt-5.4"\n', "utf8");
+  await fs.mkdir(path.dirname(mirrorPath), { recursive: true });
+  await fs.writeFile(
+    mirrorPath,
+    `${JSON.stringify({
+      models: [
+        { slug: "gpt-5.5", display_name: "GPT-5.5", visibility: "list", priority: 0 },
+        { slug: "gpt-5.4-mini", display_name: "GPT-5.4-Mini", visibility: "list", priority: 1 },
+      ],
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const sessionStore = new SessionStore(sessionsRoot);
+  const globalCodexSettingsStore = new GlobalCodexSettingsStore(settingsRoot);
+  const hostRegistryService = new HostRegistryService({
+    registryPath,
+    currentHostId: "controller",
+  });
+  await hostRegistryService.upsertHost({
+    host_id: "worker-a",
+    label: "worker-a",
+    codex_config_path: "~/.codex/config.toml",
+  });
+
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+      stateRoot,
+      codexConfigPath: localCodexConfigPath,
+      codexModel: "gpt-5.4",
+      codexReasoningEffort: "medium",
+    },
+    globalCodexSettingsStore,
+    hostRegistryService,
+  });
+
+  await service.updateGlobalCodexSetting("spike", "model", "gpt-5.5");
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 3093,
+    topicName: "Mirrored remote host catalog",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+    executionHostId: "worker-a",
+    executionHostLabel: "worker-a",
+  });
+
+  const visible = await service.loadVisibleCodexModels(session);
+  const profile = await service.resolveCodexRuntimeProfile(session, {
+    target: "spike",
+  });
+
+  assert.deepEqual(
+    visible.map((entry) => entry.slug),
+    ["gpt-5.5", "gpt-5.4-mini"],
+  );
+  assert.equal(profile.model, "gpt-5.5");
+  assert.equal(profile.modelSource, "global");
 });
 
 test("SessionService buffers and clears pending prompt attachments", async () => {
@@ -1093,13 +1547,13 @@ test("SessionService buffers and clears pending prompt attachments", async () =>
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 305,
     topicName: "Pending attachments",
     createdVia: "test",
@@ -1130,6 +1584,54 @@ test("SessionService buffers and clears pending prompt attachments", async () =>
   assert.equal(cleared.pending_prompt_attachments_expires_at, null);
 });
 
+test("SessionService removes expired pending attachment files inside incoming", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const service = new SessionService({
+    sessionStore,
+    config: {
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
+    },
+  });
+
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 308,
+    topicName: "Expired pending attachments",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+  });
+  const attachmentPath = path.join(
+    sessionStore.getSessionDir(session.chat_id, session.topic_id),
+    "incoming",
+    "expired.txt",
+  );
+  await fs.mkdir(path.dirname(attachmentPath), { recursive: true });
+  await fs.writeFile(attachmentPath, "expired\n", "utf8");
+
+  const buffered = await service.bufferPendingPromptAttachments(
+    session,
+    [{
+      file_path: attachmentPath,
+      relative_path: "incoming/expired.txt",
+      mime_type: "text/plain",
+      size_bytes: 8,
+      is_image: false,
+    }],
+    { ttlMs: -1 },
+  );
+
+  const pending = await service.getPendingPromptAttachments(buffered);
+  assert.deepEqual(pending, []);
+  await assert.rejects(() => fs.stat(attachmentPath), { code: "ENOENT" });
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.deepEqual(reloaded.pending_prompt_attachments, []);
+  assert.equal(reloaded.pending_prompt_attachments_expires_at, null);
+});
+
 test("SessionService retries default binding resolution after a transient failure", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -1141,7 +1643,7 @@ test("SessionService retries default binding resolution after a transient failur
   const service = new SessionService({
     sessionStore: new SessionStore(sessionsRoot),
     config: {
-      atlasWorkspaceRoot: validRoot,
+      workspaceRoot: validRoot,
       defaultSessionBindingPath: "missing-dir",
     },
   });
@@ -1165,13 +1667,13 @@ test("SessionService preserves overlapping pending attachment buffers", async ()
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 307,
     topicName: "Attachment overlap",
     createdVia: "test",
@@ -1244,13 +1746,13 @@ test("SessionService keeps queued attachments separate from direct prompt attach
   const service = new SessionService({
     sessionStore,
     config: {
-      atlasWorkspaceRoot: "/home/bloob/atlas",
-      defaultSessionBindingPath: "/home/bloob/atlas",
+      workspaceRoot: "/srv/codex-workspace",
+      defaultSessionBindingPath: "/srv/codex-workspace",
     },
   });
 
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 306,
     topicName: "Scoped pending attachments",
     createdVia: "test",

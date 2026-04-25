@@ -1,10 +1,15 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 
-export const STATE_SUBDIRECTORIES = [
+import { ensurePrivateDirectory } from "./file-utils.js";
+
+const STATE_SUBDIRECTORIES = [
   "sessions",
   "indexes",
   "settings",
+  "hosts",
+  "codexSpace",
+  "zoo",
+  "emergency",
   "logs",
   "tmp",
 ];
@@ -15,6 +20,10 @@ export function getStateLayout(stateRoot) {
     sessions: path.join(stateRoot, "sessions"),
     indexes: path.join(stateRoot, "indexes"),
     settings: path.join(stateRoot, "settings"),
+    hosts: path.join(stateRoot, "hosts"),
+    codexSpace: path.join(stateRoot, "codex-space"),
+    zoo: path.join(stateRoot, "zoo"),
+    emergency: path.join(stateRoot, "emergency"),
     logs: path.join(stateRoot, "logs"),
     tmp: path.join(stateRoot, "tmp"),
   };
@@ -22,10 +31,10 @@ export function getStateLayout(stateRoot) {
 
 export async function ensureStateLayout(stateRoot) {
   const layout = getStateLayout(stateRoot);
-  await fs.mkdir(layout.root, { recursive: true });
+  await ensurePrivateDirectory(layout.root);
 
   for (const name of STATE_SUBDIRECTORIES) {
-    await fs.mkdir(layout[name], { recursive: true });
+    await ensurePrivateDirectory(layout[name]);
   }
 
   return layout;

@@ -1,8 +1,8 @@
 import { startCodexExecRun } from "../codex-exec/exec-runner.js";
 import { parseJsonObjectResponse } from "./model-response.js";
 
-export const ZOO_LOOKUP_MODEL = "gpt-5.4-mini";
-export const ZOO_LOOKUP_REASONING = "high";
+const ZOO_LOOKUP_MODEL = "gpt-5.4-mini";
+const ZOO_LOOKUP_REASONING = "high";
 
 function buildLookupPrompt({
   workspaceRoot,

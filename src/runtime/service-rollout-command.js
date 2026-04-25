@@ -145,26 +145,37 @@ export async function performServiceRollout({
 
   const currentGenerationId = liveLeader.lease.generation_id;
   const state = await rolloutCoordinationStore.load({ force: true });
-  const rolloutAlreadyShifted =
-    state.status === "in_progress"
-    && state.target_generation_id
-    && state.target_generation_id === currentGenerationId;
-
-  if (state.status !== "in_progress" || rolloutAlreadyShifted) {
-    await rolloutCoordinationStore.requestRollout({
-      currentGenerationId,
-      requestedBy: "service-rollout",
-    });
+  if (state.status === "requested" || state.status === "in_progress") {
+    throw new Error(
+      "Cannot start a new soft rollout while the previous rollout request is still settling",
+    );
   }
 
-  signalRollout(liveLeader);
-
-  const shifted = await waitForTrafficShift({
-    generationStore,
-    rolloutCoordinationStore,
-    previousGenerationId: currentGenerationId,
-    timeoutMs,
+  await rolloutCoordinationStore.requestRollout({
+    currentGenerationId,
+    requestedBy: "service-rollout",
   });
+
+  let shifted;
+  try {
+    signalRollout(liveLeader);
+
+    shifted = await waitForTrafficShift({
+      generationStore,
+      rolloutCoordinationStore,
+      previousGenerationId: currentGenerationId,
+      timeoutMs,
+    });
+  } catch (error) {
+    await rolloutCoordinationStore.failRollout(
+      error?.message || "Soft rollout failed",
+      {
+        currentGenerationId,
+        targetGenerationId: null,
+      },
+    );
+    throw error;
+  }
 
   return {
     mode: "soft-rollout",

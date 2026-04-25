@@ -253,6 +253,7 @@ function buildStatusReport({ heartbeat, counts, config }) {
         }
       : null,
     codex: {
+      backend: config.codexGatewayBackend,
       bin_path: resolvedCodexBinPath,
       configured_bin_path: config.codexBinPath,
       config_path: config.codexConfigPath,
@@ -305,6 +306,7 @@ async function runStatus({ sessionAdmin, layout, config, json }) {
     "last_update_id",
     heartbeatSummary.lastUpdateId ?? "none",
   );
+  printLine("codex_backend", config.codexGatewayBackend || "unknown");
   printLine("codex_bin_path", resolvedCodexBinPath || "unknown");
   printLine("codex_configured_bin_path", config.codexBinPath || "unknown");
   printLine("codex_config_path", config.codexConfigPath || "unknown");
@@ -354,7 +356,7 @@ async function runShow({ sessionAdmin, args, json }) {
 
 async function runMutation({ sessionAdmin, command, args, json }) {
   const { chatId, topicId } = parseSelector(args);
-  let session = null;
+  let session;
 
   if (command === "pin") {
     session = await sessionAdmin.setRetentionPin(

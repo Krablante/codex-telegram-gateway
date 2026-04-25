@@ -30,7 +30,7 @@ function isGeneralChatPayload(params, config) {
   );
 }
 
-export function collectGeneralCleanupDeleteIds(
+function collectGeneralCleanupDeleteIds(
   trackedMessageIds,
   preservedMessageIds = [],
 ) {

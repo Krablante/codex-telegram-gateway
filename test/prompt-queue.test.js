@@ -13,16 +13,16 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/srv/codex-workspace",
+    cwd: "/srv/codex-workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/srv/codex-workspace",
   };
 }
 
 async function ensureSession(sessionStore, topicId = 991) {
   return sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId,
     topicName: "Prompt queue test",
     createdVia: "test",
@@ -99,7 +99,7 @@ test("drainPendingSpikePromptQueue starts the head prompt and keeps the tail que
   assert.equal(results.length, 1);
   assert.equal(results[0].result.reason, "prompt-started");
   assert.equal(started.length, 1);
-  assert.equal(started[0].prompt, "head prompt");
+  assert.equal(started[0].prompt, "User Prompt:\nhead prompt");
   assert.equal(started[0].rawPrompt, "head prompt");
   assert.equal(started[0].attachments.length, 1);
   assert.equal(started[0].message.message_id, 700);
@@ -107,6 +107,85 @@ test("drainPendingSpikePromptQueue starts the head prompt and keeps the tail que
   const remaining = await promptQueueStore.load(session);
   assert.equal(remaining.length, 1);
   assert.equal(remaining[0].raw_prompt, "tail prompt");
+});
+
+test("drainPendingSpikePromptQueue uses the queue-file index when scanning all sessions", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-prompt-queue-index-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const promptQueueStore = new SpikePromptQueueStore(sessionStore);
+  const session = await ensureSession(sessionStore, 997);
+
+  await promptQueueStore.enqueue(session, {
+    rawPrompt: "indexed prompt",
+    prompt: "indexed prompt",
+  });
+
+  sessionStore.listSessions = async () => {
+    throw new Error("full session scan should not run here");
+  };
+
+  const started = [];
+  const results = await drainPendingSpikePromptQueue({
+    sessionStore,
+    promptQueueStore,
+    workerPool: {
+      async startPromptRun(args) {
+        started.push(args);
+        return { ok: true };
+      },
+    },
+  });
+
+  assert.equal(results.length, 1);
+  assert.equal(started.length, 1);
+  assert.equal(started[0].rawPrompt, "indexed prompt");
+});
+
+test("drainPendingSpikePromptQueue normalizes legacy structured prompt bodies before starting them", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-prompt-queue-legacy-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const promptQueueStore = new SpikePromptQueueStore(sessionStore);
+  const session = await ensureSession(sessionStore, 996);
+
+  await promptQueueStore.enqueue(session, {
+    rawPrompt: [
+      "Work Style:",
+      "Keep it short.",
+      "",
+      "User Prompt:",
+      "head prompt",
+    ].join("\n"),
+    prompt: [
+      "Work Style:",
+      "Keep it short.",
+      "",
+      "User Prompt:",
+      "head prompt",
+    ].join("\n"),
+  });
+
+  const started = [];
+  const results = await drainPendingSpikePromptQueue({
+    session,
+    sessionStore,
+    promptQueueStore,
+    workerPool: {
+      async startPromptRun(args) {
+        started.push(args);
+        return { ok: true };
+      },
+    },
+  });
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].result.reason, "prompt-started");
+  assert.equal(started.length, 1);
+  assert.equal(started[0].rawPrompt, "head prompt");
+  assert.equal(started[0].prompt, "User Prompt:\nhead prompt");
 });
 
 test("drainPendingSpikePromptQueue keeps the head queued when the worker is still busy and starts it on retry", async () => {
@@ -162,7 +241,8 @@ test("drainPendingSpikePromptQueue keeps the head queued when the worker is stil
   assert.equal(secondResults.length, 1);
   assert.equal(secondResults[0].result.reason, "prompt-started");
   assert.equal(started.length, 1);
-  assert.equal(started[0].prompt, "finish teardown, then run this next");
+  assert.equal(started[0].prompt, "User Prompt:\nfinish teardown, then run this next");
+  assert.equal(started[0].rawPrompt, "finish teardown, then run this next");
   assert.equal(started[0].message.message_id, 701);
 
   const queuedAfterRetry = await promptQueueStore.load(session);

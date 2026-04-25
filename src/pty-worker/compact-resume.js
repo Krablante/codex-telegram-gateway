@@ -1,3 +1,5 @@
+import { extractRenderedUserPrompt } from "../session-manager/prompt-suffix.js";
+
 function truncateBlock(text, limit = 12000) {
   if (!text) {
     return "";
@@ -10,19 +12,6 @@ function truncateBlock(text, limit = 12000) {
   return `${text.slice(0, limit).trim()}\n\n[truncated]`;
 }
 
-export function summarizeCompactState(compactState) {
-  const activeBrief = truncateBlock(compactState?.activeBrief || "");
-  const exchangeLogEntries = Array.isArray(compactState?.exchangeLog)
-    ? compactState.exchangeLog.length
-    : 0;
-
-  return {
-    hasActiveBrief: activeBrief.length > 0,
-    activeBriefChars: activeBrief.length,
-    exchangeLogEntries,
-  };
-}
-
 export function buildCompactResumePrompt({
   session,
   prompt,
@@ -30,6 +19,10 @@ export function buildCompactResumePrompt({
   mode = "resume-fallback",
 }) {
   const activeBrief = truncateBlock(compactState?.activeBrief || "");
+  const latestUserRequest = truncateBlock(
+    extractRenderedUserPrompt(prompt) || "",
+    4000,
+  );
   const exchangeLogEntries = Array.isArray(compactState?.exchangeLog)
     ? compactState.exchangeLog.length
     : session.exchange_log_entries ?? 0;
@@ -69,7 +62,7 @@ export function buildCompactResumePrompt({
   lines.push(
     "",
     "## Latest user request",
-    prompt,
+    latestUserRequest || "- no latest user request available",
   );
 
   return `${lines.join("\n")}\n`;

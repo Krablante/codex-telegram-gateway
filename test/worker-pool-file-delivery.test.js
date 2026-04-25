@@ -6,12 +6,10 @@ import path from "node:path";
 
 import { CodexWorkerPool } from "../src/pty-worker/worker-pool.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
-import { SpikeFinalEventStore } from "../src/session-manager/spike-final-event-store.js";
 import {
-  createDeferred,
-  sleep,
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
+import { mkdtempForTest } from "../test-support/tmp.js";
 
 test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram delivery", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -19,15 +17,15 @@ test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram de
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 188,
     topicName: "Telegram format test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -82,13 +80,13 @@ test("CodexWorkerPool normalizes markdown-heavy agent replies before Telegram de
         await onEvent(
           {
             kind: "agent_message",
-            text: "Файл [`test.js`](/home/bloob/atlas/test.js) удален. Проверил `SIGTERM`.",
+            text: "Файл [`test.js`](/srv/codex-workspace/test.js) удален. Проверил `SIGTERM`.",
           },
           {
             type: "item.completed",
             item: {
               type: "agent_message",
-              text: "Файл [`test.js`](/home/bloob/atlas/test.js) удален. Проверил `SIGTERM`.",
+              text: "Файл [`test.js`](/srv/codex-workspace/test.js) удален. Проверил `SIGTERM`.",
             },
           },
         );
@@ -137,25 +135,24 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
-  const tempRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-artifacts-"),
-  );
-  const filePath = path.join(tempRoot, "report.txt");
-  await fs.writeFile(filePath, "report\n", "utf8");
-
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1881,
     topicName: "Directive delivery",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
+  const filePath = path.join(
+    sessionStore.getSessionDir(session.chat_id, session.topic_id),
+    "report.txt",
+  );
+  await fs.writeFile(filePath, "report\n", "utf8");
 
   const sentMessages = [];
   const sentDocuments = [];
@@ -187,8 +184,8 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
       lastPromptAt: null,
       activeRunCount: 0,
     },
-    runTask: ({ prompt, onEvent }) => {
-      runCalls.push(prompt);
+    runTask: ({ prompt, baseInstructions, onEvent }) => {
+      runCalls.push({ prompt, baseInstructions });
       return {
         child: { kill() {} },
         finished: (async () => {
@@ -244,18 +241,18 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
   assert.equal(runCalls.length, 1);
-  assert.match(runCalls[0], /Telegram topic routing context:/u);
-  assert.match(runCalls[0], /topic_id: 1881/u);
-  assert.match(runCalls[0], /topic_context_file: .*telegram-topic-context\.md/u);
+  assert.equal(runCalls[0].prompt, "Скинь файл в этот топик");
+  assert.match(runCalls[0].baseInstructions, /Context:/u);
+  assert.match(runCalls[0].baseInstructions, /Telegram topic 1881 \(-1001234567890:1881\)/u);
+  assert.match(runCalls[0].baseInstructions, /topic context file: .*telegram-topic-context\.md/u);
   assert.match(
-    runCalls[0],
-    /Read topic_context_file only if you need routing or file-send details/u,
+    runCalls[0].baseInstructions,
+    /read the topic context file only when you need extra routing, delivery, or continuity details/u,
   );
-  assert.match(runCalls[0], /Скинь файл в этот топик/u);
-  assert.doesNotMatch(runCalls[0], /```telegram-file/u);
-  assert.doesNotMatch(runCalls[0], /File delivery:/u);
+  assert.doesNotMatch(runCalls[0].prompt, /```telegram-file/u);
+  assert.doesNotMatch(runCalls[0].prompt, /File delivery:/u);
   assert.equal(sentDocuments.length, 1);
-  assert.equal(sentDocuments[0].chat_id, -1003577434463);
+  assert.equal(sentDocuments[0].chat_id, -1001234567890);
   assert.equal(sentDocuments[0].message_thread_id, 1881);
   assert.equal(sentDocuments[0].caption, "Server report");
   assert.equal(sentDocuments[0].document.filePath, await fs.realpath(filePath));
@@ -266,13 +263,276 @@ test("CodexWorkerPool sends telegram-file directives into the current topic", as
   assert.equal(reloaded.last_agent_reply, "Отправил файл: report.txt.");
 });
 
-test("CodexWorkerPool sends telegram-file directives from a symlinked worktree path", async () => {
+test("CodexWorkerPool builds remote host-aware topic context for bound topics", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
-  const workspaceParent = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-worktree-"),
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 18815,
+    topicName: "Directive remote context",
+    createdVia: "command/new",
+    executionHostId: "worker-b",
+    executionHostLabel: "worker-b",
+    workspaceBinding: {
+      workspace_root: "/srv/codex-workspace",
+      repo_root: "/srv/codex-workspace/codex-telegram-gateway",
+      cwd: "/srv/codex-workspace/work/public/demo",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace/work/public/demo",
+    },
+  });
+
+  const runCalls = [];
+  const sentMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      currentHostId: "controller",
+      maxParallelSessions: 1,
+    },
+    hostRegistryService: {
+      async resolveSessionExecution() {
+        return {
+          ok: true,
+          hostId: "worker-b",
+          hostLabel: "worker-b",
+          host: {
+            host_id: "worker-b",
+            workspace_root: "/home/worker-b/workspace",
+            worker_runtime_root:
+              "/home/worker-b/workspace/state/codex-telegram-gateway",
+          },
+        };
+      },
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ prompt, baseInstructions, onEvent }) => {
+      runCalls.push({ prompt, baseInstructions });
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onEvent(
+            { kind: "agent_message", text: "Готово." },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Готово.",
+              },
+            },
+          );
+
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "remote-context-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Скинь файл в этот топик",
+    message: {
+      message_id: 711,
+      message_thread_id: 18815,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+  assert.equal(runCalls.length, 1);
+  assert.equal(runCalls[0].prompt, "Скинь файл в этот топик");
+  assert.match(runCalls[0].baseInstructions, /workspace cwd: \/home\/worker-b\/workspace\/work\/public\/demo/u);
+  assert.match(runCalls[0].baseInstructions, /bound host: worker-b/u);
+  assert.match(
+    runCalls[0].baseInstructions,
+    /allowed telegram-file send roots: \/home\/worker-b\/workspace\/work\/public\/demo/u,
   );
+  assert.doesNotMatch(
+    runCalls[0].baseInstructions,
+    /\/home\/worker-b\/workspace\/state\/codex-telegram-gateway/u,
+  );
+  assert.doesNotMatch(runCalls[0].baseInstructions, /allowed telegram-file send roots: .*\/tmp/u);
+  assert.match(
+    runCalls[0].baseInstructions,
+    /topic context file stays on the Telegram control-plane host for this remote run/u,
+  );
+  assert.doesNotMatch(runCalls[0].baseInstructions, /topic context file: .*telegram-topic-context\.md/u);
+});
+
+test("CodexWorkerPool delivers remote telegram-file directives through private staging", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const remoteWorkspaceRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-remote-workspace-"),
+  );
+  const fakeBinRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-fake-bin-"),
+  );
+  const remoteWorktree = path.join(remoteWorkspaceRoot, "work", "public", "demo");
+  const remoteFilePath = path.join(remoteWorktree, "remote report.txt");
+  await fs.mkdir(remoteWorktree, { recursive: true });
+  await fs.writeFile(remoteFilePath, "remote report\n", "utf8");
+  const fakeRsyncPath = path.join(fakeBinRoot, "rsync");
+  await fs.writeFile(
+    fakeRsyncPath,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "src=\"${@: -2:1}\"",
+      "dest=\"${@: -1}\"",
+      "src=\"${src#*:}\"",
+      "mkdir -p \"$(dirname \"$dest\")\"",
+      "cp \"$src\" \"$dest\"",
+    ].join("\n"),
+  );
+  await fs.chmod(fakeRsyncPath, 0o755);
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fakeBinRoot}${path.delimiter}${originalPath || ""}`;
+  try {
+    const sessionStore = new SessionStore(sessionsRoot);
+    const session = await sessionStore.ensure({
+      chatId: -1001234567890,
+      topicId: 18816,
+      topicName: "Directive remote file",
+      createdVia: "command/new",
+      executionHostId: "worker-a",
+      executionHostLabel: "worker-a",
+      workspaceBinding: {
+        workspace_root: "/workspace",
+        repo_root: "/workspace/codex-telegram-gateway",
+        cwd: "/workspace/work/public/demo",
+        branch: "main",
+        worktree_path: "/workspace/work/public/demo",
+      },
+    });
+
+    const sentMessages = [];
+    const sentDocuments = [];
+    let deliveredContent = null;
+    const workerPool = new CodexWorkerPool({
+      api: {
+        async sendMessage(payload) {
+          sentMessages.push(payload);
+          return { message_id: sentMessages.length };
+        },
+        async sendDocument(payload) {
+          deliveredContent = await fs.readFile(payload.document.filePath, "utf8");
+          sentDocuments.push(payload);
+          return { message_id: 900 + sentDocuments.length };
+        },
+        async editMessageText() {
+          return { ok: true };
+        },
+        async deleteMessage() {
+          return true;
+        },
+      },
+      config: {
+        codexBinPath: "codex",
+        currentHostId: "controller",
+        hostSshConnectTimeoutSecs: 1,
+        maxParallelSessions: 1,
+      },
+      hostRegistryService: {
+        async getHost(hostId) {
+          assert.equal(hostId, "worker-a");
+          return {
+            host_id: "worker-a",
+            ssh_target: "worker-a",
+            workspace_root: remoteWorkspaceRoot,
+            worker_runtime_root: path.join(remoteWorkspaceRoot, "state"),
+          };
+        },
+      },
+      sessionStore,
+      serviceState: {
+        acceptedPrompts: 0,
+        lastPromptAt: null,
+        activeRunCount: 0,
+      },
+      runTask: ({ onEvent }) => ({
+        child: { kill() {} },
+        finished: (async () => {
+          const text = [
+            "```telegram-file",
+            "action: send",
+            `path: ${remoteFilePath}`,
+            "filename: remote-report.txt",
+            "```",
+          ].join("\n");
+          await onEvent(
+            { kind: "agent_message", text },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text,
+              },
+            },
+          );
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "remote-file-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      }),
+    });
+
+    await workerPool.startPromptRun({
+      session,
+      prompt: "Скинь удаленный файл",
+      message: {
+        message_id: 712,
+        message_thread_id: 18816,
+      },
+    });
+    await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+    assert.equal(sentDocuments.length, 1);
+    assert.equal(sentDocuments[0].document.fileName, "remote-report.txt");
+    assert.equal(deliveredContent, "remote report\n");
+    assert.equal(sentMessages.at(-1).text, "Отправил файл: remote-report.txt.");
+  } finally {
+    process.env.PATH = originalPath;
+    await fs.rm(remoteWorkspaceRoot, { recursive: true, force: true });
+    await fs.rm(fakeBinRoot, { recursive: true, force: true });
+    await fs.rm(sessionsRoot, { recursive: true, force: true });
+  }
+});
+
+test("CodexWorkerPool sends telegram-file directives from a symlinked worktree path", async (t) => {
+  const sessionsRoot = await mkdtempForTest(t, "codex-telegram-gateway-sessions-");
+  const workspaceParent = await mkdtempForTest(t, "codex-telegram-gateway-worktree-");
   const realWorkspaceRoot = path.join(workspaceParent, "real-worktree");
   const linkedWorkspaceRoot = path.join(workspaceParent, "linked-worktree");
   await fs.mkdir(realWorkspaceRoot, { recursive: true });
@@ -286,7 +546,7 @@ test("CodexWorkerPool sends telegram-file directives from a symlinked worktree p
 
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1881,
     topicName: "Directive delivery",
     createdVia: "command/new",
@@ -391,15 +651,15 @@ test("CodexWorkerPool keeps telegram-file syntax visible when it is only an exam
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1882,
     topicName: "Directive example",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -490,15 +750,15 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1883,
     topicName: "Directive failure",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -584,4 +844,3 @@ test("CodexWorkerPool rejects telegram-file paths outside allowed delivery roots
     /вне разрешённых зон доставки/u,
   );
 });
-

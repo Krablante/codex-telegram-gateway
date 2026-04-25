@@ -38,6 +38,9 @@ export class TelegramProgressMessage {
     this.pendingText = null;
     this.flushTimer = null;
     this.lastFlushAt = 0;
+    this.updatesClosed = false;
+    this.terminalText = null;
+    this.operationChain = Promise.resolve();
   }
 
   buildSendParams(text) {
@@ -92,7 +95,16 @@ export class TelegramProgressMessage {
     }
   }
 
+  async runSerialized(operation) {
+    const run = this.operationChain.then(operation, operation);
+    this.operationChain = run.catch(() => {});
+    return run;
+  }
+
   queueUpdate(text) {
+    if (this.updatesClosed) {
+      return;
+    }
     const nextText = truncateText(text);
     if (this.messageId === null) {
       return;
@@ -114,7 +126,7 @@ export class TelegramProgressMessage {
     this.flushTimer = setTimeout(async () => {
       this.flushTimer = null;
       try {
-        await this.flushPending();
+        await this.runSerialized(() => this.flushPending());
       } catch (error) {
         await this.reportDeliveryError(error).catch(() => {});
       }
@@ -122,8 +134,28 @@ export class TelegramProgressMessage {
     this.flushTimer.unref?.();
   }
 
+  keepPendingAfterFailedFlush(nextText, { retry = true } = {}) {
+    if (this.updatesClosed) {
+      this.pendingText = this.terminalText;
+    } else {
+      this.pendingText = nextText;
+    }
+
+    if (retry && this.pendingText) {
+      this.scheduleRetry();
+    }
+  }
+
   async flushPending() {
+    if (this.updatesClosed) {
+      this.pendingText = this.terminalText;
+    }
+
     if (!this.pendingText || this.messageId === null) {
+      return;
+    }
+    if (this.pendingText === this.currentText) {
+      this.pendingText = null;
       return;
     }
 
@@ -135,8 +167,7 @@ export class TelegramProgressMessage {
         await this.sendAppendOnly(nextText);
       } catch (error) {
         await this.reportDeliveryError(error);
-        this.pendingText = nextText;
-        this.scheduleRetry();
+        this.keepPendingAfterFailedFlush(nextText);
       }
       return;
     }
@@ -158,7 +189,7 @@ export class TelegramProgressMessage {
 
       const lifecycleResult = await this.reportDeliveryError(error);
       if (lifecycleResult?.handled) {
-        this.pendingText = nextText;
+        this.keepPendingAfterFailedFlush(nextText, { retry: false });
         return;
       }
 
@@ -170,14 +201,12 @@ export class TelegramProgressMessage {
           this.pendingText = null;
         } catch (appendError) {
           await this.reportDeliveryError(appendError);
-          this.pendingText = nextText;
-          this.scheduleRetry();
+          this.keepPendingAfterFailedFlush(nextText);
         }
         return;
       }
 
-      this.pendingText = nextText;
-      this.scheduleRetry();
+      this.keepPendingAfterFailedFlush(nextText);
     }
   }
 
@@ -189,7 +218,7 @@ export class TelegramProgressMessage {
     this.flushTimer = setTimeout(async () => {
       this.flushTimer = null;
       try {
-        await this.flushPending();
+        await this.runSerialized(() => this.flushPending());
       } catch (error) {
         await this.reportDeliveryError(error).catch(() => {});
       }
@@ -198,39 +227,48 @@ export class TelegramProgressMessage {
   }
 
   async finalize(text) {
-    this.pendingText = truncateText(text);
+    this.updatesClosed = true;
+    const finalText = truncateText(text);
+    this.terminalText = finalText;
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    await this.flushPending();
+    await this.runSerialized(async () => {
+      this.pendingText = finalText;
+      await this.flushPending();
+    });
   }
 
   async dismiss() {
+    this.updatesClosed = true;
+    this.terminalText = null;
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    this.pendingText = null;
+    return this.runSerialized(async () => {
+      this.pendingText = null;
 
-    if (this.messageId === null || typeof this.api.deleteMessage !== "function") {
-      return false;
-    }
-
-    const messageId = this.messageId;
-    try {
-      await this.api.deleteMessage({
-        chat_id: this.chatId,
-        message_id: messageId,
-      });
-      if (this.messageId === messageId) {
-        this.messageId = null;
-        this.currentText = null;
+      if (this.messageId === null || typeof this.api.deleteMessage !== "function") {
+        return false;
       }
-      return true;
-    } catch (error) {
-      await this.reportDeliveryError(error);
-      return false;
-    }
+
+      const messageId = this.messageId;
+      try {
+        await this.api.deleteMessage({
+          chat_id: this.chatId,
+          message_id: messageId,
+        });
+        if (this.messageId === messageId) {
+          this.messageId = null;
+          this.currentText = null;
+        }
+        return true;
+      } catch (error) {
+        await this.reportDeliveryError(error);
+        return false;
+      }
+    });
   }
 }

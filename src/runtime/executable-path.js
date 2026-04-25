@@ -89,14 +89,15 @@ function buildFileSystemLookupPaths(filePath, platform) {
 
 export function buildExecutableCandidatePaths(
   executable,
-  {
+  options = {},
+) {
+  const {
     cwd = process.cwd(),
-    pathValue = getExecutableSearchPathValue(process.env, process.platform),
     preferredDirectories = [],
     platform = process.platform,
     env = process.env,
-  } = {},
-) {
+  } = options;
+  const pathValue = options.pathValue ?? getExecutableSearchPathValue(env, platform);
   const normalized = normalizeExecutableName(executable);
   if (!normalized) {
     return [];

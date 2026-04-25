@@ -28,16 +28,25 @@ export function safeJsonParse(line) {
 }
 
 export function isRelevantWarning(line) {
+  const text = String(line || "");
   return (
-    line.includes("codex app-server (") ||
-    line.includes("listening on:") ||
-    line.includes("readyz:") ||
-    line.includes("healthz:") ||
-    line.includes("binds localhost only") ||
-    line.includes("failed to open state db") ||
-    line.includes("state db discrepancy") ||
-    line.includes("Failed to delete shell snapshot") ||
-    line.includes("failed to unwatch")
+    text.includes("codex app-server (") ||
+    text.includes("listening on:") ||
+    text.includes("readyz:") ||
+    text.includes("healthz:") ||
+    text.includes("binds localhost only") ||
+    text.includes("failed to open state db") ||
+    text.includes("state db discrepancy") ||
+    text.includes("Failed to delete shell snapshot") ||
+    text.includes("failed to unwatch") ||
+    (
+      text.includes("codex_core::tools::router") &&
+      text.includes("write_stdin failed:") &&
+      (
+        text.includes("Unknown process id") ||
+        text.includes("stdin is closed")
+      )
+    )
   );
 }
 
@@ -116,7 +125,9 @@ export function summarizeCodexEvent(event) {
       kind: "agent_message",
       eventType: "item.completed",
       text: event.item.text || "",
-      messagePhase: "final_answer",
+      messagePhase: event.item.phase || "final_answer",
+      threadId: event.thread_id ?? null,
+      turnId: event.turn_id ?? null,
     };
   }
 

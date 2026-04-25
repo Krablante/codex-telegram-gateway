@@ -8,10 +8,10 @@ import {
 } from "../src/telegram/command-router.js";
 
 const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789"],
   telegramAllowedBotIds: ["8603043042"],
-  telegramForumChatId: "-1003577434463",
+  telegramForumChatId: "-1001234567890",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -20,7 +20,7 @@ const config = {
   codexConfigPath: "/tmp/codex-telegram-gateway-tests-missing-config.toml",
 };
 
-test("applyPromptSuffix prefers topic suffix over global and falls back when topic is off", () => {
+test("applyPromptSuffix keeps the user prompt body stable regardless of suffix state", () => {
   assert.equal(
     applyPromptSuffix(
       "run a quick task",
@@ -33,7 +33,7 @@ test("applyPromptSuffix prefers topic suffix over global and falls back when top
         prompt_suffix_text: "GLOBAL\nNever overcomplicate.",
       },
     ),
-    "run a quick task\n\nP.S.\nKeep it short.",
+    "User Prompt:\nrun a quick task",
   );
   assert.equal(
     applyPromptSuffix(
@@ -47,7 +47,7 @@ test("applyPromptSuffix prefers topic suffix over global and falls back when top
         prompt_suffix_text: "GLOBAL\nNever overcomplicate.",
       },
     ),
-    "run a quick task\n\nGLOBAL\nNever overcomplicate.",
+    "User Prompt:\nrun a quick task",
   );
   assert.equal(
     applyPromptSuffix(
@@ -62,7 +62,7 @@ test("applyPromptSuffix prefers topic suffix over global and falls back when top
         prompt_suffix_text: "GLOBAL\nNever overcomplicate.",
       },
     ),
-    "run a quick task",
+    "User Prompt:\nrun a quick task",
   );
 });
 
@@ -88,8 +88,8 @@ test("handleIncomingMessage lets zooService short-circuit /zoo before normal ses
     message: {
       text: "/zoo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState,
     sessionService: {
@@ -131,9 +131,9 @@ test("handleIncomingCallbackQuery lets zooService short-circuit before panel cal
     callbackQuery: {
       id: "cb1",
       data: "zoo:v:pet1",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 777,
       },
     },

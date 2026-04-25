@@ -11,12 +11,12 @@ import {
   createStateRoot,
 } from "../test-support/zoo-fixtures.js";
 
-test("ZooService add-project flow captures the description reply", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService add-project flow captures the description reply", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -50,9 +50,9 @@ test("ZooService add-project flow captures the description reply", async () => {
     callbackQuery: {
       id: "cb1",
       data: "zoo:a:start",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
       },
     },
@@ -68,8 +68,8 @@ test("ZooService add-project flow captures the description reply", async () => {
     botUsername: "gatewaybot",
     message: {
       text: "my private telegram to codex gateway",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 700,
       message_id: 5,
     },
@@ -80,12 +80,12 @@ test("ZooService add-project flow captures the description reply", async () => {
   assert.equal(api.calls.deleteMessage.at(-1).message_id, 5);
 });
 
-test("ZooService ignores stale lookup completions from an older add flow", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService ignores stale lookup completions from an older add flow", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -94,7 +94,7 @@ test("ZooService ignores stale lookup completions from an older add flow", async
       kind: "add_project",
       stage: "await_description",
       busy: true,
-      requested_by_user_id: "5825672398",
+      requested_by_user_id: "123456789",
       lookup_request_id: "lookup-old",
       cleanup_message_ids: [],
     },
@@ -108,18 +108,18 @@ test("ZooService ignores stale lookup completions from an older add flow", async
           cwd: requestedPath,
           repo_root: requestedPath,
           cwd_relative_to_workspace_root:
-            path.relative("/home/bloob/atlas", requestedPath) || ".",
+            path.relative("/srv/codex-workspace", requestedPath) || ".",
         };
       },
     },
     zooStore,
-    lookupRunner: async () => lookup.promise,
+    lookupRunner: async (_t) => lookup.promise,
   });
 
   const runPromise = service.runLookup({
     api,
     description: "gateway",
-    requestedByUserId: "5825672398",
+    requestedByUserId: "123456789",
     language: "rus",
     lookupRequestId: "lookup-old",
   });
@@ -129,14 +129,14 @@ test("ZooService ignores stale lookup completions from an older add flow", async
       kind: "add_project",
       stage: "await_description",
       busy: true,
-      requested_by_user_id: "5825672398",
+      requested_by_user_id: "123456789",
       lookup_request_id: "lookup-new",
       cleanup_message_ids: [],
     },
   });
 
   lookup.resolve({
-    candidatePath: "/home/bloob/atlas/project-a",
+    candidatePath: "/srv/codex-workspace/project-a",
     candidateDisplayName: "project-a",
     needsMoreDetail: false,
     reason: "best match",
@@ -149,12 +149,12 @@ test("ZooService ignores stale lookup completions from an older add flow", async
   assert.equal(api.calls.sendMessage.length, 0);
 });
 
-test("ZooService stores lookup confirmation in menu state instead of sending a chat message", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService stores lookup confirmation in menu state instead of sending a chat message", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -163,7 +163,7 @@ test("ZooService stores lookup confirmation in menu state instead of sending a c
       kind: "add_project",
       stage: "await_description",
       busy: true,
-      requested_by_user_id: "5825672398",
+      requested_by_user_id: "123456789",
       lookup_request_id: "lookup-1",
       cleanup_message_ids: [],
     },
@@ -176,13 +176,13 @@ test("ZooService stores lookup confirmation in menu state instead of sending a c
           cwd: requestedPath,
           repo_root: requestedPath,
           cwd_relative_to_workspace_root:
-            path.relative("/home/bloob/atlas", requestedPath) || ".",
+            path.relative("/srv/codex-workspace", requestedPath) || ".",
         };
       },
     },
     zooStore,
-    lookupRunner: async () => ({
-      candidatePath: "/home/bloob/atlas/project-a",
+    lookupRunner: async (_t) => ({
+      candidatePath: "/srv/codex-workspace/project-a",
       candidateDisplayName: "project-a",
       needsMoreDetail: false,
       reason: "Похоже на нужный проект.",
@@ -193,35 +193,35 @@ test("ZooService stores lookup confirmation in menu state instead of sending a c
   await service.runLookup({
     api,
     description: "gateway",
-    requestedByUserId: "5825672398",
+    requestedByUserId: "123456789",
     language: "rus",
     lookupRequestId: "lookup-1",
   });
 
   const topicState = await zooStore.loadTopic({ force: true });
   assert.equal(topicState.pending_add.stage, "await_confirmation");
-  assert.equal(topicState.pending_add.candidate_path, "/home/bloob/atlas/project-a");
+  assert.equal(topicState.pending_add.candidate_path, "/srv/codex-workspace/project-a");
   assert.equal(topicState.pending_add.candidate_reason, "Похоже на нужный проект.");
   assert.equal(topicState.pending_add.candidate_question, "Это он?");
   assert.equal(topicState.pending_add.candidate_display_name, "project-a");
   assert.equal(api.calls.sendMessage.length, 0);
 });
 
-test("ZooService canonicalizes public/private duplicate names during lookup confirmation", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService canonicalizes public/private duplicate names during lookup confirmation", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.savePet({
     pet_id: "pet-private",
     display_name: "Codex Telegram Gateway",
-    resolved_path: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-    repo_root: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-    cwd: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-    cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
+    resolved_path: "/srv/codex-workspace/internal/codex-telegram-gateway",
+    repo_root: "/srv/codex-workspace/internal/codex-telegram-gateway",
+    cwd: "/srv/codex-workspace/internal/codex-telegram-gateway",
+    cwd_relative_to_workspace_root: "internal/codex-telegram-gateway",
     creature_kind: "cat",
   });
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "eng",
@@ -230,7 +230,7 @@ test("ZooService canonicalizes public/private duplicate names during lookup conf
       kind: "add_project",
       stage: "await_description",
       busy: true,
-      requested_by_user_id: "5825672398",
+      requested_by_user_id: "123456789",
       lookup_request_id: "lookup-pub",
       cleanup_message_ids: [],
     },
@@ -243,13 +243,13 @@ test("ZooService canonicalizes public/private duplicate names during lookup conf
           cwd: requestedPath,
           repo_root: requestedPath,
           cwd_relative_to_workspace_root:
-            path.relative("/home/bloob/atlas", requestedPath) || ".",
+            path.relative("/srv/codex-workspace", requestedPath) || ".",
         };
       },
     },
     zooStore,
-    lookupRunner: async () => ({
-      candidatePath: "/home/bloob/atlas/work/public/personal/automation/codex-telegram-gateway",
+    lookupRunner: async (_t) => ({
+      candidatePath: "/srv/codex-workspace/work/public/personal/automation/codex-telegram-gateway",
       candidateDisplayName: "Codex Telegram Gateway OSS",
       needsMoreDetail: false,
       reason: "Best match in the public workspace.",
@@ -260,7 +260,7 @@ test("ZooService canonicalizes public/private duplicate names during lookup conf
   await service.runLookup({
     api,
     description: "public codex telegram gateway",
-    requestedByUserId: "5825672398",
+    requestedByUserId: "123456789",
     language: "eng",
     lookupRequestId: "lookup-pub",
   });
@@ -274,12 +274,12 @@ test("ZooService canonicalizes public/private duplicate names during lookup conf
   assert.equal(privatePet.display_name, "codex-telegram-gateway [priv]");
 });
 
-test("ZooService stores Zoo pets at project root even if lookup resolved a nested path", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService stores Zoo pets at project root even if lookup resolved a nested path", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -287,8 +287,8 @@ test("ZooService stores Zoo pets at project root even if lookup resolved a neste
       kind: "add_project",
       stage: "await_confirmation",
       busy: false,
-      requested_by_user_id: "5825672398",
-      candidate_path: "/home/bloob/atlas/project-a/src",
+      requested_by_user_id: "123456789",
+      candidate_path: "/srv/codex-workspace/project-a/src",
       candidate_display_name: "project-a",
       cleanup_message_ids: [],
     },
@@ -298,8 +298,8 @@ test("ZooService stores Zoo pets at project root even if lookup resolved a neste
     sessionService: {
       async resolveBindingPath() {
         return {
-          cwd: "/home/bloob/atlas/project-a/src",
-          repo_root: "/home/bloob/atlas/project-a",
+          cwd: "/srv/codex-workspace/project-a/src",
+          repo_root: "/srv/codex-workspace/project-a",
           cwd_relative_to_workspace_root: "project-a/src",
         };
       },
@@ -315,17 +315,17 @@ test("ZooService stores Zoo pets at project root even if lookup resolved a neste
 
   const pets = await zooStore.listPets();
   assert.equal(pets.length, 1);
-  assert.equal(pets[0].cwd, "/home/bloob/atlas/project-a");
-  assert.equal(pets[0].repo_root, "/home/bloob/atlas/project-a");
-  assert.equal(pets[0].resolved_path, "/home/bloob/atlas/project-a");
+  assert.equal(pets[0].cwd, "/srv/codex-workspace/project-a");
+  assert.equal(pets[0].repo_root, "/srv/codex-workspace/project-a");
+  assert.equal(pets[0].resolved_path, "/srv/codex-workspace/project-a");
 });
 
-test("ZooService resets add-project flow when the confirmed candidate path is gone", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService resets add-project flow when the confirmed candidate path is gone", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -334,8 +334,8 @@ test("ZooService resets add-project flow when the confirmed candidate path is go
       kind: "add_project",
       stage: "await_confirmation",
       busy: false,
-      requested_by_user_id: "5825672398",
-      candidate_path: "/home/bloob/atlas/project-gone",
+      requested_by_user_id: "123456789",
+      candidate_path: "/srv/codex-workspace/project-gone",
       candidate_display_name: "project-gone",
       cleanup_message_ids: [41],
     },
@@ -368,16 +368,16 @@ test("ZooService resets add-project flow when the confirmed candidate path is go
   );
 });
 
-test("ZooService assigns random unused identity fields to new pets", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService assigns random unused identity fields to new pets", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.savePet({
     pet_id: "pet-existing-a",
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
-    repo_root: "/home/bloob/atlas/project-a",
-    cwd: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
+    repo_root: "/srv/codex-workspace/project-a",
+    cwd: "/srv/codex-workspace/project-a",
     creature_kind: "cat",
     temperament_id: "paladin",
     character_name: "Rainbow Dash",
@@ -385,15 +385,15 @@ test("ZooService assigns random unused identity fields to new pets", async () =>
   await zooStore.savePet({
     pet_id: "pet-existing-b",
     display_name: "project-b",
-    resolved_path: "/home/bloob/atlas/project-b",
-    repo_root: "/home/bloob/atlas/project-b",
-    cwd: "/home/bloob/atlas/project-b",
+    resolved_path: "/srv/codex-workspace/project-b",
+    repo_root: "/srv/codex-workspace/project-b",
+    cwd: "/srv/codex-workspace/project-b",
     creature_kind: "rabbit",
     temperament_id: "gremlin",
     character_name: "Pinkie Pie",
   });
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -401,8 +401,8 @@ test("ZooService assigns random unused identity fields to new pets", async () =>
       kind: "add_project",
       stage: "await_confirmation",
       busy: false,
-      requested_by_user_id: "5825672398",
-      candidate_path: "/home/bloob/atlas/project-c",
+      requested_by_user_id: "123456789",
+      candidate_path: "/srv/codex-workspace/project-c",
       candidate_display_name: "project-c",
       cleanup_message_ids: [],
     },
@@ -413,8 +413,8 @@ test("ZooService assigns random unused identity fields to new pets", async () =>
     sessionService: {
       async resolveBindingPath() {
         return {
-          cwd: "/home/bloob/atlas/project-c",
-          repo_root: "/home/bloob/atlas/project-c",
+          cwd: "/srv/codex-workspace/project-c",
+          repo_root: "/srv/codex-workspace/project-c",
           cwd_relative_to_workspace_root: "project-c",
         };
       },
@@ -429,7 +429,7 @@ test("ZooService assigns random unused identity fields to new pets", async () =>
     topicState: await zooStore.loadTopic({ force: true }),
   });
 
-  const pet = await zooStore.loadPet(buildPetIdFromPath("/home/bloob/atlas/project-c"));
+  const pet = await zooStore.loadPet(buildPetIdFromPath("/srv/codex-workspace/project-c"));
   assert.equal(pet.display_name, "project-c");
   assert.equal(pet.creature_kind, "fox");
   assert.equal(pet.temperament_id, "scout");

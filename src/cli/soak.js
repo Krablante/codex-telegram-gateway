@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
+import { createHostAwareRunTask } from "../pty-worker/host-aware-run-task.js";
 import { CodexWorkerPool } from "../pty-worker/worker-pool.js";
 import { createServiceState } from "../runtime/service-state.js";
 import { buildSleepCommandPrompt } from "../runtime/live-command-prompts.js";
@@ -56,13 +57,13 @@ function buildSyntheticTopicMessage({
     from: {
       id: Number(allowedUserId),
       is_bot: false,
-      first_name: "bloob",
-      username: "bloob",
+      first_name: "operator",
+      username: "operator",
     },
     chat: {
       id: Number(chatId),
       type: "supergroup",
-      title: "JARVIS EBAT",
+      title: "Codex Gateway Test Forum",
       is_forum: true,
     },
     message_thread_id: Number(topicId),
@@ -105,10 +106,12 @@ async function main() {
   const globalPromptSuffixStore = new GlobalPromptSuffixStore(layout.settings);
   const globalCodexSettingsStore = new GlobalCodexSettingsStore(layout.settings);
   const sessionStore = new SessionStore(layout.sessions);
+  const runTask = createHostAwareRunTask({ config });
   const sessionCompactor = new SessionCompactor({
     sessionStore,
     config,
     globalCodexSettingsStore,
+    runTask,
   });
   const lifecycleManager = new SessionLifecycleManager({
     config,
@@ -129,7 +132,9 @@ async function main() {
     serviceState,
     sessionCompactor,
     sessionLifecycleManager: lifecycleManager,
+    globalPromptSuffixStore,
     globalCodexSettingsStore,
+    runTask,
   });
   lifecycleManager.workerPool = workerPool;
 
@@ -200,7 +205,7 @@ async function main() {
     }
 
     const startResults = await Promise.all(
-      topics.map((topic, index) =>
+      topics.map((topic) =>
         handleIncomingMessage({
           api,
           botUsername: probe.me.username,

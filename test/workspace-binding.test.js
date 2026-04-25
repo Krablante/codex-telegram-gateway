@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 
 import { resolveWorkspaceBinding } from "../src/workspace/binding-resolver.js";
 
-test("resolveWorkspaceBinding returns repo and cwd for atlas paths", async () => {
+test("resolveWorkspaceBinding returns repo and cwd for workspace paths", async () => {
   const workspaceRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-workspace-root-"),
   );
@@ -15,7 +15,7 @@ test("resolveWorkspaceBinding returns repo and cwd for atlas paths", async () =>
   const resolvedWorkspaceRoot = await fs.realpath(workspaceRoot);
 
   const binding = await resolveWorkspaceBinding({
-    atlasWorkspaceRoot: workspaceRoot,
+    workspaceRoot: workspaceRoot,
     requestedPath: workspaceRoot,
   });
 
@@ -38,7 +38,7 @@ test("resolveWorkspaceBinding rejects paths outside the workspace root", async (
 
   await assert.rejects(
     resolveWorkspaceBinding({
-      atlasWorkspaceRoot: workspaceRoot,
+      workspaceRoot: workspaceRoot,
       requestedPath: outsideRoot,
     }),
     /escapes workspace root/u,
@@ -54,7 +54,7 @@ test("resolveWorkspaceBinding rejects file paths", async () => {
 
   await assert.rejects(
     resolveWorkspaceBinding({
-      atlasWorkspaceRoot: workspaceRoot,
+      workspaceRoot: workspaceRoot,
       requestedPath: filePath,
     }),
     /not a directory/u,

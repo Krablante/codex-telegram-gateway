@@ -1,8 +1,8 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
+import { writeTextAtomic } from "../state/file-utils.js";
 import { ensureStateLayout } from "../state/layout.js";
 import { TelegramBotApiClient } from "../telegram/bot-api-client.js";
 import { runTelegramProbe } from "../telegram/probe.js";
@@ -13,7 +13,7 @@ function printSummaryLine(label, value) {
 
 async function writeDoctorSnapshot(logsDir, report) {
   const outputPath = path.join(logsDir, "doctor-last-run.json");
-  await fs.writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeTextAtomic(outputPath, `${JSON.stringify(report, null, 2)}\n`);
   return outputPath;
 }
 

@@ -9,7 +9,6 @@ import {
 import { syncTelegramCommandCatalog } from "../telegram/command-catalog.js";
 import { PromptFragmentAssembler } from "../telegram/prompt-fragment-assembler.js";
 import { EmergencyPrivateChatRouter } from "../emergency/private-chat-router.js";
-import { disableOmniStateAcrossSessions } from "../omni/disabled-state.js";
 import {
   UpdateForwardingServer,
 } from "../runtime/update-forwarding-ipc.js";
@@ -29,6 +28,7 @@ import { recoverStaleRunningSessions } from "./run-stale-run-recovery.js";
 const TELEGRAM_ALLOWED_UPDATES = ["message", "callback_query"];
 const RUN_ONCE = process.env.RUN_ONCE === "1";
 const LEADER_WAIT_MS = 1000;
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 5000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,11 +43,13 @@ async function main() {
     generationStore,
     globalCodexSettingsStore,
     globalControlPanelStore,
+    globalPromptSuffixStore,
+    hostRegistryService,
     offsetStore,
     probe,
-    promptHandoffStore,
     runtimeObserver,
     rolloutCoordinationStore,
+    runTask,
     serviceState,
     sessionCompactor,
     sessionLifecycleManager,
@@ -91,9 +93,12 @@ async function main() {
     sessionCompactor,
     sessionLifecycleManager,
     spikeFinalEventStore,
+    globalPromptSuffixStore,
     globalCodexSettingsStore,
+    hostRegistryService,
     serviceGenerationId: serviceState.generationId,
     onRunTerminated: handleRunTerminated,
+    runTask,
   });
   const promptFragmentAssembler = new PromptFragmentAssembler();
   const queuePromptAssembler = new PromptFragmentAssembler();
@@ -114,7 +119,6 @@ async function main() {
     emergencyRouter,
     lifecycleManager: sessionLifecycleManager,
     promptFragmentAssembler,
-    promptHandoffStore,
     queuePromptAssembler,
     runtimeObserver,
     sessionService,
@@ -133,43 +137,18 @@ async function main() {
   });
   await forwardingServer.start();
   await generationStore.pruneStaleGenerations().catch(() => {});
-  const recoveredStaleSessions = await recoverStaleRunningSessions({
-    codexSessionsRoot: config.codexSessionsRoot,
-    generationStore,
-    sessionStore,
-    spikeFinalEventStore,
-  }).catch((error) => {
-    console.error(`stale run recovery failed: ${error.message}`);
-    return [];
-  });
-  if (recoveredStaleSessions.length > 0) {
-    console.warn(
-      `recovered ${recoveredStaleSessions.length} stale running session(s) at startup`,
-    );
-  }
   await generationStore.heartbeat({
     mode: "standby",
     ipcEndpoint: getForwardingEndpoint(),
   });
   serviceState.rolloutStatus = (await rolloutCoordinationStore.load()).status;
 
-  if (config.omniEnabled === false) {
-    const disabledSummary = await disableOmniStateAcrossSessions({
-      sessionStore,
-      promptHandoffStore,
-    });
-    if (disabledSummary.autoSessionsDisarmed > 0 || disabledSummary.handoffsCleared > 0) {
-      console.log(
-        `omni disabled: disarmed ${disabledSummary.autoSessionsDisarmed} session(s) and cleared ${disabledSummary.handoffsCleared} queued handoff(s)`,
-      );
-    }
-  }
-
   let currentOffset = null;
   await runtimeObserver.start({ currentOffset });
   let pollAbortController = null;
   let shutdownPromise = null;
   let stopRequested = false;
+  let staleRecoveryCompleted = false;
   const rolloutController = createRolloutController({
     config,
     createGenerationId: createReplacementGenerationId,
@@ -196,8 +175,6 @@ async function main() {
     getForwardingEndpoint,
     getPollAbortController: () => pollAbortController,
     isStopRequested: () => stopRequested,
-    promptHandoffStore,
-    promptFragmentAssembler,
     reconcileRolloutState,
     runtimeObserver,
     serviceState,
@@ -208,9 +185,29 @@ async function main() {
     workerPool,
   });
   const {
-    scanPendingOmniPrompts,
     scanPendingSpikeQueue,
   } = backgroundJobs;
+  const maybeRecoverStaleRunningSessions = async () => {
+    if (staleRecoveryCompleted) {
+      return;
+    }
+    staleRecoveryCompleted = true;
+    const recoveredStaleSessions = await recoverStaleRunningSessions({
+      codexGatewayBackend: config.codexGatewayBackend,
+      codexSessionsRoot: config.codexSessionsRoot,
+      generationStore,
+      sessionStore,
+      spikeFinalEventStore,
+    }).catch((error) => {
+      console.error(`stale run recovery failed: ${error.message}`);
+      return [];
+    });
+    if (recoveredStaleSessions.length > 0) {
+      console.warn(
+        `recovered ${recoveredStaleSessions.length} stale running session(s) after leadership acquisition`,
+      );
+    }
+  };
 
   const performShutdown = async () => {
     serviceState.retiring = true;
@@ -219,7 +216,8 @@ async function main() {
       () => promptFragmentAssembler.flushAll(),
       () => queuePromptAssembler.flushAll(),
       () => workerPool.shutdown({
-        interruptActiveRuns: false,
+        drainTimeoutMs: SHUTDOWN_DRAIN_TIMEOUT_MS,
+        interruptActiveRuns: true,
       }),
       () => emergencyRouter.shutdown(),
       () => forwardingServer.stop(),
@@ -287,11 +285,10 @@ async function main() {
           mode: "leader",
           ipcEndpoint: getForwardingEndpoint(),
         });
+        await maybeRecoverStaleRunningSessions();
         await ensureLongPollingReady(api, probe.webhookInfo);
         try {
-          await syncTelegramCommandCatalog(api, "spike", config.telegramForumChatId, {
-            omniEnabled: config.omniEnabled,
-          });
+          await syncTelegramCommandCatalog(api, "spike", config.telegramForumChatId);
         } catch (error) {
           console.warn(`Telegram command sync failed for Spike: ${error.message}`);
         }
@@ -325,7 +322,6 @@ async function main() {
               promptFragmentAssembler,
               queuePromptAssembler,
               runtimeObserver,
-              scanPendingOmniPrompts,
               scanPendingSpikeQueue,
               sessionLifecycleManager,
             });
@@ -342,7 +338,6 @@ async function main() {
           emergencyRouter,
           lifecycleManager: sessionLifecycleManager,
           promptFragmentAssembler,
-          promptHandoffStore,
           queuePromptAssembler,
           runtimeObserver,
           offsetStore,
@@ -363,7 +358,6 @@ async function main() {
             promptFragmentAssembler,
             queuePromptAssembler,
             runtimeObserver,
-            scanPendingOmniPrompts,
             scanPendingSpikeQueue,
             sessionLifecycleManager,
           });

@@ -427,6 +427,7 @@ export function buildZooRootMarkupPage(
     totalPages = 1,
   } = {},
 ) {
+  void language;
   const navigationRow = [];
   if (currentPage > 0) {
     navigationRow.push(
@@ -475,6 +476,7 @@ export function buildZooPetMarkup(petId, {
   canRemove = true,
   language = DEFAULT_UI_LANGUAGE,
 } = {}) {
+  void language;
   return {
     inline_keyboard: [
       [
@@ -506,6 +508,7 @@ export function buildZooPetMarkup(petId, {
 }
 
 export function buildZooRemoveConfirmMarkup(petId, language = DEFAULT_UI_LANGUAGE) {
+  void language;
   return {
     inline_keyboard: [
       [

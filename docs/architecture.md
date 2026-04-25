@@ -2,149 +2,121 @@
 
 ## Goal
 
-Expose the real local Codex runtime through Telegram forum topics without building a separate agent platform.
+Expose the real Codex runtime local to the selected execution host through Telegram forum topics without building a second agent platform.
 
 ## Core model
 
 - one Telegram topic maps to one session
 - one active run per topic at a time
-- one operator-only private chat acts as the emergency rescue lane
-- optional `/auto` adds a second trusted bot, `Omni`, in the same topic; Spike executes and Omni orchestrates
-- if Omni is disabled globally, Spike falls back to a plain single-bot surface and ignores stale topic auto locks
-- the gateway keeps durable topic memory under `state/.../sessions/<chat>/<topic>/`
-- the real model execution path is `codex app-server`, not a fake wrapper around static prompts
+- one worker bot: `Spike`
+- one topic keeps one immutable execution-host binding
+- if the bound host is unavailable, prompt start fails closed with an explicit host-named reply
+- state lives under `the configured state root/...`
+- the normal execution path is per-turn `codex exec --json`
+- the older `codex app-server` WebSocket transport remains available only as `CODEX_GATEWAY_BACKEND=app-server` plus `CODEX_ENABLE_LEGACY_APP_SERVER=1` fallback
+- operator private chat stays a separate emergency `codex exec` lane
 
-## Main flow
+## Main runtime flow
 
-1. `src/cli/run.js` polls Telegram updates and writes runtime heartbeat/events.
-   - the main poller now keeps button/callback responsiveness ahead of background maintenance: prompt-handoff scans stay on timers, retention sweep runs on its own timer, Codex limits are warmed once at startup instead of first being fetched on a button press, and callback batches are acknowledged immediately before the heavier serialized update handling continues
-   - the Spike runtime now also supports session-aware generation handoff: exactly one generation owns Telegram intake, active run topics stay pinned to their current generation, and a new generation can take idle/new topics immediately during rollout by forwarding retained-topic updates over local loopback IPC
-   - `src/cli/run-runtime-context.js` owns bootstrap-time runtime wiring, service construction, and store/layout setup
-   - `src/cli/run-update-processing.js` owns bootstrap offset discovery, long-poll readiness cleanup, and the forwarded-vs-local Telegram update processing path
-   - `src/cli/run-stale-run-recovery.js` owns startup cleanup for stale `running` sessions whose recorded owner generation is no longer verifiably live, preserves resumable Codex continuity when recovery still looks honest, recovers already-completed runs from rollout truth when possible, and emits synthetic failure only when the run really died without a recoverable finish surface
-   - `src/cli/run-background-jobs.js` owns heartbeats, queued-prompt scans, and retention sweep timers
-   - `src/cli/run-maintenance.js` owns the explicit one-shot maintenance path so `RUN_ONCE`/smoke mode does not depend on background timer races
-   - `src/cli/run-rollout-controller.js` owns rollout request/reconcile/retire control flow so the composition root stays focused on lifecycle orchestration instead of rollout detail
-2. The poll loop gives operator private-chat messages first chance to enter `src/emergency/`, which bypasses topic/session state and can launch one isolated `codex exec` repair run.
-3. `src/telegram/command-router.js` is the thin Telegram shell: it authenticates the configured operator, classifies message type, applies high-level policy, and dispatches into domain handlers.
-4. `src/telegram/command-handlers/` keeps the heavier command domains split by responsibility:
-   - `prompt-flow.js` is the thin public facade for prompt-ingress behavior
-   - `prompt-flow-common.js` owns shared prompt/queue text builders and pure prompt-shaping helpers
-   - `prompt-flow-starts.js` owns direct prompt starts, busy-to-steer delivery, and buffered prompt flush entrypoints
-   - `prompt-flow-queue.js` owns `/q` queue flow, queue buffering, queue attachment carry-over, and queue delivery text
-   - `prompt-flow-routing.js` owns prompt ingress pre-routing, `/q` command routing, Omni-disabled `/omni` feedback, and topic wait-window bridging
-   - `surface-commands.js` is the thin dispatcher for the text command surface
-   - `surface-reference-commands.js` owns `/help`, `/guide`, and suffix-help delivery
-   - `surface-settings-commands.js` owns `/status`, `/limits`, `/language`, `/wait`, `/suffix`, `/interrupt`, and runtime-setting surface flows
-   - `surface-command-common.js` owns the shared finalize/delivery helpers used by the surface handlers
-   - `runtime-settings.js` owns `/model`, `/reasoning`, `/omni_model`, and `/omni_reasoning`
-   - `control-panels.js` owns synthetic `/global` dispatch, pending reply routing for panel input, and control-panel callback fanout
-   - `control-surface.js` owns General cleanup and other cross-panel control-surface helpers such as `/clear`
-   - `session-ops.js` owns `/new`, `/diff`, `/compact`, `/purge`, and their background follow-up delivery
-   - `topic-commands.js` owns topic-scoped status text builders for wait/language/suffix/new/diff/compact/purge flows
-5. The panel layer also follows the same split:
-   - `src/telegram/global-control-panel.js` keeps the General `/global` public shell: command entrypoints, callback routing, and domain fanout
-   - `src/telegram/global-control-panel-view.js` owns the global panel view/schema side: screen text, inline keyboards, callback codec, and render-time data loading
-   - `src/telegram/global-control-panel-lifecycle.js` owns General-menu message lifecycle, unchanged refresh behavior, and panel refresh rendering
-   - `src/telegram/global-control-panel-actions.js` owns direct global-panel mutations for wait, suffix, model, and reasoning actions
-   - `src/telegram/global-control-panel-input.js` owns pending-input start/clear flows and reply-based global panel input handling
-   - `src/telegram/global-control-panel-common.js` keeps the shared global-panel helpers such as callback auth shaping, serialized mutation chains, status sends, and edit-state helpers
-   - `src/telegram/topic-control-panel.js` keeps the topic `/menu` public shell: command entrypoints, callback routing, and domain fanout
-   - `src/telegram/topic-control-panel-view.js` owns the topic panel view/schema side: screen text, inline keyboards, callback codec, and data loading for render-time state
-   - `src/telegram/topic-control-panel-lifecycle.js` owns topic-menu message lifecycle, pin/delete cleanup, recreate-on-unchanged behavior, and panel refresh rendering
-   - `src/telegram/topic-control-panel-actions.js` owns direct topic-panel mutations for wait, suffix, model, reasoning, and language actions
-   - `src/telegram/topic-control-panel-input.js` owns pending-input start/clear flows and reply-based topic panel input handling
-   - `src/telegram/topic-control-panel-common.js` keeps the shared topic-panel helpers such as callback auth shaping, serialized mutation chains, status sends, and safe delete/pin helpers
-6. `src/session-manager/` resolves the topic session, workspace binding, suffixes, wait-mode state, exchange log, compact brief, and topic context file.
-   - `src/session-manager/session-service.js` keeps the stable public session facade used by the Telegram, Omni, Zoo, and CLI surfaces
-   - `src/session-manager/session-auto-mode-service.js` owns topic `auto_mode` mutations and always computes them from the latest locked session state before save
-   - `src/session-manager/session-store.js` is the thin public facade for the file-backed session store
-   - `src/session-manager/session-store-lifecycle.js` owns lock-aware meta mutations, save semantics, reactivation, parking, and purge flows
-   - `src/session-manager/session-store-files.js` owns exchange-log IO, artifact writes, compact-state reads, and generic session file helpers
-   - `src/session-manager/session-store-meta.js` owns meta normalization, ownership shaping, runtime defaults, and purge-stub shaping
-   - `src/session-manager/session-store-io.js` owns meta/text reads, exchange-log normalization, and artifact file naming
-   - `src/session-manager/session-store-common.js` is now the thin shared facade for meta-lock constants and session-store helper re-exports
-7. The worker layer now follows the same shell-plus-domain split:
-   - `src/pty-worker/worker-pool.js` is the thin public shell that keeps the exported `CodexWorkerPool` surface stable
-   - `src/pty-worker/worker-pool-transport.js` owns progress bubbles, typing heartbeats, and live steer buffering/flush behavior, including the short retry window before follow-up fallback
-   - `src/pty-worker/worker-pool-delivery.js` owns final reply delivery, transient final-send retry/fallback behavior, Telegram file delivery, and Spike final-event emission
-   - `src/pty-worker/worker-pool-lifecycle.js` owns run startup, native-history resume repair, lifecycle persistence, interrupts, shutdown coordination, and the eventual fresh-thread recovery path for live-steer and ordinary upstream-aborted runs
-   - `src/pty-worker/worker-pool-common.js` keeps the shared worker contracts and pure helpers that really cross those slices
-8. The `codex-runner` layer now follows the same shell-plus-domain split:
-   - `src/pty-worker/codex-runner.js` is the thin public facade for `runCodexTask`: child lifecycle wiring, turn orchestration, steer buffering, short late-final grace after `turn/completed`, live rollout `task_complete` fallback, and finish/fail coordination
-   - `src/pty-worker/codex-runner-common.js` keeps shared runner helpers such as warning filtering, child-exit checks, and event summarization
-   - `src/pty-worker/codex-runner-transport.js` owns app-server startup wait, websocket connect, and JSON-RPC transport behavior
-   - `src/pty-worker/codex-runner-recovery.js` owns rollout replay parsing, summary dedupe tracking, live `task_complete` watching, and post-disconnect fallback recovery
-9. `src/cli/run-omni.js` plus `src/omni/` optionally run a second Telegram bot that owns `/auto`, records the goal, forwards prompts to Spike, and wakes only when Spike appends a final-event checkpoint for a completed run.
-   - `src/omni/coordinator.js` is now the thin public facade for `OmniCoordinator`
-   - `src/omni/coordinator-memory.js` owns coordinator-side memory seeding, patching, and auto-compact bookkeeping on top of `memory.js`
-   - `src/omni/memory.js` keeps the small file-backed topic memory store and applies patch operations from the latest locked state so overlapping Omni updates do not overwrite fresher memory
-   - `src/omni/coordinator-delivery.js` owns Telegram delivery, operator-input shaping, Spike handoff queueing, and shutdown/interrupt delivery mechanics
-   - `src/omni/coordinator-decision-flow.js` owns Omni evaluation, sleep/block/continue orchestration, and resume scans
-   - `src/omni/coordinator-common.js` keeps the small shared coordinator helpers and command/query classification helpers
-10. `src/zoo/` now follows the same shell-plus-domain split:
-   - `src/zoo/service.js` is the thin public facade for `ZooService`
-   - `src/zoo/service-menu.js` owns Zoo topic provisioning, callback-backed topic-state recovery, menu payload building, and menu edit/send/pin flow
-   - `src/zoo/service-add-flow.js` owns add-project replies, workspace lookup, confirmation, and pet-display-name reconciliation
-   - `src/zoo/service-refresh.js` owns callback-side refresh/remove actions, stale-pet cleanup, and animation ticker lifecycle
-   - `src/zoo/service-common.js` keeps the shared Zoo text helpers, callback parsing, safe delete/pin helpers, and canonical path/name helpers
+1. `src/cli/run.js` is the composition root.
+   - bootstraps runtime context, stores, lifecycle services, background jobs, and rollout wiring
+   - polls Telegram updates
+   - emits heartbeat and structured runtime events
+2. `src/cli/run-update-processing.js` handles offset bootstrap, forwarded-vs-local dispatch, and callback ack fast paths.
+3. `src/telegram/command-router.js` is the thin Telegram shell.
+   - auth
+   - classify message / callback / topic context
+   - dispatch into domain handlers
+4. `src/telegram/command-handlers/` owns the Telegram surface by domain:
+   - `prompt-flow*.js` plus `prompt-flow/` — direct prompts, `/q`, wait-window bridging, buffering, and backend-aware busy behavior
+   - `surface-reference-commands.js` plus `surface-reference/` — `/help`, `/guide`, suffix help, help-card delivery
+   - `surface-settings-commands.js` plus `surface-settings/` and `runtime-settings/` — `/status`, `/limits`, `/language`, `/wait`, `/suffix`, `/interrupt`, model/reasoning settings
+   - `session-ops.js` plus `session-ops/` — `/new`, `/diff`, `/compact`, `/purge`
+   - `control-panels.js` plus `global-control-panel*/topic-control-panel*` — `/global`, `/menu`, single-menu-first text input, callback fanout
+5. `src/telegram/global-control-panel*` and `src/telegram/topic-control-panel*` now split shell, lifecycle, command/callback handling, pending-input flow, actions, and view/schema logic.
+6. `src/session-manager/` owns session state.
+   - `session-service.js` is the stable public facade over binding, attachments, prompt queue, prompt surface, runtime settings, and context services
+   - `session-store*.js` owns meta normalization, file IO, lifecycle mutations, and locking
+   - `session-compactor.js` plus `session-compactor/` own recovery-brief compaction source selection, prompt shaping, and Codex summarizer runs
+   - prompt suffix, runtime settings, queue, and topic-context rendering live here too
+7. `src/pty-worker/` owns worker orchestration, delivery, backend selection, busy/queue handling, remote execution routing, and fallback app-server lifecycle.
+   - `worker-pool.js` is the stable public shell
+   - `worker-pool-transport.js` handles progress bubbles, typing, and backend-aware busy behavior
+   - `worker-pool-delivery.js` handles final reply delivery, telegram-file sends, and Spike final events
+   - `worker-pool-lifecycle.js` is now the lifecycle facade over startup, attempt/recovery, finalize, and shutdown stage modules
+8. `src/codex-exec/telegram-exec-runner.js` owns the default exec backend.
+   - fresh turn: `codex exec --json --dangerously-bypass-approvals-and-sandbox -C <cwd> -`
+   - continuation: `codex exec --json --dangerously-bypass-approvals-and-sandbox -C <cwd> resume <thread_id> -`
+   - remote turn: direct `ssh -T <host> '<codex>' exec --json ...`, with the prompt on stdin
+   - the first `thread.started.thread_id` is persisted as `session.codex_thread_id`
+   - only main-run natural-language `agent_message` progress notes and `reasoning` items become Telegram-visible progress; plan/todo, file-change, tool, web-search, command, and collab/subagent items stay internal
+9. `src/pty-worker/codex-runner*.js` owns the fallback app-server transport, JSON-RPC turn lifecycle, websocket reattach, rollout replay fallback, steer buffering, startup bootstrap, and completion recovery through focused stage modules.
+10. `src/codex-runtime/limits/` owns limits snapshot normalization, formatting, and source/service resolution.
+11. `src/telegram/guidebook/` owns guidebook/runbook markdown parsing, font resolution, PDF layout/rendering, and rasterization.
+12. `src/zoo/` owns the dedicated Zoo topic and pet/menu flows.
+13. `src/emergency/` owns the isolated private-chat rescue lane.
 
-## Modular Direction
+## Prompt and context model
 
-This repo now explicitly follows a modular-first handler model.
-
-- keep central shells thin; they should classify, gate, and dispatch, not accumulate domain logic
-- keep Telegram command behavior in domain handlers under `src/telegram/command-handlers/`
-- keep panel render/schema code separate from panel mutation/lifecycle code once a panel grows beyond one screen
-- when a handler grows a second heavy responsibility, split it by domain before it turns back into a hub
-- keep tests aligned with the same ownership boundaries instead of pushing everything back into router-sized suites
-- use shared helper modules for real cross-domain contracts, not as a dumping ground for unrelated code
-
-## Current watchlist
-
-- `src/cli/run.js` is now a lighter composition root, but keep signal handling, abort ownership, and shutdown sequencing there instead of smearing that lifecycle across helpers.
-- keep `src/cli/run-background-jobs.js` and `src/cli/run-rollout-controller.js` narrow; they should stay as small closure-based runtime slices, not turn into second-stage monoliths.
-- the session-store boundary is healthier now, but keep new persistence logic split between `session-store-lifecycle.js`, `session-store-files.js`, `session-store-meta.js`, and `session-store-io.js` instead of letting one helper file regrow into the next storage monolith.
-   - `src/pty-worker/worker-pool-lifecycle.js` is intentionally the run-lifecycle owner, but new steer or delivery behavior should stay in `worker-pool-transport.js` and `worker-pool-delivery.js` unless it truly belongs to lifecycle coordination
-- `src/telegram/global-control-panel-view.js` and `src/telegram/topic-control-panel-view.js` are still the heaviest view modules; keep new callback/input/lifecycle behavior in their existing sibling modules so the views stay render-focused.
-
-## Transport behavior
-
-- a normal prompt starts a Codex turn through `app-server`
-- repeated follow-up prompts that land while the run is still active are sent into that same live turn through `turn/steer`; short transient steer failures are retried before the gateway falls back to the next prompt queue
-- if upstream aborts the active turn, the worker pool now first retries the same top-level run on the same Codex thread and only falls back to a fresh-thread rebuild when there is no usable thread to resume; accepted steer image inputs are replayed into live-steer recovery attempts as real `localImage` items, and missing local continuity metadata is repaired from Codex history surfaces such as `thread/list`, `provider_session_id`, rollout metadata, and `session_key` before the worker gives up
-- button-driven control-panel and status surfaces prefer cached Codex limits immediately and refresh them in the background instead of stalling a menu redraw on a slow limits source
-- button presses now also clear Telegram's callback spinner on a per-batch fast path before the full message/callback business logic finishes, so button pickup stays snappy even when the batch still has heavier work behind it
-- service rollout is now per-topic rather than whole-process drain: a retiring generation keeps only the topics that already had an active run, while the replacement generation becomes the intake leader for everything else
-- generation liveness for rollout/forwarding is verified through the advertised loopback IPC identity, not only by pid plus heartbeat TTL, so fast pid reuse is much less likely to fool ownership checks
-- if the websocket transport drops, the gateway first tries to reattach the same live app-server websocket and resume the same thread; if that still fails, or native Windows leaves the websocket alive without a terminal event, the rollout file remains the final completion fallback
-- progress is commentary-oriented; command output and transport bookkeeping are not meant to become user-facing progress text
-- the emergency lane uses one-shot `codex exec`, not `app-server`, and does not depend on topic routing/session continuity
-- Omni also uses short one-shot `codex exec` evaluations instead of a second live `app-server` stack; the only heavy live worker remains Spike
-- while an emergency repair run is active, normal operator prompts in topics are blocked so the rescue path stays isolated from live topic runs
-- when `OMNI_ENABLED=false`, the Omni runtime may stay stopped, or idle if its user service is still installed
+- stable per-topic routing and file-delivery context is rendered as a host-aware `Context:` block for every run
+- exec-json prepends that block to stdin before the rendered `User Prompt:`; the fallback app-server path sends the same block as `baseInstructions`
+- effective saved `Work Style` is appended to that context block too
+- the visible user-turn body is intentionally small and only carries `User Prompt:`
+- `Context:` names the bound host, execution cwd, `/workspace/workspace` MCP mirror root, Telegram delivery roots, shared operator memory, and bound-host memory
+- runtime profile resolution uses the current Codex catalog, while model menus expose only the list-visible subset; for host-bound topics the catalog comes from the current host config directly or a mirrored remote-host `models_cache.json` snapshot when available
+- `telegram-topic-context.md` remains a control-plane artifact, not the main runtime source of truth for remote runs
 
 ## Session memory
 
 Canonical durable surfaces:
 
 - `meta.json` — topic/session metadata
-- `meta.json:auto_mode` — topic-scoped Omni/Spike lock and autonomy state
-- `exchange-log.jsonl` — durable raw prompt/final-reply history
-- `active-brief.md` — derived recovery summary with enough continuity for a fresh post-compact or post-recovery run
-- `telegram-topic-context.md` — compact routing/file-delivery contract for Codex
-- `artifacts/` — generated diffs and related outputs
-- `state/.../emergency/` — isolated rescue-lane scratch space for downloaded private-chat attachments and `codex exec` output files
-- `state/.../omni/runs/` — one-shot `codex exec` outputs for Omni decisions
+- `exchange-log.jsonl` — append-only user prompt + final reply history
+- `progress-notes.jsonl` — append-only main-run natural-language progress notes used as recovery hints
+- `exec-json-run.jsonl` — transient latest exec-json turn mirror used by stale-run recovery to salvage already-emitted final answers
+- `active-brief.md` — derived recovery brief used after `/compact` or explicit recovery
+- `telegram-topic-context.md` — local control-plane topic context copy
+- `spike-prompt-queue.json` — `/q` FIFO queue
+- `incoming/` — downloaded topic attachments
+- `artifacts/` — diff snapshots and similar outputs
 
-The gateway does not treat raw PTY output or full tool chatter as canonical memory.
+The gateway does not treat raw Codex event/tool chatter or fallback app-server/PTY output as canonical memory. Progress notes are intentionally narrower: only Telegram-visible main-run natural-language notes are persisted, so compact/crash recovery can recover current work without storing hidden reasoning or orchestration noise.
+
+## Codex backend contract
+
+`CODEX_GATEWAY_BACKEND` accepts:
+
+- `exec-json` — default; one clean `codex exec --json` process per turn
+- `app-server` — temporary fallback for legacy WebSocket/live-steer debugging; rejected unless `CODEX_ENABLE_LEGACY_APP_SERVER=1`
+
+Exec backend behavior:
+
+- prompt text is written to stdin; the prompt is never shell-quoted into the command line
+- child Codex processes receive a scrubbed allowlisted environment, not the gateway's Telegram/state/host-registry secrets
+- `-p` is never used as a prompt flag; it belongs to Codex profiles
+- cwd is passed with `-C`
+- local and remote image paths are passed as `-i`
+- runtime model/reasoning/context-pressure knobs are passed as `-c` overrides
+- continuity is `codex_thread_id` only; fallback app-server provider ids, rollout paths, and snapshot `session_id` values are ignored or cleared in the default path
+- startup stale-run recovery runs only after the instance has the intake-leader lease, rechecks ownership under the session meta lock, and may read `exec-json-run.jsonl` for an already-finished default-backend turn
+- busy-topic plain follow-ups are accepted as live steer: the active exec process is interrupted and the same logical run resumes with the merged prompt; child exits caused by the requested steer are classified as upstream interruption/recovery, not as incomplete-stream crashes, unless Codex emitted an explicit fatal JSONL event
+- context-window exhaustion gets one recovery attempt: compact the topic into `active-brief.md`, clear stale continuity, and retry once as a fresh exec-json thread. Source selection is in `docs/state-contract.md`: small logs use the full exchange log, small logs with pending progress notes use a full `compaction-source.md`, and oversized logs use bounded recent/progress/high-signal/checkpoint slices.
+- gateway recovery does not depend on injecting `/compact` into `codex exec --json resume`; that path is not treated as a stable noninteractive CLI control API
+- visible progress is sourced from main-run natural-language `agent_message` progress notes and `reasoning` items
+- plan/todo, file-change, tool, web-search, command, and collab/subagent events stay internal
+- recovery/retry state is emitted to runtime events, not as synthetic Telegram thought text
+- remote runs keep the SSH connection open for the turn; a durable spooler is a future improvement, not part of the MVP
+
+Fallback app-server behavior:
+
+- protocol commentary agent messages may still drive progress while debugging that backend
+- command/tool/file/subagent activity must remain internal and must not be rendered as thoughts
 
 ## Operational boundaries
 
-- Telegram remains the only user-facing transport in this repo
-- service runtime/state lives under the configured local state root, not inside the repo
-- file delivery is intentionally restricted to the current worktree, the session state directory, and the system temp dir
-- the service is intentionally single-operator in this phase
-- emergency mode is on-demand only: writing in operator private chat starts one isolated rescue run, and the lock disappears automatically when that run finishes or is interrupted
-- in an active `/auto` topic, direct human prompts stop at Omni; Spike accepts prompt-starts there only from trusted Omni bot senders
-- if Omni is disabled at the deployment level, those topic-scoped `auto_mode` locks become inert until Omni is re-enabled
+- Telegram is the only user-facing transport in this repo
+- service runtime/state lives under `the configured state root/...`, not in source
+- file delivery is intentionally restricted to safe roots: local worktree/session state, or translated remote worktree/cwd roots for host-bound topics
+- service rollout is per-topic and ownership-aware
+- fallback app-server graceful exit after a final answer is normal completion; before a final answer it is recovered through the resume path instead of being reported as `exited with code 0`
+- the gateway is intentionally single-bot now; removed legacy autonomy metadata is stripped or ignored during normalization

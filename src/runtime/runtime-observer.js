@@ -1,8 +1,7 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { writeTextAtomic } from "../state/file-utils.js";
+import { appendTextFile, writeTextAtomic } from "../state/file-utils.js";
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -86,11 +85,9 @@ export class RuntimeObserver {
   }
 
   async appendEvent(type, details = {}) {
-    await fs.mkdir(this.logsDir, { recursive: true });
-    await fs.appendFile(
+    await appendTextFile(
       this.eventsPath,
       `${JSON.stringify(buildEvent(type, details))}\n`,
-      "utf8",
     );
   }
 

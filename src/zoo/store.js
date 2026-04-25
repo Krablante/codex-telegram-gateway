@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   cloneJson,
+  ensurePrivateDirectory,
   quarantineCorruptFile,
   writeTextAtomic,
 } from "../state/file-utils.js";
@@ -248,7 +249,7 @@ export function buildPetIdFromPath(resolvedPath) {
     .slice(0, 12);
 }
 
-export function pickCreatureKind(seed) {
+function pickCreatureKind(seed) {
   const digest = crypto
     .createHash("sha1")
     .update(String(seed || ""))
@@ -282,9 +283,9 @@ export class ZooStore {
   }
 
   async ensureBaseDirs() {
-    await fs.mkdir(this.root, { recursive: true });
-    await fs.mkdir(this.petsDir, { recursive: true });
-    await fs.mkdir(this.runsDir, { recursive: true });
+    await ensurePrivateDirectory(this.root);
+    await ensurePrivateDirectory(this.petsDir);
+    await ensurePrivateDirectory(this.runsDir);
   }
 
   async loadTopic({ force = false } = {}) {
@@ -360,14 +361,14 @@ export class ZooStore {
     }
 
     const filePath = this.getPetFilePath(normalized.pet_id);
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await ensurePrivateDirectory(path.dirname(filePath));
     await writeTextAtomic(filePath, `${JSON.stringify(normalized, null, 2)}\n`);
     return cloneJson(normalized);
   }
 
   async listPets() {
     await this.ensureBaseDirs();
-    let entries = [];
+    let entries;
     try {
       entries = await fs.readdir(this.petsDir, { withFileTypes: true });
     } catch (error) {
@@ -443,8 +444,8 @@ export class ZooStore {
 
     const latestPath = this.getLatestSnapshotPath(petId);
     const historyDir = this.getSnapshotHistoryDir(petId);
-    await fs.mkdir(path.dirname(latestPath), { recursive: true });
-    await fs.mkdir(historyDir, { recursive: true });
+    await ensurePrivateDirectory(path.dirname(latestPath));
+    await ensurePrivateDirectory(historyDir);
     const text = `${JSON.stringify(normalized, null, 2)}\n`;
     await writeTextAtomic(latestPath, text);
     await writeTextAtomic(

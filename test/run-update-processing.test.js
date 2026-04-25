@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import {
   bootstrapOffset,
   createForwardingRequestHandler,
-  noteOffsetSafe,
   processUpdates,
 } from "../src/cli/run-update-processing.js";
+import { withSuppressedConsole } from "../test-support/console-fixtures.js";
 
 test("bootstrapOffset returns the stored offset without probing Telegram again", async () => {
   const result = await bootstrapOffset({
@@ -58,6 +58,35 @@ test("bootstrapOffset drops the latest pending update when no offset exists yet"
   assert.equal(serviceState.bootstrapDroppedUpdateId, 9001);
 });
 
+test("createForwardingRequestHandler accepts legacy tokenless generation probes", async () => {
+  const handler = createForwardingRequestHandler({
+    generationId: "gen-new",
+    instanceToken: "token-new",
+  });
+
+  assert.deepEqual(await handler({ type: "generation-probe" }), {
+    generation_id: "gen-new",
+    instance_token: "token-new",
+  });
+  assert.deepEqual(
+    await handler({
+      type: "generation-probe",
+      instance_token: "token-new",
+    }),
+    {
+      generation_id: "gen-new",
+      instance_token: "token-new",
+    },
+  );
+  await assert.rejects(
+    handler({
+      type: "generation-probe",
+      instance_token: "wrong-token",
+    }),
+    /Unauthorized forwarded spike probe/u,
+  );
+});
+
 test("processUpdates forwards foreign-owned updates and handles local ones in order", async () => {
   const savedOffsets = [];
   const notedOffsets = [];
@@ -96,6 +125,7 @@ test("processUpdates forwards foreign-owned updates and handles local ones in or
             type: "forward",
             ownerGeneration: {
               ipc_endpoint: "http://127.0.0.1:9",
+              instance_token: "owner-token-41",
             },
           }
         : { type: "local" },
@@ -123,14 +153,14 @@ test("processUpdates forwards foreign-owned updates and handles local ones in or
       {
         update_id: 41,
         message: {
-          chat: { id: -1003577434463 },
+          chat: { id: -1001234567890 },
           message_thread_id: 700,
         },
       },
       {
         update_id: 42,
         message: {
-          chat: { id: -1003577434463 },
+          chat: { id: -1001234567890 },
           message_thread_id: 701,
         },
       },
@@ -143,6 +173,7 @@ test("processUpdates forwards foreign-owned updates and handles local ones in or
   assert.equal(serviceState.lastUpdateId, 42);
   assert.equal(serviceState.handledUpdates, 2);
   assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].authToken, "owner-token-41");
   assert.equal(forwarded[0].payload.type, "spike-update");
   assert.equal(forwarded[0].payload.update.update_id, 41);
   assert.deepEqual(localUpdates, [42]);
@@ -199,6 +230,427 @@ test("processUpdates defers batch callback acks for control-panel callbacks", as
   assert.deepEqual(ackedUpdateIds, [53]);
 });
 
+test("processUpdates recovers locally when forwarding to a retiring owner times out", async () => {
+  const patchedSessions = [];
+  const localUpdates = [];
+  const savedOffsets = [];
+
+  const nextOffset = await withSuppressedConsole("warn", () => processUpdates({
+    api: {
+      async sendMessage() {
+        return { ok: true };
+      },
+      async answerCallbackQuery() {
+        return { ok: true };
+      },
+    },
+    ackBatchCallbackQueriesImpl: async () => {},
+    botUsername: "gatewaybot",
+    config: {},
+    emergencyRouter: null,
+    forwardUpdateImpl: async () => {
+      throw new Error("IPC request timed out");
+    },
+    dispatchSpikeUpdateLocallyImpl: async ({ update }) => {
+      localUpdates.push(update.update_id);
+    },
+    handleSpikeUpdateImpl: async () => {},
+    lifecycleManager: null,
+    promptFragmentAssembler: null,
+    queuePromptAssembler: null,
+    resolveSpikeUpdateRouteImpl: async () => ({
+      type: "forward",
+      session: {
+        chat_id: "-1001234567890",
+        topic_id: "2203",
+        session_owner_generation_id: "gen-old",
+        session_owner_mode: "retiring",
+      },
+      ownerGeneration: {
+        ipc_endpoint: "http://127.0.0.1:9",
+      },
+    }),
+    runtimeObserver: null,
+    offsetStore: {
+      async save(value) {
+        savedOffsets.push(value);
+      },
+    },
+    sessionStore: {
+      async patch(session, patch) {
+        patchedSessions.push({ session, patch });
+        return { ...session, ...patch };
+      },
+    },
+    sessionService: {},
+    globalControlPanelStore: {},
+    generalMessageLedgerStore: {},
+    topicControlPanelStore: {},
+    zooService: {},
+    workerPool: {},
+    serviceState: {
+      lastUpdateId: null,
+      handledUpdates: 0,
+    },
+    generationId: "gen-new",
+    generationStore: {},
+    updates: [
+      {
+        update_id: 61,
+        message: {
+          chat: { id: -1001234567890 },
+          message_thread_id: 2203,
+        },
+      },
+    ],
+  }));
+
+  assert.equal(nextOffset, 62);
+  assert.deepEqual(savedOffsets, [62]);
+  assert.deepEqual(localUpdates, [61]);
+  assert.equal(patchedSessions.length, 1);
+  assert.deepEqual(patchedSessions[0].patch, {
+    session_owner_generation_id: null,
+    session_owner_mode: null,
+    session_owner_claimed_at: null,
+    spike_run_owner_generation_id: null,
+  });
+});
+
+test("processUpdates terminates a stuck retiring owner before local takeover of a running session", async () => {
+  const localUpdates = [];
+  const patchedSessions = [];
+  const terminatedOwners = [];
+
+  await withSuppressedConsole("warn", () => processUpdates({
+    api: {
+      async sendMessage() {
+        return { ok: true };
+      },
+      async answerCallbackQuery() {
+        return { ok: true };
+      },
+    },
+    ackBatchCallbackQueriesImpl: async () => {},
+    botUsername: "gatewaybot",
+    config: {},
+    emergencyRouter: null,
+    forwardUpdateImpl: async () => {
+      throw new Error("IPC request timed out");
+    },
+    dispatchSpikeUpdateLocallyImpl: async ({ update }) => {
+      localUpdates.push(update.update_id);
+    },
+    handleSpikeUpdateImpl: async () => {},
+    lifecycleManager: null,
+    promptFragmentAssembler: null,
+    queuePromptAssembler: null,
+    resolveSpikeUpdateRouteImpl: async () => ({
+      type: "forward",
+      session: {
+        chat_id: "-1001234567890",
+        topic_id: "2203",
+        last_run_status: "running",
+        session_owner_generation_id: "gen-old",
+        session_owner_mode: "retiring",
+      },
+      ownerGeneration: {
+        generation_id: "gen-old",
+        pid: 90210,
+        ipc_endpoint: "http://127.0.0.1:9",
+      },
+    }),
+    runtimeObserver: null,
+    offsetStore: {
+      async save() {},
+    },
+    sessionStore: {
+      async patch(session, patch) {
+        patchedSessions.push({ session, patch });
+        return { ...session, ...patch };
+      },
+    },
+    sessionService: {},
+    globalControlPanelStore: {},
+    generalMessageLedgerStore: {},
+    topicControlPanelStore: {},
+    zooService: {},
+    workerPool: {},
+    serviceState: {
+      lastUpdateId: null,
+      handledUpdates: 0,
+    },
+    generationId: "gen-new",
+    generationStore: {},
+    terminateRetiringOwnerImpl: async (ownerGeneration) => {
+      terminatedOwners.push(ownerGeneration);
+      return true;
+    },
+    updates: [
+      {
+        update_id: 62,
+        message: {
+          text: "/interrupt",
+          entities: [{ type: "bot_command", offset: 0, length: 10 }],
+          chat: { id: -1001234567890 },
+          message_thread_id: 2203,
+        },
+      },
+    ],
+  }));
+
+  assert.equal(terminatedOwners.length, 1);
+  assert.equal(terminatedOwners[0].pid, 90210);
+  assert.deepEqual(localUpdates, [62]);
+  assert.equal(patchedSessions.length, 1);
+});
+
+test("processUpdates still allows safe topic-panel navigation callback takeover when a running retiring owner cannot be terminated", async () => {
+  const localUpdates = [];
+
+  await withSuppressedConsole("warn", () => processUpdates({
+    api: {
+      async sendMessage() {
+        return { ok: true };
+      },
+      async answerCallbackQuery() {
+        return { ok: true };
+      },
+    },
+    ackBatchCallbackQueriesImpl: async () => {},
+    botUsername: "gatewaybot",
+    config: {},
+    emergencyRouter: null,
+    forwardUpdateImpl: async () => {
+      throw new Error("IPC request timed out");
+    },
+    dispatchSpikeUpdateLocallyImpl: async ({ update }) => {
+      localUpdates.push(update.update_id);
+    },
+    handleSpikeUpdateImpl: async () => {},
+    lifecycleManager: null,
+    promptFragmentAssembler: null,
+    queuePromptAssembler: null,
+    resolveSpikeUpdateRouteImpl: async () => ({
+      type: "forward",
+      session: {
+        chat_id: "-1001234567890",
+        topic_id: "2203",
+        last_run_status: "running",
+        session_owner_generation_id: "gen-old",
+        session_owner_mode: "retiring",
+      },
+      ownerGeneration: {
+        generation_id: "gen-old",
+        pid: 90212,
+        ipc_endpoint: "http://127.0.0.1:9",
+      },
+    }),
+    runtimeObserver: null,
+    offsetStore: {
+      async save() {},
+    },
+    sessionStore: {
+      async patch(session, patch) {
+        return { ...session, ...patch };
+      },
+    },
+    sessionService: {},
+    globalControlPanelStore: {},
+    generalMessageLedgerStore: {},
+    topicControlPanelStore: {},
+    zooService: {},
+    workerPool: {},
+    serviceState: {
+      lastUpdateId: null,
+      handledUpdates: 0,
+    },
+    generationId: "gen-new",
+    generationStore: {},
+    terminateRetiringOwnerImpl: async () => false,
+    updates: [
+      {
+        update_id: 64,
+        callback_query: {
+          id: "cbq-safe-topic-nav",
+          data: "tcfg:n:root",
+          from: { id: 123456789, is_bot: false },
+          message: {
+            chat: { id: -1001234567890 },
+            message_thread_id: 2203,
+          },
+        },
+      },
+    ],
+  }));
+
+  assert.deepEqual(localUpdates, [64]);
+});
+
+test("processUpdates refuses unsafe local takeover when a running retiring owner cannot be terminated", async () => {
+  await withSuppressedConsole("warn", () => assert.rejects(
+    () =>
+      processUpdates({
+        api: {
+          async sendMessage() {
+            return { ok: true };
+          },
+          async answerCallbackQuery() {
+            return { ok: true };
+          },
+        },
+        ackBatchCallbackQueriesImpl: async () => {},
+        botUsername: "gatewaybot",
+        config: {},
+        emergencyRouter: null,
+        forwardUpdateImpl: async () => {
+          throw new Error("IPC request timed out");
+        },
+        dispatchSpikeUpdateLocallyImpl: async () => {
+          throw new Error("should not recover locally");
+        },
+        handleSpikeUpdateImpl: async () => {},
+        lifecycleManager: null,
+        promptFragmentAssembler: null,
+        queuePromptAssembler: null,
+        resolveSpikeUpdateRouteImpl: async () => ({
+          type: "forward",
+          session: {
+            chat_id: "-1001234567890",
+            topic_id: "2203",
+            last_run_status: "running",
+            session_owner_generation_id: "gen-old",
+            session_owner_mode: "retiring",
+          },
+          ownerGeneration: {
+            generation_id: "gen-old",
+            pid: 90211,
+            ipc_endpoint: "http://127.0.0.1:9",
+          },
+        }),
+        runtimeObserver: null,
+        offsetStore: {
+          async save() {
+            throw new Error("should not save offset after failed takeover");
+          },
+        },
+        sessionStore: {
+          async patch() {
+            throw new Error("should not clear ownership");
+          },
+        },
+        sessionService: {},
+        globalControlPanelStore: {},
+        generalMessageLedgerStore: {},
+        topicControlPanelStore: {},
+        zooService: {},
+        workerPool: {},
+        serviceState: {
+          lastUpdateId: null,
+          handledUpdates: 0,
+        },
+        generationId: "gen-new",
+        generationStore: {},
+        terminateRetiringOwnerImpl: async () => false,
+        updates: [
+          {
+            update_id: 63,
+            message: {
+              text: "plain user prompt",
+              chat: { id: -1001234567890 },
+              message_thread_id: 2203,
+            },
+          },
+        ],
+      }),
+    /could not be terminated safely before local takeover/u,
+  ));
+});
+
+test("processUpdates refuses unsafe callback takeover when a running retiring owner cannot be terminated", async () => {
+  await withSuppressedConsole("warn", () => assert.rejects(
+    () =>
+      processUpdates({
+        api: {
+          async sendMessage() {
+            return { ok: true };
+          },
+          async answerCallbackQuery() {
+            return { ok: true };
+          },
+        },
+        ackBatchCallbackQueriesImpl: async () => {},
+        botUsername: "gatewaybot",
+        config: {},
+        emergencyRouter: null,
+        forwardUpdateImpl: async () => {
+          throw new Error("IPC request timed out");
+        },
+        dispatchSpikeUpdateLocallyImpl: async () => {
+          throw new Error("should not recover locally");
+        },
+        handleSpikeUpdateImpl: async () => {},
+        lifecycleManager: null,
+        promptFragmentAssembler: null,
+        queuePromptAssembler: null,
+        resolveSpikeUpdateRouteImpl: async () => ({
+          type: "forward",
+          session: {
+            chat_id: "-1001234567890",
+            topic_id: "2203",
+            last_run_status: "running",
+            session_owner_generation_id: "gen-old",
+            session_owner_mode: "retiring",
+          },
+          ownerGeneration: {
+            generation_id: "gen-old",
+            pid: 90213,
+            ipc_endpoint: "http://127.0.0.1:9",
+          },
+        }),
+        runtimeObserver: null,
+        offsetStore: {
+          async save() {
+            throw new Error("should not save offset after failed takeover");
+          },
+        },
+        sessionStore: {
+          async patch() {
+            throw new Error("should not clear ownership");
+          },
+        },
+        sessionService: {},
+        globalControlPanelStore: {},
+        generalMessageLedgerStore: {},
+        topicControlPanelStore: {},
+        zooService: {},
+        workerPool: {},
+        serviceState: {
+          lastUpdateId: null,
+          handledUpdates: 0,
+        },
+        generationId: "gen-new",
+        generationStore: {},
+        terminateRetiringOwnerImpl: async () => false,
+        updates: [
+          {
+            update_id: 65,
+            callback_query: {
+              id: "cbq-unsafe-topic-purge",
+              data: "tcfg:cmd:purge",
+              from: { id: 123456789, is_bot: false },
+              message: {
+                chat: { id: -1001234567890 },
+                message_thread_id: 2203,
+              },
+            },
+          },
+        ],
+      }),
+    /could not be terminated safely before local takeover/u,
+  ));
+});
+
 test("createForwardingRequestHandler serves probes and dispatches forwarded updates locally", async () => {
   const handledUpdates = [];
   const handler = createForwardingRequestHandler({
@@ -225,19 +677,38 @@ test("createForwardingRequestHandler serves probes and dispatches forwarded upda
   });
 
   assert.deepEqual(
-    await handler({ type: "generation-probe" }),
+    await handler({
+      type: "generation-probe",
+      instance_token: "token-123",
+    }),
     {
       generation_id: "gen-current",
       instance_token: "token-123",
     },
   );
+  await assert.rejects(
+    handler({
+      type: "generation-probe",
+      instance_token: "wrong-token",
+    }),
+    /Unauthorized/u,
+  );
 
   assert.deepEqual(
     await handler({
       type: "spike-update",
+      auth_token: "token-123",
       update: { update_id: 77 },
     }),
     { handled: true },
+  );
+  await assert.rejects(
+    handler({
+      type: "spike-update",
+      auth_token: "wrong-token",
+      update: { update_id: 78 },
+    }),
+    /Unauthorized/u,
   );
   assert.deepEqual(handledUpdates, [77]);
 });

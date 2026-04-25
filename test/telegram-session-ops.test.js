@@ -17,14 +17,13 @@ import {
 } from "../src/telegram/command-router.js";
 import {
   buildCompactAlreadyRunningMessage,
-  buildCompactQueuedHandoffMessage,
 } from "../src/telegram/command-handlers/topic-commands.js";
 
 const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789"],
   telegramAllowedBotIds: ["8603043042"],
-  telegramForumChatId: "-1003577434463",
+  telegramForumChatId: "-1001234567890",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -52,8 +51,8 @@ function buildTopicCommandMessage(text, overrides = {}) {
   return {
     text,
     entities: [{ type: "bot_command", offset: 0, length: text.length }],
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_thread_id: 55,
     ...overrides,
   };
@@ -61,16 +60,16 @@ function buildTopicCommandMessage(text, overrides = {}) {
 
 function buildSession(overrides = {}) {
   return {
-    session_key: "-1003577434463:55",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:55",
+    chat_id: "-1001234567890",
     topic_id: "55",
     topic_name: "Test topic 1",
     lifecycle_state: "active",
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
     ...overrides,
   };
@@ -83,7 +82,7 @@ function buildServiceState() {
     lastCommandName: null,
     lastCommandAt: null,
     botUsername: "gatewaybot",
-    allowedUserId: "5825672398",
+    allowedUserId: "123456789",
     startedAt: "2026-03-22T12:00:00.000Z",
     handledUpdates: 3,
     acceptedPrompts: 1,
@@ -180,18 +179,18 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
     message: {
       text: "/new Slice 4 test",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: buildServiceState(),
     sessionService: {
       async resolveInheritedBinding() {
         return {
           binding: {
-            repo_root: "/home/bloob/atlas",
-            cwd: "/home/bloob/atlas",
+            repo_root: "/srv/codex-workspace",
+            cwd: "/srv/codex-workspace",
             branch: "main",
-            worktree_path: "/home/bloob/atlas",
+            worktree_path: "/srv/codex-workspace",
           },
           inheritedFromSessionKey: null,
         };
@@ -225,15 +224,134 @@ test("handleIncomingMessage creates new topic session and sends bootstrap", asyn
   assert.equal(touched[0].commandName, "new");
 });
 
+test("handleIncomingMessage passes explicit host selection through /new", async () => {
+  const createCalls = [];
+
+  await handleIncomingMessage({
+    api: {
+      async sendMessage() {},
+    },
+    botUsername: "gatewaybot",
+    config: {
+      ...config,
+      currentHostId: "controller",
+    },
+    message: {
+      text: "/new host=worker-a Slice 4 test",
+      entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState: buildServiceState(),
+    sessionService: {
+      async resolveInheritedBinding() {
+        return {
+          binding: {
+            repo_root: "/srv/codex-workspace",
+            cwd: "/srv/codex-workspace",
+            branch: "main",
+            worktree_path: "/srv/codex-workspace",
+          },
+          inheritedFromSessionKey: null,
+        };
+      },
+      async createTopicSession(params) {
+        createCalls.push(params);
+        return {
+          forumTopic: {
+            name: "Slice 4 test (worker-a)",
+            message_thread_id: 55,
+          },
+          session: buildSession({
+            execution_host_id: "worker-a",
+            execution_host_label: "worker-a",
+          }),
+        };
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(createCalls.length, 1);
+  assert.equal(createCalls[0].executionHostId, "worker-a");
+  assert.equal(createCalls[0].title, "Slice 4 test");
+});
+
+test("handleIncomingMessage reports unavailable local host for /new", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/new Slice 4 test",
+      entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    serviceState: buildServiceState(),
+    sessionService: {
+      async resolveInheritedBinding() {
+        return {
+          binding: {
+            repo_root: "/srv/codex-workspace",
+            cwd: "/srv/codex-workspace",
+            branch: "main",
+            worktree_path: "/srv/codex-workspace",
+          },
+          inheritedFromSessionKey: null,
+        };
+      },
+      async createTopicSession() {
+        const error = new Error("Execution host unavailable: controller");
+        error.code = "EXECUTION_HOST_UNAVAILABLE";
+        error.hostId = "controller";
+        error.hostLabel = "controller";
+        throw error;
+      },
+      async recordHandledSession() {
+        throw new Error("should not record a session for failed /new");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(result.command, "new");
+  assert.equal(result.reason, "host-unavailable");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /хосте controller/u);
+  assert.match(sent[0].text, /недоступен/u);
+});
+
 test("handleIncomingMessage reuses the current topic binding for /new without reloading inheritance twice", async () => {
   const sourceSession = buildSession({
-    session_key: "-1003577434463:77",
+    session_key: "-1001234567890:77",
     topic_id: "77",
     workspace_binding: {
-      repo_root: "/home/bloob/atlas/work",
-      cwd: "/home/bloob/atlas/work",
+      repo_root: "/srv/codex-workspace/work",
+      cwd: "/srv/codex-workspace/work",
       branch: "feature/demo",
-      worktree_path: "/home/bloob/atlas/work",
+      worktree_path: "/srv/codex-workspace/work",
     },
   });
   let ensuredSessionCount = 0;
@@ -248,8 +366,8 @@ test("handleIncomingMessage reuses the current topic binding for /new without re
     message: {
       text: "/new Reuse current binding",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState: buildServiceState(),
@@ -269,7 +387,7 @@ test("handleIncomingMessage reuses the current topic binding for /new without re
             message_thread_id: 78,
           },
           session: buildSession({
-            session_key: "-1003577434463:78",
+            session_key: "-1001234567890:78",
             topic_id: "78",
             workspace_binding: workspaceBinding,
           }),
@@ -302,7 +420,7 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
   const pinned = [];
   const topicControlPanelStore = createTopicControlPanelStore();
   const session = buildSession({
-    session_key: "-1003577434463:58",
+    session_key: "-1001234567890:58",
     topic_id: "58",
     ui_language: "rus",
     prompt_suffix_topic_enabled: true,
@@ -310,8 +428,6 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
     prompt_suffix_enabled: false,
     spike_model_override: null,
     spike_reasoning_effort_override: null,
-    omni_model_override: null,
-    omni_reasoning_effort_override: null,
   });
 
   const result = await handleIncomingMessage({
@@ -330,8 +446,8 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
     message: {
       text: "/new Local menu topic",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -354,8 +470,6 @@ test("handleIncomingMessage creates and pins a local control menu for a new topi
         return {
           spike_model: null,
           spike_reasoning_effort: null,
-          omni_model: null,
-          omni_reasoning_effort: null,
         };
       },
       async getGlobalPromptSuffix() {
@@ -405,8 +519,8 @@ test("handleIncomingMessage creates new topic session with explicit binding path
     message: {
       text: "/new cwd=homelab/infra/automation/codex-telegram-gateway Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -416,10 +530,10 @@ test("handleIncomingMessage creates new topic session with explicit binding path
           "homelab/infra/automation/codex-telegram-gateway",
         );
         return {
-          repo_root: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-          cwd: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+          repo_root: "/srv/codex-workspace/codex-telegram-gateway",
+          cwd: "/srv/codex-workspace/codex-telegram-gateway",
           branch: "main",
-          worktree_path: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+          worktree_path: "/srv/codex-workspace/codex-telegram-gateway",
         };
       },
       async createTopicSession({ title, workspaceBinding, inheritedFromSessionKey }) {
@@ -427,7 +541,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
         assert.equal(inheritedFromSessionKey, null);
         assert.equal(
           workspaceBinding.cwd,
-          "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
+          "/srv/codex-workspace/codex-telegram-gateway",
         );
         return {
           forumTopic: {
@@ -435,7 +549,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
             message_thread_id: 56,
           },
           session: buildSession({
-            session_key: "-1003577434463:56",
+            session_key: "-1001234567890:56",
             topic_id: "56",
             workspace_binding: workspaceBinding,
           }),
@@ -479,18 +593,18 @@ test("handleIncomingMessage creates a new topic in English when General panel la
     message: {
       text: "/new English topic",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: buildServiceState(),
     sessionService: {
       async resolveInheritedBinding() {
         return {
           binding: {
-            repo_root: "/home/bloob/atlas",
-            cwd: "/home/bloob/atlas",
+            repo_root: "/srv/codex-workspace",
+            cwd: "/srv/codex-workspace",
             branch: "main",
-            worktree_path: "/home/bloob/atlas",
+            worktree_path: "/srv/codex-workspace",
           },
           inheritedFromSessionKey: null,
         };
@@ -504,7 +618,7 @@ test("handleIncomingMessage creates a new topic in English when General panel la
             message_thread_id: 57,
           },
           session: buildSession({
-            session_key: "-1003577434463:57",
+            session_key: "-1001234567890:57",
             topic_id: "57",
             ui_language: "eng",
           }),
@@ -542,8 +656,8 @@ test("handleIncomingMessage reports binding resolution failures for /new", async
     message: {
       text: "/new cwd=/missing/path Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -589,8 +703,8 @@ test("handleIncomingMessage reports binding resolution failures for /new in Engl
     message: {
       text: "/new cwd=/missing/path Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: buildServiceState(),
     sessionService: {
@@ -745,6 +859,84 @@ test("handleIncomingMessage blocks /purge while a run is active", async () => {
     workerPool: {
       getActiveRun() {
         return { state: { status: "running" } };
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(messages[0].text, buildPurgeBusyMessage(session));
+});
+
+test("handleIncomingMessage blocks /purge while compact is active", async () => {
+  const messages = [];
+  const session = buildSession();
+
+  await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        messages.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: buildTopicCommandMessage("/purge"),
+    serviceState: buildServiceState(),
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async isCompacting() {
+        return true;
+      },
+      async recordHandledSession() {},
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
+      },
+      interrupt() {
+        return false;
+      },
+    },
+  });
+
+  assert.equal(messages[0].text, buildPurgeBusyMessage(session));
+});
+
+test("handleIncomingMessage blocks /purge while a foreign-owned run is still marked running", async () => {
+  const messages = [];
+  const session = buildSession({
+    last_run_status: "running",
+    session_owner_generation_id: "gen-old",
+  });
+
+  await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        messages.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: buildTopicCommandMessage("/purge"),
+    serviceState: buildServiceState(),
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async isCompacting() {
+        return false;
+      },
+      async recordHandledSession() {},
+      async purgeSession() {
+        throw new Error("should not purge a foreign-owned running session");
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return null;
       },
       interrupt() {
         return false;
@@ -1077,50 +1269,6 @@ test("handleIncomingMessage blocks /compact while the topic run is active", asyn
   });
 
   assert.equal(messages[0].text, buildCompactAlreadyRunningMessage(session));
-});
-
-test("handleIncomingMessage blocks /compact while an Omni handoff is queued", async () => {
-  const messages = [];
-  const session = buildSession();
-
-  await handleIncomingMessage({
-    api: {
-      async sendMessage(payload) {
-        messages.push(payload);
-      },
-    },
-    botUsername: "gatewaybot",
-    config,
-    message: buildTopicCommandMessage("/compact"),
-    promptHandoffStore: {
-      async load() {
-        return {
-          mode: "continuation",
-          prompt: "Queued Omni continuation",
-        };
-      },
-    },
-    serviceState: buildServiceState(),
-    sessionService: {
-      async ensureSessionForMessage() {
-        return session;
-      },
-      isCompacting() {
-        return false;
-      },
-      async recordHandledSession() {},
-    },
-    workerPool: {
-      getActiveRun() {
-        return null;
-      },
-      interrupt() {
-        return false;
-      },
-    },
-  });
-
-  assert.equal(messages[0].text, buildCompactQueuedHandoffMessage(session));
 });
 
 test("handleIncomingMessage purges local state and acknowledges /purge", async () => {

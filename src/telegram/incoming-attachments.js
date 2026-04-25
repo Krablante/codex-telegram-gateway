@@ -2,6 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { getSessionUiLanguage } from "../i18n/ui-language.js";
+import {
+  ensureFileMode,
+  ensurePrivateDirectory,
+  PRIVATE_FILE_MODE,
+} from "../state/file-utils.js";
+import { sanitizeFileName } from "./file-name-sanitizer.js";
 
 const TELEGRAM_DOWNLOAD_SOFT_LIMIT_BYTES = 20 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set([
@@ -11,30 +17,6 @@ const IMAGE_EXTENSIONS = new Set([
   ".webp",
   ".gif",
   ".bmp",
-]);
-const WINDOWS_RESERVED_FILE_STEMS = new Set([
-  "con",
-  "prn",
-  "aux",
-  "nul",
-  "com1",
-  "com2",
-  "com3",
-  "com4",
-  "com5",
-  "com6",
-  "com7",
-  "com8",
-  "com9",
-  "lpt1",
-  "lpt2",
-  "lpt3",
-  "lpt4",
-  "lpt5",
-  "lpt6",
-  "lpt7",
-  "lpt8",
-  "lpt9",
 ]);
 
 function buildAttachmentTooLargeMessage({
@@ -88,25 +70,6 @@ export class IncomingAttachmentTooLargeError extends Error {
     this.sizeBytes = sizeBytes;
     this.limitBytes = limitBytes;
   }
-}
-
-function sanitizeFileName(fileName) {
-  const baseName = path.basename(String(fileName || "").trim());
-  const sanitized = baseName
-    .replace(/[^a-z0-9._-]+/giu, "-")
-    .replace(/[ .]+$/gu, "");
-  if (!sanitized) {
-    return "attachment";
-  }
-
-  const extension = path.extname(sanitized);
-  const stem = extension
-    ? sanitized.slice(0, -extension.length)
-    : sanitized;
-  const safeStem = WINDOWS_RESERVED_FILE_STEMS.has(stem.toLowerCase())
-    ? `${stem}-file`
-    : stem;
-  return `${safeStem || "attachment"}${extension}`;
 }
 
 function inferDocumentIsImage(document) {
@@ -170,11 +133,20 @@ function buildStoredFileName(spec, telegramFilePath) {
     ? originalName.slice(0, -originalExtension.length)
     : originalName;
   const timestamp = new Date().toISOString().replace(/[-:.TZ]/gu, "");
-  return `${timestamp}-${spec.kind}-${sanitizeFileName(stem)}${extension}`;
+  const random = Math.random().toString(16).slice(2, 10);
+  return `${timestamp}-${random}-${spec.kind}-${sanitizeFileName(stem)}${extension}`;
 }
 
 function buildAttachmentRelativePath(fileName) {
   return path.posix.join("incoming", fileName);
+}
+
+function isTelegramDownloadTooLargeError(error) {
+  return (
+    error?.name === "TelegramFileDownloadTooLargeError"
+    && Number.isFinite(error.sizeBytes)
+    && Number.isFinite(error.limitBytes)
+  );
 }
 
 export function extractPromptText(message, { trim = true } = {}) {
@@ -182,7 +154,7 @@ export function extractPromptText(message, { trim = true } = {}) {
   return trim ? text.trim() : text;
 }
 
-export function extractIncomingAttachmentSpecs(message) {
+function extractIncomingAttachmentSpecs(message) {
   const specs = [];
   const photoSpec = buildPhotoSpec(message);
   if (photoSpec) {
@@ -241,9 +213,32 @@ export async function ingestIncomingAttachments({
       sessionStore.getSessionDir(session.chat_id, session.topic_id),
       relativePath,
     );
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await api.downloadFile(file.file_path, absolutePath);
+    await ensurePrivateDirectory(path.dirname(absolutePath));
+    try {
+      await api.downloadFile(file.file_path, absolutePath, {
+        maxBytes: TELEGRAM_DOWNLOAD_SOFT_LIMIT_BYTES,
+      });
+    } catch (error) {
+      if (isTelegramDownloadTooLargeError(error)) {
+        throw new IncomingAttachmentTooLargeError({
+          session,
+          fileName: spec.originalFileName,
+          sizeBytes: error.sizeBytes,
+          limitBytes: error.limitBytes,
+        });
+      }
+      throw error;
+    }
+    await ensureFileMode(absolutePath, PRIVATE_FILE_MODE);
     const stats = await fs.stat(absolutePath);
+    if (stats.size > TELEGRAM_DOWNLOAD_SOFT_LIMIT_BYTES) {
+      await fs.rm(absolutePath, { force: true });
+      throw new IncomingAttachmentTooLargeError({
+        session,
+        fileName: spec.originalFileName,
+        sizeBytes: stats.size,
+      });
+    }
 
     descriptors.push({
       kind: spec.kind,

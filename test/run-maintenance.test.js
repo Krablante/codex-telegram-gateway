@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { performRunOnceMaintenance } from "../src/cli/run-maintenance.js";
 
-test("performRunOnceMaintenance runs pending scans, retention sweep, and fragment flushes in order", async () => {
+test("performRunOnceMaintenance runs queue scan, retention sweep, and fragment flushes in order", async () => {
   const calls = [];
 
   const completedAt = await performRunOnceMaintenance({
@@ -22,9 +22,6 @@ test("performRunOnceMaintenance runs pending scans, retention sweep, and fragmen
         calls.push(`retention:${value}`);
       },
     },
-    async scanPendingOmniPrompts() {
-      calls.push("omni");
-    },
     async scanPendingSpikeQueue() {
       calls.push("queue");
     },
@@ -36,7 +33,7 @@ test("performRunOnceMaintenance runs pending scans, retention sweep, and fragmen
   });
 
   assert.equal(Number.isFinite(completedAt), true);
-  assert.deepEqual(calls.slice(0, 3), ["omni", "queue", "sweep"]);
-  assert.match(calls[3], /^retention:/u);
-  assert.deepEqual(calls.slice(4), ["prompt-flush", "queue-flush"]);
+  assert.deepEqual(calls.slice(0, 2), ["queue", "sweep"]);
+  assert.match(calls[2], /^retention:/u);
+  assert.deepEqual(calls.slice(3), ["prompt-flush", "queue-flush"]);
 });

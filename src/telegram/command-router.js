@@ -5,29 +5,15 @@ import {
 } from "../i18n/ui-language.js";
 import {
   buildReplyMessageParams,
-  extractBotCommand,
-  getTopicLabel,
-  isForeignBotCommand,
   isAuthorizedMessage,
-  parseLanguageCommandArgs,
-  parseNewTopicCommandArgs,
-  parsePromptSuffixCommandArgs,
-  parseQueueCommandArgs,
-  parseScopedRuntimeSettingCommandArgs,
-  parseWaitCommandArgs,
 } from "./command-parsing.js";
 import {
-  GLOBAL_CONTROL_PANEL_COMMAND,
   isGeneralForumMessage,
 } from "./global-control-panel.js";
 import {
-  composePromptWithSuffixes,
-  isTopicPromptSuffixEnabled,
+  renderUserPrompt,
 } from "../session-manager/prompt-suffix.js";
 import { getTopicIdFromMessage } from "../session-manager/session-key.js";
-import {
-  buildStatusMessage,
-} from "./status-view.js";
 import {
   safeSendMessage,
 } from "./topic-delivery.js";
@@ -39,21 +25,17 @@ import {
 } from "./command-handlers/prompt-flow.js";
 import {
   buildBindingResolutionErrorMessage,
-  buildCompactAlreadyRunningMessage,
-  buildCompactFailureMessage,
   buildCompactMessage,
   buildCompactStartedMessage,
   buildDiffCleanMessage,
   buildDiffUnavailableMessage,
-  buildDocumentTooLargeMessage,
-  buildNewTopicAckMessage,
-  buildNewTopicBootstrapMessage,
   buildPurgeAckMessage,
   buildPurgeBusyMessage,
   buildPurgedSessionMessage,
 } from "./command-handlers/topic-commands.js";
 import { resolveGeneralUiLanguage } from "./command-handlers/control-surface.js";
 import {
+  buildApplyGlobalWaitChange,
   createGlobalControlDispatcher,
   handleControlPanelCallbackQuery,
   maybeHandleControlPanelCommand,
@@ -77,42 +59,27 @@ export {
   buildNoSessionTopicMessage,
   buildPurgeAckMessage,
   buildPurgeBusyMessage,
-  buildReplyMessageParams,
   buildPurgedSessionMessage,
-  buildStatusMessage,
-  extractBotCommand,
-  getTopicLabel,
-  isForeignBotCommand,
-  isAuthorizedMessage,
-  parseLanguageCommandArgs,
-  parseNewTopicCommandArgs,
-  parsePromptSuffixCommandArgs,
-  parseQueueCommandArgs,
-  parseScopedRuntimeSettingCommandArgs,
-  parseWaitCommandArgs,
 };
 
 export function applyPromptSuffix(prompt, session, globalPromptSuffix = null) {
-  return composePromptWithSuffixes(prompt, session, globalPromptSuffix);
+  void session;
+  void globalPromptSuffix;
+  return renderUserPrompt(prompt);
 }
 
 function isEnglish(language) {
   return normalizeUiLanguage(language) === "eng";
 }
 
-export function buildUnknownCommandMessage(
+function buildUnknownCommandMessage(
   language = DEFAULT_UI_LANGUAGE,
-  { omniEnabled = true } = {},
 ) {
   if (isEnglish(language)) {
-    return omniEnabled
-      ? "Available commands: /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact, and /purge."
-      : "Available commands: /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact, and /purge.";
+    return "Available commands: /help, /guide, /clear, /new, /hosts, /host, /zoo, /status, /limits, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact, and /purge.";
   }
 
-  return omniEnabled
-    ? "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /auto, /omni, /language, /q, /wait, /suffix, /model, /reasoning, /omni_model, /omni_reasoning, /interrupt, /diff, /compact и /purge."
-    : "Сейчас доступны /help, /guide, /clear, /new, /zoo, /status, /limits, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact и /purge.";
+  return "Сейчас доступны /help, /guide, /clear, /new, /hosts, /host, /zoo, /status, /limits, /global, /menu, /language, /q, /wait, /suffix, /model, /reasoning, /interrupt, /diff, /compact и /purge.";
 }
 
 function markCommandHandled(serviceState, commandName) {
@@ -133,7 +100,6 @@ export async function handleIncomingMessage({
   message,
   promptStartGuard = null,
   promptFragmentAssembler = null,
-  promptHandoffStore = null,
   queuePromptAssembler = null,
   serviceState,
   sessionService,
@@ -188,7 +154,6 @@ export async function handleIncomingMessage({
     zooService,
     promptStartGuard,
     promptFragmentAssembler,
-    promptHandoffStore,
     queuePromptAssembler,
     serviceState,
     sessionService,
@@ -205,10 +170,22 @@ export async function handleIncomingMessage({
     sessionService,
     workerPool,
   });
+  const applyGlobalWaitChange = buildApplyGlobalWaitChange({
+    api,
+    botUsername,
+    config,
+    lifecycleManager,
+    promptStartGuard,
+    promptFragmentAssembler,
+    serviceState,
+    sessionService,
+    workerPool,
+  });
 
   const controlReplyResult = await maybeHandleControlPanelReplies({
     api,
     config,
+    lifecycleManager,
     globalControlPanelStore,
     message,
     promptFragmentAssembler,
@@ -216,6 +193,7 @@ export async function handleIncomingMessage({
     topicControlPanelStore,
     workerPool,
     dispatchGlobalControlCommand,
+    applyGlobalWaitChange,
     applyTopicWaitChange,
   });
   if (controlReplyResult?.handled) {
@@ -340,7 +318,7 @@ export async function handleIncomingMessage({
   }
 
   const session = await sessionService.ensureSessionForMessage(message);
-  let responseText = null;
+  let responseText;
   let handledSession = session;
   let backgroundCompactPromise = null;
   if (command.name === "diff") {
@@ -367,7 +345,6 @@ export async function handleIncomingMessage({
     const result = await handleCompactCommand({
       session,
       sessionService,
-      promptHandoffStore,
       workerPool,
       language: getSessionUiLanguage(session),
     });
@@ -383,9 +360,7 @@ export async function handleIncomingMessage({
     handledSession = result.handledSession ?? handledSession;
     responseText = result.responseText;
   } else {
-    responseText = buildUnknownCommandMessage(getSessionUiLanguage(session), {
-      omniEnabled: config.omniEnabled !== false,
-    });
+    responseText = buildUnknownCommandMessage(getSessionUiLanguage(session));
   }
 
   if (responseText) {
@@ -438,7 +413,6 @@ export async function handleIncomingCallbackQuery({
   zooService = null,
   promptStartGuard = null,
   promptFragmentAssembler = null,
-  promptHandoffStore = null,
   queuePromptAssembler = null,
   serviceState,
   sessionService,
@@ -467,7 +441,6 @@ export async function handleIncomingCallbackQuery({
     zooService,
     promptStartGuard,
     promptFragmentAssembler,
-    promptHandoffStore,
     queuePromptAssembler,
     serviceState,
     sessionService,

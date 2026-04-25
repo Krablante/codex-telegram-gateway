@@ -1,6 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { runHostBash, shellQuote } from "../hosts/host-command-runner.js";
+import { resolveExecutionCwd } from "../hosts/host-paths.js";
+
 const execFileAsync = promisify(execFile);
 
 function isNonGitWorkspaceError(error) {
@@ -26,7 +29,43 @@ async function runGit(cwd, args) {
       error?.stdout?.trim() ||
       error?.message ||
       "unknown git error";
-    throw new Error(`git ${args.join(" ")} failed: ${message}`);
+    throw new Error(`git ${args.join(" ")} failed: ${message}`, {
+      cause: error,
+    });
+  }
+}
+
+async function runRemoteGit({
+  connectTimeoutSecs,
+  currentHostId,
+  host,
+  cwd,
+  args,
+}) {
+  const script = [
+    "set -euo pipefail",
+    `target=${shellQuote(cwd)}`,
+    'if [[ "$target" == "~" ]]; then target="$HOME"; elif [[ "$target" == "~/"* ]]; then target="$HOME/${target:2}"; fi',
+    `git -C "$target" ${args.map((arg) => shellQuote(arg)).join(" ")}`,
+  ].join("; ");
+  try {
+    const result = await runHostBash({
+      connectTimeoutSecs,
+      currentHostId,
+      host,
+      script,
+      timeoutMs: 30_000,
+    });
+    return result.stdout;
+  } catch (error) {
+    const message =
+      error?.stderr?.trim() ||
+      error?.stdout?.trim() ||
+      error?.message ||
+      "unknown git error";
+    throw new Error(`git ${args.join(" ")} failed: ${message}`, {
+      cause: error,
+    });
   }
 }
 
@@ -61,17 +100,104 @@ function buildDiffSnapshot(session, generatedAt, status, unstagedDiff, stagedDif
   ].join("\n");
 }
 
-export async function createWorkspaceDiffArtifact({ session, sessionStore }) {
+async function resolveDiffExecution(session, {
+  config = null,
+  hostRegistryService = null,
+} = {}) {
+  const hostId = String(session?.execution_host_id || "").trim();
+  const currentHostId = String(config?.currentHostId || "").trim();
+  if (!hostId || !currentHostId || hostId === currentHostId) {
+    return {
+      local: true,
+      cwd: session.workspace_binding.cwd,
+      repoRoot: session.workspace_binding.repo_root,
+    };
+  }
+  if (typeof hostRegistryService?.getHost !== "function") {
+    return {
+      local: true,
+      cwd: session.workspace_binding.cwd,
+      repoRoot: session.workspace_binding.repo_root,
+    };
+  }
+
+  const host = await hostRegistryService.getHost(hostId);
+  if (!host?.ssh_target) {
+    return {
+      local: false,
+      unavailable: true,
+    };
+  }
+
+  const cwd = resolveExecutionCwd({
+    workspaceBinding: session.workspace_binding,
+    host,
+    currentHostId,
+  });
+  if (!cwd) {
+    return {
+      local: false,
+      unavailable: true,
+    };
+  }
+
+  return {
+    local: false,
+    host,
+    cwd,
+    repoRoot: resolveExecutionCwd({
+      workspaceBinding: {
+        ...session.workspace_binding,
+        cwd: session.workspace_binding.repo_root,
+        cwd_relative_to_workspace_root: null,
+      },
+      host,
+      currentHostId,
+    }) || session.workspace_binding.repo_root,
+  };
+}
+
+export async function createWorkspaceDiffArtifact({
+  session,
+  sessionStore,
+  config = null,
+  hostRegistryService = null,
+}) {
   const generatedAt = new Date().toISOString();
-  const cwd = session.workspace_binding.cwd;
-  let status = null;
+  const execution = await resolveDiffExecution(session, {
+    config,
+    hostRegistryService,
+  });
+  const cwd = execution.cwd;
+  if (execution.unavailable || !cwd) {
+    return {
+      unavailable: true,
+      reason: "workspace-unavailable",
+      generatedAt,
+      cwd: session.workspace_binding.cwd,
+    };
+  }
+  let status;
   try {
-    status = await runGit(cwd, [
-      "status",
-      "--short",
-      "--branch",
-      "--untracked-files=all",
-    ]);
+    status = execution.local
+      ? await runGit(cwd, [
+        "status",
+        "--short",
+        "--branch",
+        "--untracked-files=all",
+      ])
+      : await runRemoteGit({
+        connectTimeoutSecs: config?.hostSshConnectTimeoutSecs || 10,
+        currentHostId: config?.currentHostId || "local",
+        host: execution.host,
+        cwd,
+        args: [
+          "status",
+          "--short",
+          "--branch",
+          "--untracked-files=all",
+        ],
+      });
   } catch (error) {
     if (isNonGitWorkspaceError(error)) {
       return {
@@ -83,21 +209,39 @@ export async function createWorkspaceDiffArtifact({ session, sessionStore }) {
     }
     throw error;
   }
-  const unstagedDiff = await runGit(cwd, [
+  const unstagedArgs = [
     "diff",
     "--no-ext-diff",
     "--stat",
     "--patch",
     "--submodule=diff",
-  ]);
-  const stagedDiff = await runGit(cwd, [
+  ];
+  const stagedArgs = [
     "diff",
     "--cached",
     "--no-ext-diff",
     "--stat",
     "--patch",
     "--submodule=diff",
-  ]);
+  ];
+  const unstagedDiff = execution.local
+    ? await runGit(cwd, unstagedArgs)
+    : await runRemoteGit({
+      connectTimeoutSecs: config?.hostSshConnectTimeoutSecs || 10,
+      currentHostId: config?.currentHostId || "local",
+      host: execution.host,
+      cwd,
+      args: unstagedArgs,
+    });
+  const stagedDiff = execution.local
+    ? await runGit(cwd, stagedArgs)
+    : await runRemoteGit({
+      connectTimeoutSecs: config?.hostSshConnectTimeoutSecs || 10,
+      currentHostId: config?.currentHostId || "local",
+      host: execution.host,
+      cwd,
+      args: stagedArgs,
+    });
 
   const clean =
     !hasStatusChanges(status) &&

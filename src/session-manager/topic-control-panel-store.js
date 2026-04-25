@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   cloneJson,
+  ensurePrivateDirectory,
   quarantineCorruptFile,
   writeTextAtomic,
 } from "../state/file-utils.js";
@@ -10,13 +11,13 @@ import {
 const TOPIC_CONTROL_PANEL_FILE_NAME = "topic-control-panel.json";
 const SCREEN_IDS = new Set([
   "root",
+  "status",
   "wait",
   "suffix",
   "language",
+  "bot_settings",
   "spike_model",
   "spike_reasoning",
-  "omni_model",
-  "omni_reasoning",
 ]);
 const PENDING_INPUT_KINDS = new Set([
   "suffix_text",
@@ -32,6 +33,11 @@ function normalizeScreenId(value) {
   return SCREEN_IDS.has(normalized) ? normalized : "root";
 }
 
+function normalizeStatusText(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+}
+
 function normalizePendingInput(payload) {
   const kind = String(payload?.kind ?? "").trim().toLowerCase();
   if (!PENDING_INPUT_KINDS.has(kind)) {
@@ -44,6 +50,7 @@ function normalizePendingInput(payload) {
     requested_by_user_id: String(payload?.requested_by_user_id ?? "").trim() || null,
     menu_message_id: normalizeInteger(payload?.menu_message_id),
     screen: normalizeScreenId(payload?.screen),
+    status_message: normalizeStatusText(payload?.status_message),
   };
 }
 
@@ -54,6 +61,7 @@ function buildEmptyTopicControlPanelState() {
     menu_message_id: null,
     active_screen: "root",
     pending_input: null,
+    notice: null,
   };
 }
 
@@ -64,6 +72,7 @@ function normalizeTopicControlPanelState(payload) {
     menu_message_id: normalizeInteger(payload?.menu_message_id),
     active_screen: normalizeScreenId(payload?.active_screen),
     pending_input: normalizePendingInput(payload?.pending_input),
+    notice: normalizeStatusText(payload?.notice),
   };
 }
 
@@ -142,7 +151,7 @@ export class TopicControlPanelStore {
       updated_at: new Date().toISOString(),
     });
     const filePath = this.getFilePath(session);
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await ensurePrivateDirectory(path.dirname(filePath));
     await writeTextAtomic(filePath, `${JSON.stringify(normalized, null, 2)}\n`);
     this.cachedStates.set(this.getCacheKey(session), normalized);
     return cloneJson(normalized);

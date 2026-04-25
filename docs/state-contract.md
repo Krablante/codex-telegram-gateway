@@ -6,7 +6,9 @@
 
 ## Mutable surfaces
 
-- `runtime.env` — local runtime secrets and operator fixture when that path is configured, never committed
+- `runtime.env` — local runtime secrets and operator fixture
+- `hosts/` — host registry, doctor snapshots, host-sync state
+- `codex-space/` — rendered shared/per-host multi-host outputs
 - `sessions/` — per-topic session state
 - `zoo/` — Zoo topic binding, pet registry, snapshots, and analysis scratch state
 - `emergency/` — operator private-chat rescue-lane scratch state
@@ -14,79 +16,107 @@
 - `settings/` — service-wide persistent operator settings
 - `logs/` — runtime logs and doctor snapshots
 - `tmp/` — transient scratch space
-- `tmp/guidebook/` may hold generated beginner-guide PDFs for `/guide`
+- `tmp/guidebook/` may hold generated `/guide` PDFs
+- `live-user-testing/` — private live user-account test state
 
 ## Current slice contract
 
 Current slices guarantee:
 
-- the resolved runtime env path is readable locally before operator commands start
 - `sessions/<chat-id>/<topic-id>/meta.json` may be created for active topic sessions
-- `sessions/<chat-id>/<topic-id>/meta.json:auto_mode` may carry topic-scoped Omni state including goal capture, locked phases, blocker state, and last Omni/Spike prompt correlation ids
-- `sessions/<chat-id>/<topic-id>/omni-memory.json` may carry small topic-scoped Omni supervisory memory such as a compact goal capsule, the active proof line, remaining goal gap, candidate pivots, bounded side work, and do-not-regress constraints
-- `sessions/<chat-id>/<topic-id>/omni-pending-prompt.json` may store a queued Omni-to-Spike continuation handoff waiting for the next safe prompt start
-- `sessions/<chat-id>/<topic-id>/telegram-topic-context.md` may store the current Telegram routing facts, lightweight file-delivery contract, and container-backed MCP path-mapping hints for Codex
-- `sessions/<chat-id>/<topic-id>/exchange-log.jsonl` may store the append-only recovery log with only user prompts and final agent replies
-- `sessions/<chat-id>/<topic-id>/spike-prompt-queue.json` may store the topic-scoped FIFO queue for `/q` prompts, including prompt text, reply target ids, and downloaded attachment descriptors
-- `sessions/<chat-id>/<topic-id>/incoming/` may store direct-prompt and queued-prompt attachments downloaded from Telegram for that topic session
-- `sessions/<chat-id>/<topic-id>/active-brief.md` may store the latest LLM-generated recovery brief derived from that exchange log; the brief is expected to carry enough continuity for a fresh run to understand workspace context, active user-specific rules, recent state, latest exchange, and open work
+- `sessions/<chat-id>/<topic-id>/telegram-topic-context.md` may store the local control-plane copy of Telegram routing facts, MCP path mapping hints, and file-delivery guidance
+- `sessions/<chat-id>/<topic-id>/exchange-log.jsonl` may store the append-only recovery log with only user prompts and final replies
+- `sessions/<chat-id>/<topic-id>/progress-notes.jsonl` may store append-only main-run natural-language progress notes used as recovery hints
+- `sessions/<chat-id>/<topic-id>/exec-json-run.jsonl` may store the latest raw exec-json turn mirror for stale-run recovery; it is overwritten per attempt and is not canonical conversation memory
+- `sessions/<chat-id>/<topic-id>/spike-prompt-queue.json` may store the topic-scoped FIFO queue for `/q`
+- `sessions/<chat-id>/<topic-id>/incoming/` may store downloaded topic attachments
+- `sessions/<chat-id>/<topic-id>/active-brief.md` may store the latest compacted recovery brief
+- `sessions/<chat-id>/<topic-id>/compaction-source.md` may store the latest inspectable compaction input written during compaction; small exchange logs with pending progress notes keep the full exchange log plus bounded progress notes, while oversized logs use the bounded source, and small full-log compactions keep the bounded source as the context-length fallback
 - `sessions/<chat-id>/<topic-id>/artifacts/` may store generated diff snapshots
-- `emergency/attachments/<chat-id>/private/incoming/` may store private-chat emergency attachments downloaded from Telegram
+- `emergency/attachments/<chat-id>/private/incoming/` may store private-chat emergency attachments
 - `emergency/runs/` may store one-shot `codex exec` last-message files for the emergency lane
-- `zoo/topic.json` may store Zoo topic/menu binding and the pending add-project flow outside normal work-topic sessions
-- `zoo/pets/<pet-id>/...` may store Zoo pet metadata, current snapshot, and snapshot history
-- `logs/`, `sessions/`, `indexes/`, `settings/`, and `tmp/` can be created on demand
-- `logs/doctor-last-run.json` may be refreshed by `make doctor`
+- `live-user-testing/telegram-user.env` may store Telegram user-account API credentials for live user tests
+- `live-user-testing/telegram-user-session.txt` may store the Telegram user session string
+- `live-user-testing/telegram-user-account.json` may store the last live user-account identity snapshot
+- `zoo/topic.json` may store Zoo topic/menu binding and pending add-project flow state
+- `zoo/pets/<pet-id>/...` may store Zoo pet metadata and snapshot history
+- `hosts/registry.json` may store the local multi-host registry
+- `hosts/bootstrap-last-run.json` may store the latest remote runtime bootstrap summary
+- `hosts/doctor/<host-id>.json` may store the latest per-host readiness snapshot
+- `hosts/remote-smoke-last-run.json` may store the latest remote smoke summary
+- `hosts/sync-last-run.json` may store the latest host-sync summary
+- `codex-space/shared/rendered/` may store shared fleet outputs generated on `controller`
+- `codex-space/hosts/<host-id>/rendered/` may store per-host rendered outputs generated on `controller`
+- `codex-space/hosts/<host-id>/rendered/models_cache.json` may mirror the latest known per-host Codex model catalog for topic model/status surfaces
+- on a remote host, `<worker_runtime_root>/codex-space/shared/rendered/` may store the synced shared prompt snippets
+- on a remote host, `<worker_runtime_root>/codex-space/hosts/<host-id>/rendered/` may store the synced bound-host prompt snippets
+- on a remote host, `<worker_runtime_root>/host-smoke/` may store smoke artifacts
+- on a remote host, `<worker_runtime_root>/remote-inputs/<session-key>/<run-id>/` may temporarily store staged image attachments copied from `controller`; the worker removes the per-run directory after the remote exec child exits
 - `logs/runtime-heartbeat.json` may track the latest service heartbeat, pid, counters, and poll state
-- `logs/runtime-events.ndjson` may append structured service lifecycle, poll/update failure, session lifecycle, and per-run `run.started` / `run.attempt` / `run.recovery` / `run.finished` events with interrupt-reason, recovery-kind, and attempt-insight metadata
-- `tmp/generations/spike/*.json` may track live Spike generation heartbeats, mode, pid, per-process identity token, and advertised local IPC endpoint during session-aware rollout
-- `omni/logs/runtime-heartbeat.json` and `omni/logs/runtime-events.ndjson` may track the separate Omni poller
+- `logs/runtime-events.ndjson` may append structured service and per-run lifecycle events
 - `indexes/telegram-update-offset.json` may be refreshed by `make run` or `make smoke`
-- `indexes/spike-leader.json` may track the current Spike intake-leader lease
-- `omni/indexes/omni-telegram-update-offset.json` may be refreshed by `make run-omni` or `make smoke-omni`
-- `settings/global-prompt-suffix.json` may store the persistent service-wide prompt suffix used by `/suffix global ...`
-- `settings/global-codex-settings.json` may store the persistent service-wide model/reasoning defaults for Spike, Omni, and the temporary `/compact` summarizer
-- `settings/global-control-panel.json` may store the persistent `General`-topic control-panel message id, active screen, panel UI language, and pending reply-based input state for `/global`
-- `settings/general-message-ledger.json` may store the tracked `General` message ids used by `/clear` so the bot can preserve the active menu and remove known clutter without a user-session sweep
-- `settings/rollout-coordination.json` may track the most recent Spike rollout request/in-progress/completed state and the retained topic-session keys
-- each session dir may store `topic-control-panel.json` with the pinned local menu message id, active screen, and pending reply-based input state for `/menu`
-- session metadata may store `ui_language`, `codex_thread_id`, `provider_session_id`, `codex_rollout_path`, `last_context_snapshot`, topic-level prompt suffix settings and routing flags, separate pending attachment buffers for direct Spike prompts and queued `/q` prompts, last prompt/reply, last run status, lifecycle state, `purge_after`, artifact pointers, exchange-log counters, progress message ids, rollout ownership fields such as `session_owner_generation_id`, `session_owner_mode`, `session_owner_claimed_at`, mirrored `spike_run_owner_generation_id`, compaction fields such as `compaction_in_progress`, `compaction_started_at`, `compaction_owner_generation_id`, compaction timestamps, and lightweight Omni auto-compact counters such as `first_omni_prompt_at` and `continuation_count_since_compact`
-- `omni/runs/` may store one-shot `codex exec` output files used by Omni evaluations
-- malformed file-backed queue, handoff, panel, Omni memory, or Zoo state may be quarantined and rebuilt empty instead of being silently reused
-- if `zoo/topic.json` is missing or incomplete, the next live Zoo menu callback may rebuild the stored chat/topic/menu binding from Telegram callback context
-- transport may switch from message edits to append-only status messages when edit delivery degrades
-- general-message ledger writes are serialized so concurrent `General` cleanup tracking does not lose message ids under overlapping updates
-- final reply delivery may retry transient Telegram/network send failures and, when the send never recovers, keep the final answer visible in the already-open progress bubble
-- transport may strip fenced `telegram-file` control blocks with `action: send` from the final visible reply and use them to send local files into the current Telegram topic
-- outgoing file delivery is scoped to safe local roots such as the active worktree, the per-session state dir, and the system temp dir
-- incoming attachment filenames may be sanitized for platform hazards such as Windows reserved names and trailing dot/space traps before they are stored in session state
-- when topic `auto_mode` is active, Spike may ignore direct human prompt messages in that topic and accept prompt-starts there only from trusted Omni bot principals
-- if Omni is disabled globally through missing Omni credentials or `OMNI_ENABLED=false`, any persisted topic `auto_mode` state remains on disk but becomes inert for Spike routing until Omni is re-enabled
-- run completion may append to `exchange-log.jsonl`, while explicit `/compact` may refresh `active-brief.md` and clear stored thread/context state so the next run bootstraps itself from the rebuilt brief instead of the old Codex session
-- while that `/compact` rebuild is active, direct prompt starts for the same topic are blocked instead of racing a second Spike run against the brief refresh
-- an explicitly interrupted run may preserve resumable Codex continuity metadata so the next turn can follow the same native session instead of being forced into a fake fresh start
-- `/auto` may also trigger the same compaction path internally at a safe cycle boundary, with a short visible Telegram notice but without changing the manual `/compact` UX
-- if a stored `codex_thread_id` no longer resumes cleanly after the controlled retry, the next run may first repair continuity from `thread/list`, `provider_session_id`, rollout metadata, and `session_key`; only after those bounded repair attempts fail may it clear the thread state, regenerate `active-brief.md` from `exchange-log.jsonl`, and continue from that brief
-- active follow-up user input may be buffered briefly and then live-steered into the same current Codex turn instead of starting a second run
-- if the live websocket transport drops mid-run, or native Windows finalization leaves the websocket alive without a terminal event, completion may continue via rollout-file recovery instead of failing immediately
-- if a Telegram attachment exceeds the current direct bot-download ceiling, the update may be acknowledged with a small inline "too large" reply instead of retry-looping the same failing poll cycle forever
-- if a long final reply partially reaches Telegram before a later chunk fails, Spike final-event metadata may still record the already-delivered Telegram message ids
-- run completion may hold a short grace window after primary `turn/completed` so a slightly late primary final answer still lands before the worker falls back to a generic success reply
-- during service rollout, the leader generation may forward raw Telegram updates for a still-running foreign-owned topic to the retiring generation over local loopback IPC
-- local loopback IPC bind may retry blocked or already-used loopback ports before failing the forwarding server
-- operator private-chat prompts may bypass topic routing entirely and execute through the isolated emergency `codex exec` path
-- external `forum_topic_closed` / `forum_topic_reopened` service messages may move sessions between `active` and `parked`
-- transport failures like unavailable/deleted topic may also move a session into `parked`
-- expired parked sessions may be auto-purged during periodic retention sweep
-- new topic creation may resolve explicit workspace binding from `/new cwd=...` against the configured workspace root
-- `/purge` removes compact memory files and artifacts, then leaves only a tiny `meta.json` purged stub until the topic is reused
+- `indexes/spike-leader.json` may track the current intake-leader lease
+- `settings/global-prompt-suffix.json` may store `/suffix global ...`
+- `settings/global-codex-settings.json` may store persistent Spike defaults plus the separate `/compact` summarizer profile
+- `settings/global-control-panel.json` may store `/global` menu state
+- `settings/general-message-ledger.json` may store tracked `General` message ids for `/clear`
+- `settings/rollout-coordination.json` may track soft-rollout state and retained sessions
+- each session dir may store `topic-control-panel.json` with `/menu` state
+
+## Session metadata
+
+Session metadata may store:
+
+- `ui_language`
+- `codex_backend` — the backend selected for this topic, normally `exec-json`
+- `last_run_backend`
+- `codex_thread_id` — the Codex thread id from `thread.started`; used as the `codex exec ... resume <thread_id> -` key
+- `codex_rollout_path` — fallback app-server rollout path; ignored and cleared by default `exec-json` continuity
+- `provider_session_id` — fallback app-server provider session id; ignored and cleared by default `exec-json` continuity
+- `last_context_snapshot` — fallback/context-pressure snapshot; not the primary exec resume key, and default `exec-json` must not use snapshot `session_id`, `rollout_path`, or thread fallback as continuity
+- execution-affinity fields such as `execution_host_id`, `execution_host_label`, `execution_host_bound_at`, `execution_host_last_ready_at`, and `execution_host_last_failure`
+- topic-level prompt suffix settings and routing flags
+- separate pending attachment buffers for direct Spike prompts and queued `/q` prompts
+- last prompt/reply
+- last run status
+- lifecycle state
+- `purge_after`
+
+Purged sessions are reactivatable stubs. A same-topic real plain prompt or flushed non-empty `/q` runnable prompt creates a fresh active session with runtime continuity reset and topic identity, workspace binding, execution host binding, and UI language preserved. Blank `/q`, buffered fragments, and attachment-only `/q` collection do not reactivate the topic yet.
+
+Session metadata may also store:
+
+- artifact pointers
+- exchange-log counters
+- progress message ids
+- rollout ownership fields such as `session_owner_generation_id`, `session_owner_mode`, `session_owner_claimed_at`, and mirrored `spike_run_owner_generation_id`
+- compaction fields such as `compaction_in_progress`, `compaction_started_at`, `compaction_owner_generation_id`, `progress_notes_consumed_until`, and compaction timestamps
+
+Raw Codex session files stay host-local under that host's Codex sessions root
+(`CODEX_SESSIONS_ROOT` or `~/.codex/sessions`). Do not copy or share one
+`.codex/sessions` tree across hosts; the gateway only stores the resumable
+`codex_thread_id` and small context snapshots centrally.
+
+## Legacy cleanup
+
+The runtime is single-bot now.
+
+If old on-disk state still contains removed legacy autonomy metadata, normalization strips or ignores that data instead of reactivating any removed behavior.
 
 ## Rules
 
-- state lives under the configured local state root, never inside the source repo
+- state lives under `the configured state root/...`, never inside the source repo
+- state directories are private by default (`0700`); state files, append-only JSONL/log files, and downloaded attachments are private by default (`0600`) on POSIX
+- expired pending attachment buffers remove their unconsumed files from the session `incoming/` directory
 - bot tokens and runtime credentials stay only here
-- later session artifacts inherit the `chat_id/topic_id` geography from the plan
-- the gateway does not keep tool chatter or full PTY transcripts as canonical memory; the clean exchange log is the durable raw surface, and the compact brief is a derived recovery surface
-- Omni and Spike may share the same topic session state, but only topic-scoped autonomy state is shared; Omni still remains a separate Telegram bot and a separate Codex process
-- Omni memory is intentionally small and topic-scoped; it is not a second transcript surface, should not mirror the full locked-goal essay, and does not replace `exchange-log.jsonl` or `active-brief.md`
-- the deployment may also run without Omni entirely; in that shape `auto_mode` metadata is just dormant session state, not an active routing lock
+- `codex-space/` is canonical on `controller`; remote hosts receive synced copies
+- the clean exchange log is the durable raw user/final conversational surface
+- `progress-notes.jsonl` is the durable append-only natural-language progress surface; it stores only Telegram-visible main-run notes, not hidden chain-of-thought or tool chatter
+- malformed `progress-notes.jsonl` lines are ignored, and compaction loads all pending notes before the bounded-source selector decides what to omit; the file itself is append-only
+- progress note entries use `schema_version: 1` with `created_at`, `session_key`, `run_started_at`, `thread_id`, `source`, `event_type`, and `text`
+- `progress_notes_consumed_until` advances only when all pending progress notes were included in the compaction source; omitted notes stay pending for a later compaction
+- `exec-json-run.jsonl` is transient latest-attempt evidence: startup recovery may use its primary `thread.started`, latest main-run `agent_message`, and `turn.completed` to complete a dead-owner run, but compaction does not treat it as durable memory
+- loopback update-forwarding IPC uses a per-generation instance token; the token lives only in private generation state and forwarded update/probe payloads
+- the compact brief is a derived recovery surface built from either the full exchange log, a full compaction source with pending progress notes, or a bounded compaction source containing the previous brief, recent exchange/progress slices, older high-signal continuity excerpts, and first-time oversized chronology checkpoints
+- long active briefs and bounded exchange prompt/reply fields preserve head+tail with middle truncation; full compaction sources keep small-log exchange prompt/reply fields intact and use safe markdown fences around stored text
+- `compaction-source.md` is the latest derived, inspectable compaction input; it may be overwritten by later compactions and is not a second canonical memory log

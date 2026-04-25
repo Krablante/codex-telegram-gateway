@@ -1,4 +1,4 @@
-import { runCodexTask } from "./codex-runner.js";
+import { createHostAwareRunTask } from "./host-aware-run-task.js";
 import {
   deliverRunDocuments,
   deliverRunReply,
@@ -34,10 +34,12 @@ export class CodexWorkerPool {
     sessionCompactor = null,
     sessionLifecycleManager = null,
     spikeFinalEventStore = null,
+    globalPromptSuffixStore = null,
     globalCodexSettingsStore = null,
+    hostRegistryService = null,
     serviceGenerationId = null,
     onRunTerminated = null,
-    runTask = runCodexTask,
+    runTask = createHostAwareRunTask({ config, hostRegistryService }),
   }) {
     this.api = api;
     this.config = config;
@@ -47,7 +49,9 @@ export class CodexWorkerPool {
     this.sessionCompactor = sessionCompactor;
     this.sessionLifecycleManager = sessionLifecycleManager;
     this.spikeFinalEventStore = spikeFinalEventStore;
+    this.globalPromptSuffixStore = globalPromptSuffixStore;
     this.globalCodexSettingsStore = globalCodexSettingsStore;
+    this.hostRegistryService = hostRegistryService;
     this.serviceGenerationId = serviceGenerationId;
     this.onRunTerminated = onRunTerminated;
     this.runTask = runTask;

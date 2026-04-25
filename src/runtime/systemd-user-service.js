@@ -5,22 +5,19 @@ import process from "node:process";
 import { formatOperatorCommandHints } from "./operator-command-hints.js";
 
 export const SYSTEMD_USER_SERVICE_NAME = "codex-telegram-gateway.service";
-export const SYSTEMD_USER_OMNI_SERVICE_NAME = "codex-telegram-gateway-omni.service";
 export const MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION = 250;
 
 export function isSystemdUserSupported(platform = process.platform) {
   return platform === "linux";
 }
 
-export function buildUnsupportedSystemdUserMessage({
-  omniVariant = false,
-} = {}) {
+export function buildUnsupportedSystemdUserMessage() {
   const windowsHints = formatOperatorCommandHints(
     [
       "install",
       "install-codex",
       "doctor",
-      omniVariant ? "run-omni" : "run",
+      "run",
     ],
     { platform: "win32" },
   );
@@ -111,6 +108,7 @@ export function buildUserServiceUnit({
     "",
     "[Service]",
     "Type=simple",
+    "UMask=0077",
     ...(exitType ? [`ExitType=${exitType}`] : []),
     `WorkingDirectory=${escapeDirectiveValue(repoRoot)}`,
     quoteEnvironment("ENV_FILE", envFilePath),

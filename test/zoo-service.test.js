@@ -8,8 +8,8 @@ import {
   createStateRoot,
 } from "../test-support/zoo-fixtures.js";
 
-test("ZooService /zoo creates the dedicated topic and menu", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService /zoo creates the dedicated topic and menu", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const service = new ZooService({
     config: buildConfig(stateRoot),
@@ -26,8 +26,8 @@ test("ZooService /zoo creates the dedicated topic and menu", async () => {
     message: {
       text: "/zoo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
   });
 
@@ -44,12 +44,12 @@ test("ZooService /zoo creates the dedicated topic and menu", async () => {
   assert.equal(topicState.menu_message_id, 901);
 });
 
-test("ZooService rejects normal prompts inside the Zoo topic", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService rejects normal prompts inside the Zoo topic", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -69,8 +69,8 @@ test("ZooService rejects normal prompts inside the Zoo topic", async () => {
     botUsername: "gatewaybot",
     message: {
       text: "hello there",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 700,
       message_id: 1,
     },

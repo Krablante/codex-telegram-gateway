@@ -5,7 +5,6 @@ import {
   handleIncomingCallbackQuery,
   handleIncomingMessage,
 } from "../src/telegram/command-router.js";
-import { buildCompactQueuedHandoffMessage } from "../src/telegram/command-handlers/topic-commands.js";
 import { handleTopicControlCallbackQuery } from "../src/telegram/topic-control-panel.js";
 import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembler.js";
 import {
@@ -40,10 +39,10 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
     callbackQuery: {
       id: "cbq-topic-1",
       data: "tcfg:w:300",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 55,
       },
     },
@@ -56,8 +55,8 @@ test("handleIncomingCallbackQuery applies a local wait preset from the topic con
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1003577434463 },
-    from: { id: 5825672398 },
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
     message_thread_id: 55,
   });
 
@@ -93,10 +92,10 @@ test("handleIncomingCallbackQuery renders status inside the topic control menu",
     callbackQuery: {
       id: "cbq-topic-status",
       data: "tcfg:n:st",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 55,
       },
     },
@@ -152,7 +151,66 @@ test("handleIncomingCallbackQuery renders status inside the topic control menu",
   assert.equal(topicControlPanelStore.getState(session).active_screen, "status");
 });
 
-test("handleIncomingCallbackQuery blocks topic-panel /compact while an Omni handoff is queued", async () => {
+test("handleIncomingCallbackQuery parks topic menu callbacks on unavailable Telegram topics", async () => {
+  const answered = [];
+  const parked = [];
+  const topicControlPanelStore = createTopicControlPanelStore({
+    menu_message_id: 91,
+    active_screen: "root",
+  });
+  const session = createTopicSession({
+    lifecycle_state: "active",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText() {
+        throw new Error("Bad Request: message thread not found");
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-topic-gone",
+      data: "tcfg:n:st",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 91,
+        chat: { id: -1001234567890 },
+        message_thread_id: 55,
+      },
+    },
+    config,
+    lifecycleManager: {
+      async handleTransportError(currentSession, error) {
+        parked.push({ currentSession, error });
+        return {
+          handled: true,
+          parked: true,
+          session: {
+            ...currentSession,
+            lifecycle_state: "parked",
+            parked_reason: "telegram/topic-unavailable",
+          },
+        };
+      },
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: createServiceState(),
+    sessionService: createTopicSessionService(session),
+    topicControlPanelStore,
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "topic-control-topic-unavailable");
+  assert.equal(answered.length, 1);
+  assert.equal(parked.length, 1);
+  assert.match(parked[0].error.message, /message thread not found/u);
+});
+
+test("handleIncomingCallbackQuery dispatches topic-panel /compact immediately", async () => {
   const sent = [];
   const answered = [];
   const session = createTopicSession();
@@ -171,23 +229,15 @@ test("handleIncomingCallbackQuery blocks topic-panel /compact while an Omni hand
     callbackQuery: {
       id: "cbq-topic-compact",
       data: "tcfg:cmd:compact",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 55,
       },
     },
     config,
     promptFragmentAssembler: new PromptFragmentAssembler(),
-    promptHandoffStore: {
-      async load() {
-        return {
-          mode: "continuation",
-          prompt: "Queued Omni continuation",
-        };
-      },
-    },
     serviceState: createServiceState(),
     sessionService: createTopicSessionService(session),
     topicControlPanelStore: createTopicControlPanelStore({
@@ -199,7 +249,7 @@ test("handleIncomingCallbackQuery blocks topic-panel /compact while an Omni hand
 
   assert.equal(result.reason, "topic-control-command-dispatched");
   assert.equal(answered.length, 1);
-  assert.equal(sent[0].text, buildCompactQueuedHandoffMessage(session));
+  assert.match(sent[0].text, /Compaction started|Пересборка brief запущена/u);
 });
 
 test("handleIncomingMessage opens and pins the local topic control menu with /menu", async () => {
@@ -230,8 +280,8 @@ test("handleIncomingMessage opens and pins the local topic control menu with /me
     message: {
       text: "/menu",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 55,
     },
     serviceState: createServiceState(),
@@ -342,8 +392,8 @@ test("handleIncomingMessage opens the local topic control menu from a suggested 
     config,
     message: {
       text: "/menu@gatewaybot",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 55,
     },
     serviceState: createServiceState(),
@@ -367,7 +417,7 @@ test("handleIncomingMessage recreates the local topic control menu when an expli
     active_screen: "root",
   });
   const session = createTopicSession({
-    session_key: "-1003577434463:2203",
+    session_key: "-1001234567890:2203",
     topic_id: "2203",
     topic_name: "codex-telegram",
   });
@@ -395,8 +445,8 @@ test("handleIncomingMessage recreates the local topic control menu when an expli
     config,
     message: {
       text: "/menu@gatewaybot",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 2203,
     },
     serviceState: createServiceState(),
@@ -406,7 +456,7 @@ test("handleIncomingMessage recreates the local topic control menu when an expli
   });
 
   assert.equal(result.command, "menu");
-  assert.equal(edited.length, 1);
+  assert.equal(edited.length, 0);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].message_thread_id, 2203);
   assert.match(sent[0].text, /Topic control panel/u);
@@ -414,6 +464,66 @@ test("handleIncomingMessage recreates the local topic control menu when an expli
   assert.equal(deleted.length, 1);
   assert.equal(deleted[0].message_id, 6871);
   assert.equal(topicControlPanelStore.getState(session).menu_message_id, 6889);
+});
+
+test("handleIncomingMessage recreates the local topic control menu even when the existing panel is editable", async () => {
+  const sent = [];
+  const edited = [];
+  const pinned = [];
+  const deleted = [];
+  const topicControlPanelStore = createTopicControlPanelStore({
+    menu_message_id: 6950,
+    active_screen: "root",
+  });
+  const session = createTopicSession({
+    session_key: "-1001234567890:2203",
+    topic_id: "2203",
+    topic_name: "codex-telegram",
+  });
+
+  const result = await handleIncomingMessage({
+    api: {
+      async editMessageText(payload) {
+        edited.push(payload);
+        return true;
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 12561 };
+      },
+      async pinChatMessage(payload) {
+        pinned.push(payload);
+        return true;
+      },
+      async deleteMessage(payload) {
+        deleted.push(payload);
+        return true;
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/menu",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 2203,
+    },
+    serviceState: createServiceState(),
+    sessionService: createTopicSessionService(session),
+    topicControlPanelStore,
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.command, "menu");
+  assert.equal(edited.length, 0);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].message_thread_id, 2203);
+  assert.equal(pinned.length, 1);
+  assert.equal(pinned[0].message_id, 12561);
+  assert.equal(deleted.length, 1);
+  assert.equal(deleted[0].message_id, 6950);
+  assert.equal(topicControlPanelStore.getState(session).menu_message_id, 12561);
 });
 
 test("handleIncomingCallbackQuery opens bot settings inside the topic control menu", async () => {
@@ -438,10 +548,10 @@ test("handleIncomingCallbackQuery opens bot settings inside the topic control me
     callbackQuery: {
       id: "cbq-topic-bots",
       data: "tcfg:n:b",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 55,
       },
     },
@@ -480,10 +590,10 @@ test("handleTopicControlCallbackQuery dispatches topic command buttons through t
     callbackQuery: {
       id: "cbq-topic-compact",
       data: "tcfg:cmd:compact",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 91,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 55,
       },
     },
@@ -502,4 +612,88 @@ test("handleTopicControlCallbackQuery dispatches topic command buttons through t
   assert.equal(dispatched.length, 1);
   assert.equal(dispatched[0].commandText, "/compact");
   assert.equal(dispatched[0].chat.message_thread_id, 55);
+});
+
+test("handleTopicControlCallbackQuery rejects stale topic menu callbacks", async () => {
+  const answered = [];
+  const edited = [];
+  const topicControlPanelStore = createTopicControlPanelStore({
+    menu_message_id: 91,
+    active_screen: "root",
+  });
+  const session = createTopicSession();
+
+  const result = await handleTopicControlCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    callbackQuery: {
+      id: "cbq-topic-stale",
+      data: "tcfg:n:b",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 90,
+        chat: { id: -1001234567890 },
+        message_thread_id: 55,
+      },
+    },
+    config,
+    dispatchCommand: async () => {
+      throw new Error("stale menu callback must not dispatch commands");
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    sessionService: createTopicSessionService(session),
+    topicControlPanelStore,
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "topic-control-menu-expired");
+  assert.equal(edited.length, 0);
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /устарело/u);
+});
+
+test("handleTopicControlCallbackQuery rejects callbacks when menu state was purged", async () => {
+  const answered = [];
+  const edited = [];
+  const session = createTopicSession();
+
+  const result = await handleTopicControlCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    callbackQuery: {
+      id: "cbq-topic-purged-menu",
+      data: "tcfg:n:b",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 91,
+        chat: { id: -1001234567890 },
+        message_thread_id: 55,
+      },
+    },
+    config,
+    dispatchCommand: async () => {
+      throw new Error("purged menu callback must not dispatch commands");
+    },
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    sessionService: createTopicSessionService(session),
+    topicControlPanelStore: createTopicControlPanelStore(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "topic-control-menu-expired");
+  assert.equal(edited.length, 0);
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /устарело/u);
 });

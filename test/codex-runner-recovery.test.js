@@ -382,8 +382,8 @@ test("runCodexTask uses official thread history to repair a stale stored thread 
             {
               id: "history-thread",
               preview: [
-                "Telegram topic routing context:",
-                "session_key: -1003577434463:2203",
+                "Context:",
+                "session_key: -1001234567890:2203",
               ].join("\n"),
             },
           ],
@@ -410,9 +410,9 @@ test("runCodexTask uses official thread history to repair a stale stored thread 
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Продолжай.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     sessionThreadId: "stale-thread",
     providerSessionId: "provider-session-2203",
     spawnImpl() {
@@ -473,8 +473,8 @@ test("runCodexTask uses official thread history even when local continuity ids a
             {
               id: "history-only-thread",
               preview: [
-                "Telegram topic routing context:",
-                "session_key: -1003577434463:2203",
+                "Context:",
+                "session_key: -1001234567890:2203",
               ].join("\n"),
             },
           ],
@@ -501,9 +501,9 @@ test("runCodexTask uses official thread history even when local continuity ids a
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Продолжай нативный resume.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     spawnImpl() {
       return child;
     },
@@ -561,7 +561,7 @@ test("runCodexTask broadens history repair beyond cwd-scoped thread list when se
       "thread/list"(params) {
         threadListCalls.push(params);
         if (threadListCalls.length === 1) {
-          assert.equal(params.cwd, "/home/bloob/atlas");
+          assert.equal(params.cwd, "/srv/codex-workspace");
           return {
             data: [],
             nextCursor: null,
@@ -574,8 +574,8 @@ test("runCodexTask broadens history repair beyond cwd-scoped thread list when se
             {
               id: "global-history-thread",
               preview: [
-                "Telegram topic routing context:",
-                "session_key: -1003577434463:2203",
+                "Context:",
+                "session_key: -1001234567890:2203",
               ].join("\n"),
             },
           ],
@@ -602,9 +602,9 @@ test("runCodexTask broadens history repair beyond cwd-scoped thread list when se
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Продолжай через глобальную историю.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     spawnImpl() {
       return child;
     },
@@ -659,9 +659,9 @@ test("runCodexTask fails fast when session-key-only history repair breaks", asyn
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Продолжай.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     spawnImpl() {
       return child;
     },
@@ -706,9 +706,9 @@ test("runCodexTask does not start a duplicate turn when thread resume already ex
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Не дублируй turn.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     sessionThreadId: "history-thread",
     spawnImpl() {
       return child;
@@ -778,9 +778,9 @@ test("runCodexTask skips thread history lookup during a deliberate fresh-start b
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Стартуй свежо после compact.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     skipThreadHistoryLookup: true,
     spawnImpl() {
       return child;
@@ -847,9 +847,9 @@ test("runCodexTask fails fast when historical thread lookup breaks while continu
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Продолжай.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     sessionThreadId: "stale-thread",
     providerSessionId: "provider-session-2203",
     spawnImpl() {
@@ -881,9 +881,9 @@ test("runCodexTask surfaces transient resume errors instead of pretending the th
 
   const run = runCodexTask({
     codexBinPath: "codex",
-    cwd: "/home/bloob/atlas",
+    cwd: "/srv/codex-workspace",
     prompt: "Продолжай.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     sessionThreadId: "stale-thread",
     skipThreadHistoryLookup: true,
     spawnImpl() {
@@ -1799,7 +1799,7 @@ test("runCodexTask preserves user interrupt semantics when startup dies before t
     codexBinPath: "codex",
     cwd: process.cwd(),
     prompt: "Остановись во время раннего startup.",
-    sessionKey: "-1003577434463:2203",
+    sessionKey: "-1001234567890:2203",
     spawnImpl() {
       return child;
     },

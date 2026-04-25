@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 import { appendCodexRuntimeConfigArgs } from "../codex-runtime/config-args.js";
+import { buildCodexChildEnv } from "../runtime/codex-child-env.js";
 import { spawnRuntimeCommand } from "../runtime/spawn-command.js";
 
 function limitText(text, maxChars = 8000) {
@@ -26,6 +27,8 @@ export function buildCodexExecArgs({
   imagePaths = [],
   model = null,
   reasoningEffort = null,
+  contextWindow = null,
+  autoCompactTokenLimit = null,
 }) {
   const args = [
     "exec",
@@ -39,6 +42,8 @@ export function buildCodexExecArgs({
   appendCodexRuntimeConfigArgs(args, {
     model,
     reasoningEffort,
+    contextWindow,
+    autoCompactTokenLimit,
   });
 
   for (const imagePath of imagePaths) {
@@ -58,6 +63,8 @@ export function startCodexExecRun({
   imagePaths = [],
   model = null,
   reasoningEffort = null,
+  contextWindow = null,
+  autoCompactTokenLimit = null,
   spawnProcess,
   platform = process.platform,
 }) {
@@ -69,11 +76,13 @@ export function startCodexExecRun({
     imagePaths,
     model,
     reasoningEffort,
+    contextWindow,
+    autoCompactTokenLimit,
   });
   const child = spawnRuntimeCommand(codexBinPath, args, {
     cwd: repoRoot,
     detached: platform !== "win32",
-    env: process.env,
+    env: buildCodexChildEnv(),
     platform,
     stdio: ["pipe", "pipe", "pipe"],
     spawnImpl: spawnProcess,

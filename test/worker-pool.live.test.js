@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { CodexWorkerPool } from "../src/pty-worker/worker-pool.js";
+import { runCodexTask } from "../src/pty-worker/codex-runner.js";
 import { buildSleepCommandPrompt } from "../src/runtime/live-command-prompts.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
 
@@ -60,16 +61,17 @@ function buildMockApi(sentMessages) {
 }
 
 async function createSession(sessionStore, topicId, topicName) {
+  const workspaceRoot = process.cwd();
   return sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId,
     topicName,
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: workspaceRoot,
+      cwd: workspaceRoot,
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: workspaceRoot,
     },
   });
 }
@@ -92,10 +94,13 @@ test(
       api: buildMockApi(sentMessages),
       config: {
         codexBinPath: "codex",
+        codexGatewayBackend: "app-server",
+        codexEnableLegacyAppServer: true,
         maxParallelSessions: 3,
       },
       sessionStore,
       serviceState,
+      runTask: runCodexTask,
     });
 
     try {
@@ -193,10 +198,13 @@ test(
       api: buildMockApi(sentMessages),
       config: {
         codexBinPath: "codex",
+        codexGatewayBackend: "app-server",
+        codexEnableLegacyAppServer: true,
         maxParallelSessions: 1,
       },
       sessionStore,
       serviceState,
+      runTask: runCodexTask,
     });
 
     try {
@@ -271,10 +279,13 @@ test(
       api: buildMockApi(sentMessages),
       config: {
         codexBinPath: "codex",
+        codexGatewayBackend: "app-server",
+        codexEnableLegacyAppServer: true,
         maxParallelSessions: 1,
       },
       sessionStore,
       serviceState,
+      runTask: runCodexTask,
     });
 
     try {
@@ -354,10 +365,13 @@ test(
       api: buildMockApi(sentMessages),
       config: {
         codexBinPath: "codex",
+        codexGatewayBackend: "app-server",
+        codexEnableLegacyAppServer: true,
         maxParallelSessions: 1,
       },
       sessionStore,
       serviceState,
+      runTask: runCodexTask,
     });
 
     try {

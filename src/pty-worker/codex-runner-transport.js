@@ -63,10 +63,13 @@ export function waitForListenUrl(
 
     const onClose = (code, signal) => {
       cleanup();
+      const message = code === 0 && !signal
+        ? "Codex app-server ended before startup"
+        : `Codex app-server exited before startup (code=${code ?? "null"}, signal=${signal ?? "null"})`;
       reject(
         new Error(
           appendStartupOutput(
-            `Codex app-server exited before startup (code=${code ?? "null"}, signal=${signal ?? "null"})`,
+            message,
             startupOutput,
           ),
         ),
@@ -194,12 +197,33 @@ export function createJsonRpcClient(ws, { onNotification, onDisconnect }) {
   ws.onerror = () => {};
 
   return {
-    request(method, params = {}) {
+    request(method, params = {}, { timeoutMs = 0 } = {}) {
       const id = nextId;
       nextId += 1;
 
       return new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject, method });
+        let timer = null;
+        if (timeoutMs > 0) {
+          timer = setTimeout(() => {
+            pending.delete(id);
+            reject(new Error(`Codex request ${method} timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
+        }
+        pending.set(id, {
+          method,
+          resolve(value) {
+            if (timer) {
+              clearTimeout(timer);
+            }
+            resolve(value);
+          },
+          reject(error) {
+            if (timer) {
+              clearTimeout(timer);
+            }
+            reject(error);
+          },
+        });
         try {
           ws.send(JSON.stringify({
             jsonrpc: "2.0",
@@ -208,6 +232,9 @@ export function createJsonRpcClient(ws, { onNotification, onDisconnect }) {
             params,
           }));
         } catch (error) {
+          if (timer) {
+            clearTimeout(timer);
+          }
           pending.delete(id);
           reject(error);
         }

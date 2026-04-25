@@ -5,6 +5,8 @@ import process from "node:process";
 
 import { probeForwardingEndpoint } from "./update-forwarding-ipc.js";
 import {
+  ensurePrivateDirectory,
+  PRIVATE_DIRECTORY_MODE,
   quarantineCorruptFile,
   writeTextAtomic,
 } from "../state/file-utils.js";
@@ -145,12 +147,12 @@ export class ServiceGenerationStore {
 
   async withLeaderLock(fn) {
     const lockPath = this.getLeaderLockPath();
-    await fs.mkdir(this.indexesRoot, { recursive: true });
+    await ensurePrivateDirectory(this.indexesRoot);
     const startedAt = this.now();
 
     while (true) {
       try {
-        await fs.mkdir(lockPath);
+        await fs.mkdir(lockPath, { mode: PRIVATE_DIRECTORY_MODE });
         break;
       } catch (error) {
         if (error?.code !== "EEXIST") {
@@ -172,6 +174,7 @@ export class ServiceGenerationStore {
 
           throw new Error(
             `Timed out acquiring leader lock for ${this.serviceKind}`,
+            { cause: error },
           );
         }
 
@@ -335,7 +338,7 @@ export class ServiceGenerationStore {
   }
 
   async listGenerations() {
-    let entries = [];
+    let entries;
     try {
       entries = await fs.readdir(this.getGenerationRegistryDir(), {
         withFileTypes: true,

@@ -32,8 +32,6 @@ scripts\windows\test.cmd
 scripts\windows\run.cmd
 ```
 
-If you plan to use `Omni`, run `scripts\windows\run-omni.cmd` in a second shell.
-
 ## Before You Start
 
 You need:
@@ -43,7 +41,7 @@ You need:
 - one Telegram account that will operate the bot
 - one Telegram supergroup with topics enabled
 
-You do not need `Omni` to get started. Spike-only mode is the simplest and usually the best first install.
+The current public runtime is single-bot. `Spike` is the worker.
 
 If you are on Windows, prefer the native Windows path first. Only use WSL when you already know your WSL networking and path setup are healthy.
 
@@ -118,7 +116,7 @@ Minimum required values:
 Minimal practical example:
 
 ```env
-TELEGRAM_BOT_TOKEN=123456:replace-me
+TELEGRAM_BOT_TOKEN=replace-me
 TELEGRAM_ALLOWED_USER_ID=123456789
 TELEGRAM_FORUM_CHAT_ID=-1001234567890
 WORKSPACE_ROOT=/home/you/work
@@ -145,14 +143,9 @@ Optional but commonly useful:
 - `CODEX_LIMITS_COMMAND`
 - `MAX_PARALLEL_SESSIONS`
 
-Optional Omni setup:
+Optional trusted bot id:
 
-- `OMNI_ENABLED`
-- `OMNI_BOT_TOKEN`
-- `OMNI_BOT_ID`
 - `SPIKE_BOT_ID`
-
-If you do not need `/auto` yet, leave the Omni settings unset and start with Spike-only mode.
 
 Recommended path setup:
 
@@ -226,19 +219,6 @@ make service-rollout
 Those `service-*` flows are Linux-only because they target `systemd --user`.
 Use `make service-rollout` or `make service-restart` for the soft Spike handoff path. Reserve `make service-hard-restart` for blind restarts.
 
-If Omni is configured:
-
-```bash
-make run-omni
-```
-
-Native Windows equivalent:
-
-```powershell
-scripts\windows\admin.cmd status
-scripts\windows\run-omni.cmd
-```
-
 ## 7. First Telegram Check
 
 Inside Telegram:
@@ -267,10 +247,9 @@ That private chat is the rescue lane if the normal topic path breaks.
 - the bot is in the chat but not an admin
 - `WORKSPACE_ROOT` points to a path that does not exist locally
 - WSL was used for a first install even though native Windows would have been simpler
-- Omni was configured immediately even though Spike-only would have been enough for the first run
 
 ## What To Read Next
 
 - [telegram-surface.md](./telegram-surface.md) — commands and menus
-- [deployment.md](./deployment.md) — Spike-only vs Spike+Omni
+- [deployment.md](./deployment.md) — env model and service deployment
 - [runbook.md](./runbook.md) — live operations and recovery

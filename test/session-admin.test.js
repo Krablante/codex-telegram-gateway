@@ -10,10 +10,10 @@ import { SessionStore } from "../src/session-manager/session-store.js";
 
 function buildBinding() {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/srv/codex-workspace",
+    cwd: "/srv/codex-workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/srv/codex-workspace",
   };
 }
 
@@ -30,7 +30,7 @@ async function makeHarness() {
       envFilePath: "/state/runtime.env",
       repoRoot: "/repo",
       stateRoot: "/state",
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     serviceState: {
       startedAt: null,
@@ -76,14 +76,14 @@ test("SessionAdmin lists sessions and builds lifecycle counts", async () => {
   const { sessionStore, sessionAdmin } = await makeHarness();
 
   const active = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 201,
     topicName: "Active",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
   const parkedBase = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 202,
     topicName: "Parked",
     createdVia: "test",
@@ -94,7 +94,7 @@ test("SessionAdmin lists sessions and builds lifecycle counts", async () => {
     retention_pin: true,
   });
   const purgedBase = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 203,
     topicName: "Purged",
     createdVia: "test",
@@ -126,7 +126,7 @@ test("SessionAdmin pin/unpin/reactivate/purge updates state and audit trails", a
   const { logsDir, sessionStore, sessionAdmin } = await makeHarness();
 
   const created = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 204,
     topicName: "Retention",
     createdVia: "test",
@@ -193,7 +193,7 @@ test("SessionAdmin pin/unpin/reactivate/purge updates state and audit trails", a
 test("SessionAdmin refuses to purge a session that still reports a running run", async () => {
   const { sessionAdmin, sessionStore } = await makeHarness();
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 903,
     topicName: "Running session",
     createdVia: "test",

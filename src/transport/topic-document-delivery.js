@@ -1,6 +1,20 @@
 import fs from "node:fs/promises";
 
-export const TELEGRAM_FILE_SOFT_LIMIT_BYTES = 45 * 1024 * 1024;
+const TELEGRAM_FILE_SOFT_LIMIT_BYTES = 45 * 1024 * 1024;
+export const TELEGRAM_DOCUMENT_CAPTION_LIMIT_CHARS = 1024;
+
+function normalizeDocumentCaption(value) {
+  const caption = typeof value === "string" ? value.trim() : "";
+  if (!caption) {
+    return undefined;
+  }
+
+  if (caption.length <= TELEGRAM_DOCUMENT_CAPTION_LIMIT_CHARS) {
+    return caption;
+  }
+
+  return caption.slice(0, TELEGRAM_DOCUMENT_CAPTION_LIMIT_CHARS - 1).trimEnd() + "…";
+}
 
 export async function deliverDocumentToTopic({
   api,
@@ -25,7 +39,7 @@ export async function deliverDocumentToTopic({
   const params = {
     chat_id: chatId,
     message_thread_id: messageThreadId,
-    caption: document.caption,
+    caption: normalizeDocumentCaption(document.caption),
     document: {
       filePath: document.filePath,
       fileName: document.fileName,

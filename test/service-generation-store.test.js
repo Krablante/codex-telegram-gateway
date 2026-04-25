@@ -5,6 +5,14 @@ import os from "node:os";
 import path from "node:path";
 
 import { ServiceGenerationStore } from "../src/runtime/service-generation-store.js";
+import {
+  PRIVATE_DIRECTORY_MODE,
+  supportsPosixFileModes,
+} from "../src/state/file-utils.js";
+
+async function getMode(filePath) {
+  return (await fs.stat(filePath)).mode & 0o777;
+}
 
 test("ServiceGenerationStore writes generation heartbeats and leader leases", async () => {
   const root = await fs.mkdtemp(
@@ -42,6 +50,10 @@ test("ServiceGenerationStore writes generation heartbeats and leader leases", as
   const released = await store.releaseLeadership();
   assert.equal(released, true);
   assert.equal(await store.loadLeaderLease(), null);
+
+  if (supportsPosixFileModes()) {
+    assert.equal(await getMode(path.join(root, "indexes")), PRIVATE_DIRECTORY_MODE);
+  }
 });
 
 test("ServiceGenerationStore refuses leadership while another live generation owns the lease", async () => {

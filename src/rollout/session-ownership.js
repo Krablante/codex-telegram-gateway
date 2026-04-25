@@ -13,6 +13,14 @@ export function normalizeSessionOwnerMode(value) {
   return SESSION_OWNER_MODES.has(normalized) ? normalized : null;
 }
 
+export function resolveSessionOwnerGenerationId(session) {
+  return (
+    normalizeText(session?.session_owner_generation_id)
+    ?? normalizeText(session?.spike_run_owner_generation_id)
+    ?? null
+  );
+}
+
 export function normalizeSessionOwnership(payload = null) {
   return {
     session_owner_generation_id: normalizeText(payload?.session_owner_generation_id),
@@ -48,14 +56,11 @@ export function clearSessionOwnershipPatch() {
 }
 
 export function isSessionOwnedByGeneration(session, generationId) {
-  return (
-    normalizeText(session?.session_owner_generation_id)
-    === normalizeText(generationId)
-  );
+  return resolveSessionOwnerGenerationId(session) === normalizeText(generationId);
 }
 
 export function isSessionOwnedByDifferentGeneration(session, generationId) {
-  const ownerGenerationId = normalizeText(session?.session_owner_generation_id);
+  const ownerGenerationId = resolveSessionOwnerGenerationId(session);
   if (!ownerGenerationId) {
     return false;
   }
@@ -76,4 +81,18 @@ export function shouldForwardSessionToOwner(session, generationId) {
       )
     )
   );
+}
+
+export async function isOwnedSessionForwardTargetLive(session, generationStore) {
+  const ownerGenerationId = resolveSessionOwnerGenerationId(session);
+  if (!ownerGenerationId || !generationStore) {
+    return false;
+  }
+
+  const record = await generationStore.loadGeneration(ownerGenerationId);
+  if (typeof generationStore.isGenerationRecordVerifiablyLive === "function") {
+    return generationStore.isGenerationRecordVerifiablyLive(record);
+  }
+
+  return generationStore.isGenerationRecordLive?.(record) ?? false;
 }

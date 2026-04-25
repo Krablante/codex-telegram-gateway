@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  One topic = one session. <code>Spike</code> talks directly to <code>codex</code>. Optional <code>Omni</code> supervises <code>/auto</code>. <code>Zoo</code> adds a playful side lane for project stats.
+  One topic = one session. <code>Spike</code> talks directly to <code>codex exec --json</code>. <code>Zoo</code> adds an optional project-status board.
 </p>
 
 <p align="center">
@@ -33,25 +33,20 @@
   ·
   <a href="./docs/telegram-surface.md">Telegram Surface</a>
   ·
-  <a href="./docs/omni-auto.md">Auto Mode</a>
-  ·
   <a href="./docs/runbook.md">Runbook</a>
   ·
   <a href="./CHANGELOG.md">Changelog</a>
 </p>
 
-`codex-telegram-gateway` started as a personal tool for real work with friends and then got cleaned up into a public repo for anyone who wants a lean Telegram front end for Codex.
+`codex-telegram-gateway` is a lean Telegram front end for the local Codex CLI. It keeps the normal path simple: Telegram forum topics, one bot, your local machine, and the repos/auth/tools that Codex already uses.
 
-If OpenClaw-like systems are your reference point, the difference here is intentional: the default path is just Telegram forum topics, a bot, and the actual local machine where `codex` already has your repos, auth, files, and tools. `Spike` talks to `codex` directly, so ordinary work does not pay for a permanent extra supervisor layer on every turn.
-
-`/auto` is there when autonomy is worth the extra spend. You give `Omni + Spike` a clear goal and a strong starting prompt, and they can keep pushing the project forward on their own. `Zoo` is separate, optional, and mostly there because a project tamagotchi is fun when it is also useful.
+The current runtime is intentionally single-bot. `Spike` is the worker. The old second-bot autonomy stack has been removed from the public surface.
 
 ## Why People Use It
 
 - one task, one topic, one durable session
 - direct Telegram -> `Spike` -> `codex` flow for normal work
 - less prompt overhead than heavier always-on agent stacks
-- optional `Omni` only when `/auto` is actually worth the extra tokens
 - real local files and commands, not a fake hosted wrapper
 - recovery that survives long-running work
 
@@ -62,8 +57,7 @@ If OpenClaw-like systems are your reference point, the difference here is intent
 | `General` topic | global controls, `/guide`, `/help`, `/global`, creating new work topics |
 | work topic | the actual task lane |
 | `Spike` | the live worker that reads code, edits files, runs commands, and sends progress/final replies |
-| `Omni` | optional lightweight supervisor for `/auto` |
-| `Zoo` topic | optional menu-only project tamagotchi lane |
+| `Zoo` topic | optional menu-only project status lane |
 | local state root | durable memory: sessions, briefs, logs, queued prompts, artifacts |
 
 Architecture at a glance:
@@ -77,11 +71,10 @@ Telegram forum
 ├─ Work topics
 │  ├─ plain prompts -> Spike
 │  ├─ /q, /wait, /suffix, /compact, /purge
-│  └─ /auto -> Omni supervises, Spike still does the heavy work
 └─ Zoo
-   └─ optional menu-only pet cards for projects
+   └─ optional menu-only project cards
 
-Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/files/state
+Telegram surface -> codex-telegram-gateway -> codex exec --json -> local repos/files/state
 ```
 
 ## Highlights
@@ -96,8 +89,7 @@ Telegram surface -> codex-telegram-gateway -> local codex CLI -> local repos/fil
 - queued prompts with `/q`
 - compacted recovery memory rebuilt from the clean exchange log
 - operator-only emergency private chat lane
-- optional `Omni` bot with goal-locked `/auto`
-- optional `Zoo` topic for project tamagotchi snapshots
+- optional `Zoo` topic for project snapshots
 
 ## Code Direction
 
@@ -119,8 +111,7 @@ The repo has now moved to an explicit modular handler system and should stay tha
 - [docs/index.md](./docs/index.md) — doc map
 - [docs/architecture.md](./docs/architecture.md) — runtime shape and flow
 - [docs/telegram-surface.md](./docs/telegram-surface.md) — commands, waits, suffixes, rendering, file delivery
-- [docs/omni-auto.md](./docs/omni-auto.md) — `/auto`, `Omni`, phases, sleep, blockers
-- [docs/deployment.md](./docs/deployment.md) — env, services, Spike-only vs Spike+Omni deployment
+- [docs/deployment.md](./docs/deployment.md) — env, services, host bootstrap
 - [docs/testing.md](./docs/testing.md) — doctor, smoke, soak, live-user testing
 - [docs/runbook.md](./docs/runbook.md) and [docs/runbook-rus.md](./docs/runbook-rus.md) — operator troubleshooting and recovery
 - [docs/state-contract.md](./docs/state-contract.md) — mutable state surfaces
@@ -131,9 +122,12 @@ Linux/operator path:
 
 ```bash
 cd /path/to/codex-telegram-gateway
-# make config only verifies that ENV_FILE already points at a readable runtime env
-make doctor
-make run
+npm ci
+install -d -m700 "${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway"
+install -m600 .env.example "${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+$EDITOR "${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env" make doctor
+ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env" make run
 ```
 
 First-time minimum in the runtime env:
@@ -145,6 +139,7 @@ First-time minimum in the runtime env:
 - optional `DEFAULT_SESSION_BINDING_PATH`
 - optional `CODEX_CONFIG_PATH`
 - optional `CODEX_LIMITS_COMMAND` or `CODEX_LIMITS_SESSIONS_ROOT` when limits should come from another Codex host
+- optional `CURRENT_HOST_ID` and `HOST_REGISTRY_PATH` for multi-host setups
 
 `DEFAULT_SESSION_BINDING_PATH` only changes where plain `/new Topic Name` starts when no explicit `cwd=...` is provided. If it is unset, ordinary `/new` falls back to `WORKSPACE_ROOT`.
 If the explicit binding path contains spaces, quote it, for example `/new cwd="C:/Users/Example/Source Repos" Audit topic`.
@@ -183,42 +178,28 @@ scripts\windows\install-codex.cmd
 
 `make`, `systemd`, and `service-install` remain Linux-only.
 
-With Omni enabled on Linux/operator path:
-
-```bash
-cd /path/to/codex-telegram-gateway
-make run
-make run-omni
-```
-
-With Omni enabled on native Windows:
-
-```powershell
-scripts\windows\run.cmd
-scripts\windows\run-omni.cmd
-```
-
 ## Baseline Commands
 
 Linux/operator path:
 
 ```bash
 make doctor
+make check-syntax
+make lint
+make typecheck
 make test
+make test-exec
+make hygiene
 make test-live
 make run
-make run-omni
 make user-e2e
 make user-spike-audit
 make service-install
-make service-install-omni
 make service-status
-make service-status-omni
 make service-rollout
 make service-restart
 make service-restart-live
 make service-hard-restart
-make service-restart-omni
 make admin ARGS='status'
 ```
 
@@ -229,7 +210,6 @@ scripts\windows\doctor.cmd
 scripts\windows\test.cmd
 scripts\windows\test-live.cmd
 scripts\windows\run.cmd
-scripts\windows\run-omni.cmd
 scripts\windows\admin.cmd status
 ```
 
@@ -253,19 +233,19 @@ scripts\windows\user-spike-audit.cmd
 
 ## Notes
 
-- `Spike` stays the only heavy live worker; `Omni` uses short one-shot `codex exec` passes
-- if `OMNI_ENABLED=false`, the gateway behaves like a clean single-bot deployment
-- native Windows now supports direct `.env`-based startup without host-specific Linux paths or WSL-only assumptions; `WORKSPACE_ROOT` is preferred, and the legacy compatibility alias is still accepted
+- `Spike` is the only live worker
+- default worker turns use `codex exec --json`; `CODEX_GATEWAY_BACKEND=app-server` is legacy fallback/debug only and requires `CODEX_ENABLE_LEGACY_APP_SERVER=1`
+- native Windows now supports direct `.env`-based startup without host-specific Linux paths or WSL-only assumptions; use `WORKSPACE_ROOT` when you want to pin the workspace explicitly
 - Windows wrappers intentionally use `npm ci --ignore-scripts`; this repo does not need package install scripts, and skipping them avoids flaky transitive `postinstall` failures on some Windows setups
 - `make user-login` and `scripts\windows\user-login.cmd` now use a small built-in Node terminal prompt layer; the old `input`/`inquirer`/`lodash` stack is no longer in the production dependency graph
 - `service-install` is intentionally Linux-only here because it targets `systemd --user`; it resolves `CODEX_BIN_PATH` without invoking a shell, pins `CODEX_CONFIG_PATH` into the user unit, preserves the installing shell `PATH` inside the user unit so repo-local helpers and user shims stay reachable, and Spike requires `systemd >= 250` for `ExitType=cgroup`
 - on Linux, `make service-rollout` and `make service-restart` are the soft rollout path for Spike: the command waits until the replacement generation has actually taken leader traffic, while already active run topics keep finishing on the retiring generation; use `make service-hard-restart` only when you really want a blind restart
-- `make service-restart-live` is the canonical live-runtime restart path: it restarts `Omni` when that unit is installed and then rolls `Spike` through the safe session-aware rollout flow
+- `make service-restart` and `make service-restart-live` use the same safe session-aware rollout flow
 - while `/compact` is rebuilding the brief, direct prompt starts for that topic are blocked instead of racing a second Spike run against the fresh-start handoff
 - `make test-live` and `make user-spike-audit` are the quickest deep validations for real Codex continuity and heavy user-account scenarios; native Windows now ships matching wrapper scripts for both
 - `make admin ARGS='status'` now also shows heartbeat freshness, pid liveness, the configured and resolved `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and parsed MCP server names, so operators can confirm the live Codex profile before assuming tool loss
 - `/status` now separates configured limits from the live effective rollout window when they differ, so operators can see both the intended config and the current in-flight session reality
-- live `codex app-server` launches now pin explicit full-access overrides, so direct CLI use and live Spike runs do not silently diverge on hosts that would otherwise fall back to sandboxed app-server behavior
+- fallback `codex app-server` launches are still available for debugging the legacy transport, but they are no longer the default runtime path
 - native resume/interrupt recovery now follows real Codex session history first, including `thread/list`, `provider_session_id`, rollout metadata, and `session_key`, instead of treating every local continuity gap like a forced fresh start
 - Windows process-tree shutdown now uses `taskkill /t` fallback instead of assuming POSIX-only negative-pid signaling, so interrupted Codex runs are less likely to leave orphaned child processes behind
 - local loopback IPC now retries blocked or reserved loopback ports on native Windows instead of failing the forwarding server on the first bind error

@@ -1,5 +1,8 @@
+import fs from "node:fs/promises";
+
 import { readLatestContextSnapshot } from "../session-manager/context-snapshot.js";
 import { clearSessionOwnershipPatch } from "../rollout/session-ownership.js";
+import { summarizeCodexExecEvent } from "../codex-exec/telegram-exec-runner.js";
 import {
   extractRolloutTaskStartedTurnId,
   readRolloutDelta,
@@ -14,11 +17,47 @@ function normalizeStoredText(value) {
   return normalized || null;
 }
 
-function resolveStoredThreadId(session) {
+function normalizeBackend(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isLegacyAppServerBackend(value) {
+  const backend = normalizeBackend(value);
+  return backend === "app-server" || backend === "appserver";
+}
+
+function isLegacyAppServerSession(session, { codexGatewayBackend = "exec-json" } = {}) {
+  if (!isLegacyAppServerBackend(codexGatewayBackend)) {
+    return false;
+  }
+
+  const backend = normalizeBackend(
+    session?.codex_backend || session?.last_run_backend,
+  );
+  return isLegacyAppServerBackend(backend);
+}
+
+function stripLegacySnapshotFields(snapshot) {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    ...snapshot,
+    session_id: null,
+    rollout_path: null,
+  };
+}
+
+function resolveStoredThreadId(session, { legacyAppServer = true } = {}) {
   return normalizeStoredText(
     session?.codex_thread_id
-      ?? session?.last_context_snapshot?.thread_id
-      ?? session?.last_context_snapshot?.threadId,
+      ?? (legacyAppServer
+        ? (
+            session?.last_context_snapshot?.thread_id
+            ?? session?.last_context_snapshot?.threadId
+          )
+        : null),
   );
 }
 
@@ -109,14 +148,16 @@ async function persistRecoveredRunArtifacts({
 
 async function inspectRecoveredRunOutcome({
   codexSessionsRoot = null,
+  legacyAppServer = false,
   session,
+  sessionStore = null,
 }) {
-  const threadId = resolveStoredThreadId(session);
+  const threadId = resolveStoredThreadId(session, { legacyAppServer });
   let providerSessionId = resolveStoredProviderSessionId(session);
   let rolloutPath = resolveStoredRolloutPath(session);
   let latestSnapshot = null;
 
-  if ((threadId || providerSessionId) && codexSessionsRoot) {
+  if (legacyAppServer && (threadId || providerSessionId) && codexSessionsRoot) {
     const resolved = await readLatestContextSnapshot({
       threadId,
       providerSessionId,
@@ -130,6 +171,32 @@ async function inspectRecoveredRunOutcome({
     );
   }
 
+  if (!legacyAppServer) {
+    const execJsonOutcome = await inspectExecJsonRunLog({
+      session,
+      sessionStore,
+      fallbackThreadId: threadId,
+    });
+    if (threadId && codexSessionsRoot) {
+      const resolved = await readLatestContextSnapshot({
+        threadId,
+        providerSessionId: null,
+        sessionsRoot: codexSessionsRoot,
+        knownRolloutPath: null,
+      });
+      latestSnapshot = stripLegacySnapshotFields(resolved.snapshot);
+    }
+
+    return {
+      finalReplyText: execJsonOutcome.finalReplyText,
+      hasFinalAnswer: execJsonOutcome.hasFinalAnswer,
+      latestSnapshot,
+      providerSessionId: null,
+      rolloutPath: null,
+      threadId: execJsonOutcome.threadId || threadId,
+    };
+  }
+
   if (!rolloutPath) {
     return {
       finalReplyText: null,
@@ -141,7 +208,7 @@ async function inspectRecoveredRunOutcome({
     };
   }
 
-  let delta = null;
+  let delta;
   try {
     delta = await readRolloutDelta({
       filePath: rolloutPath,
@@ -209,7 +276,92 @@ async function inspectRecoveredRunOutcome({
   };
 }
 
+async function inspectExecJsonRunLog({
+  fallbackThreadId = null,
+  session,
+  sessionStore,
+}) {
+  if (!sessionStore || typeof sessionStore.getExecJsonRunLogPath !== "function") {
+    return {
+      finalReplyText: null,
+      hasFinalAnswer: false,
+      threadId: fallbackThreadId,
+    };
+  }
+
+  let text;
+  try {
+    text = await fs.readFile(
+      sessionStore.getExecJsonRunLogPath(session.chat_id, session.topic_id),
+      "utf8",
+    );
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+    return {
+      finalReplyText: null,
+      hasFinalAnswer: false,
+      threadId: fallbackThreadId,
+    };
+  }
+
+  let threadId = fallbackThreadId;
+  let latestAgentMessageText = null;
+  let finalReplyText = null;
+  let hasFinalAnswer = false;
+  for (const rawLine of text.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    const summary = summarizeCodexExecEvent(event);
+    if (summary?.threadId) {
+      threadId = summary.threadId;
+    }
+    if (
+      summary?.kind === "agent_message"
+      && summary.eventType === "item.completed"
+      && summary.progressSource === "agent_message"
+      && normalizeStoredText(summary.text)
+    ) {
+      latestAgentMessageText = summary.text;
+    }
+    if (summary?.eventType === "turn.started") {
+      latestAgentMessageText = null;
+      finalReplyText = null;
+      hasFinalAnswer = false;
+    }
+    if (summary?.eventType === "turn.completed") {
+      const normalized = normalizeStoredText(latestAgentMessageText);
+      if (normalized) {
+        finalReplyText = normalized;
+        hasFinalAnswer = true;
+      }
+    }
+    if (summary?.eventType === "turn.failed") {
+      finalReplyText = null;
+      hasFinalAnswer = false;
+    }
+  }
+
+  return {
+    finalReplyText,
+    hasFinalAnswer,
+    threadId,
+  };
+}
+
 export async function recoverStaleRunningSessions({
+  codexGatewayBackend = "exec-json",
   codexSessionsRoot = null,
   generationStore,
   now = () => new Date().toISOString(),
@@ -238,55 +390,108 @@ export async function recoverStaleRunningSessions({
 
     const finishedAt = now();
     const recoveryText = STALE_RUN_RECOVERY_TEXT;
+    const legacyAppServer = isLegacyAppServerSession(session, {
+      codexGatewayBackend,
+    });
     const inspection = await inspectRecoveredRunOutcome({
       codexSessionsRoot,
+      legacyAppServer,
       session,
+      sessionStore,
     });
     const recoveredFinalReply = normalizeStoredText(inspection.finalReplyText);
-    const hasRecoverableContinuity = Boolean(
-      inspection.providerSessionId
-        || inspection.latestSnapshot?.session_id
-        || session.provider_session_id
-        ||
-      inspection.threadId
-        || inspection.rolloutPath
-        || inspection.latestSnapshot
-        || session.last_context_snapshot,
-    );
+    const hasRecoverableContinuity = legacyAppServer
+      ? Boolean(
+          inspection.providerSessionId
+            || inspection.latestSnapshot?.session_id
+            || session.provider_session_id
+            || inspection.threadId
+            || inspection.rolloutPath
+            || inspection.latestSnapshot
+            || session.last_context_snapshot,
+        )
+      : Boolean(inspection.threadId);
     const recoveryStatus = inspection.hasFinalAnswer
       ? "completed"
       : hasRecoverableContinuity
         ? "interrupted"
         : "failed";
-    const updated = await sessionStore.patch(session, {
-      ...clearSessionOwnershipPatch(),
-      last_run_finished_at: finishedAt,
-      last_run_status: recoveryStatus,
-      ...(inspection.rolloutPath && inspection.rolloutPath !== session.codex_rollout_path
-        ? { codex_rollout_path: inspection.rolloutPath }
-        : {}),
-      ...(inspection.providerSessionId && inspection.providerSessionId !== session.provider_session_id
-        ? {
-            runtime_provider: "codex",
-            provider_session_id: inspection.providerSessionId,
-          }
-        : {}),
-      ...(inspection.latestSnapshot
-        ? {
-            last_context_snapshot: inspection.latestSnapshot,
-            last_token_usage:
-              inspection.latestSnapshot.last_token_usage
-              ?? session.last_token_usage
-              ?? null,
-          }
-        : {}),
-      last_agent_reply:
-        recoveryStatus === "completed"
-          ? recoveredFinalReply ?? null
-          : !hasRecoverableContinuity
-            ? recoveryText
-            : null,
+    const backendContinuityPatch = legacyAppServer
+      ? {
+          ...(inspection.rolloutPath && inspection.rolloutPath !== session.codex_rollout_path
+            ? { codex_rollout_path: inspection.rolloutPath }
+            : {}),
+          ...(inspection.providerSessionId && inspection.providerSessionId !== session.provider_session_id
+            ? {
+                runtime_provider: "codex",
+                provider_session_id: inspection.providerSessionId,
+              }
+            : {}),
+          ...(inspection.latestSnapshot
+            ? {
+                last_context_snapshot: inspection.latestSnapshot,
+                last_token_usage:
+                  inspection.latestSnapshot.last_token_usage
+                  ?? session.last_token_usage
+                  ?? null,
+              }
+            : {}),
+        }
+      : {
+          codex_backend: normalizeBackend(codexGatewayBackend) || "exec-json",
+          last_run_backend: normalizeBackend(codexGatewayBackend) || "exec-json",
+          provider_session_id: null,
+          codex_thread_id: inspection.threadId ?? null,
+          codex_thread_model:
+            inspection.threadId
+              ? session.codex_thread_model ?? session.last_run_model ?? null
+              : null,
+          codex_thread_reasoning_effort:
+            inspection.threadId
+              ? (
+                  session.codex_thread_reasoning_effort
+                  ?? session.last_run_reasoning_effort
+                  ?? null
+                )
+              : null,
+          codex_rollout_path: null,
+          last_context_snapshot: inspection.latestSnapshot ?? null,
+          last_token_usage:
+            inspection.latestSnapshot?.last_token_usage
+            ?? session.last_token_usage
+            ?? null,
+        };
+    let staleRunAlreadyHandled = false;
+    const updated = await sessionStore.patchWithCurrent(session, async (current) => {
+      if (
+        !current
+        || current.lifecycle_state === "purged"
+        || current.last_run_status !== "running"
+        || await isOwnerGenerationLive(
+          generationStore,
+          normalizeOwnerGenerationId(current),
+        )
+      ) {
+        staleRunAlreadyHandled = true;
+        return null;
+      }
+
+      return {
+        ...clearSessionOwnershipPatch(),
+        ...backendContinuityPatch,
+        last_run_finished_at: finishedAt,
+        last_run_status: recoveryStatus,
+        last_agent_reply:
+          recoveryStatus === "completed"
+            ? recoveredFinalReply ?? null
+            : !hasRecoverableContinuity
+              ? recoveryText
+              : null,
+      };
     });
+    if (staleRunAlreadyHandled) {
+      continue;
+    }
     const finalized = await persistRecoveredRunArtifacts({
       appendExchangeLog: inspection.hasFinalAnswer || !hasRecoverableContinuity,
       assistantReply: inspection.hasFinalAnswer

@@ -5,6 +5,14 @@ import os from "node:os";
 import path from "node:path";
 
 import { ZooStore, buildPetIdFromPath } from "../src/zoo/store.js";
+import {
+  PRIVATE_DIRECTORY_MODE,
+  supportsPosixFileModes,
+} from "../src/state/file-utils.js";
+
+async function getMode(filePath) {
+  return (await fs.stat(filePath)).mode & 0o777;
+}
 
 test("ZooStore persists topic state, pets, and latest snapshot history", async () => {
   const stateRoot = await fs.mkdtemp(
@@ -13,7 +21,7 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   const store = new ZooStore(stateRoot);
 
   const topic = await store.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "777",
     topic_name: "Zoo",
     selected_pet_id: null,
@@ -22,13 +30,13 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   assert.equal(topic.topic_id, "777");
   assert.equal(topic.root_page, 2);
 
-  const petId = buildPetIdFromPath("/home/bloob/atlas/project-a");
+  const petId = buildPetIdFromPath("/srv/codex-workspace/project-a");
   const pet = await store.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
-    repo_root: "/home/bloob/atlas/project-a",
-    cwd: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
+    repo_root: "/srv/codex-workspace/project-a",
+    cwd: "/srv/codex-workspace/project-a",
     cwd_relative_to_workspace_root: "project-a",
     character_name: "Rainbow Dash",
     temperament_id: "paladin",
@@ -46,7 +54,7 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   const snapshot = await store.saveLatestSnapshot(petId, {
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
     creature_kind: "rabbit",
     mood: "alert",
     stats: {
@@ -77,4 +85,9 @@ test("ZooStore persists topic state, pets, and latest snapshot history", async (
   const historyDir = store.getSnapshotHistoryDir(petId);
   const historyEntries = await fs.readdir(historyDir);
   assert.equal(historyEntries.length, 1);
+
+  if (supportsPosixFileModes()) {
+    assert.equal(await getMode(path.join(stateRoot, "zoo")), PRIVATE_DIRECTORY_MODE);
+    assert.equal(await getMode(historyDir), PRIVATE_DIRECTORY_MODE);
+  }
 });

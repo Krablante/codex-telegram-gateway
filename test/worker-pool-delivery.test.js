@@ -7,11 +7,15 @@ import path from "node:path";
 import { CodexWorkerPool } from "../src/pty-worker/worker-pool.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
 import { SpikeFinalEventStore } from "../src/session-manager/spike-final-event-store.js";
+import { TelegramProgressMessage } from "../src/transport/progress-message.js";
+import { withSuppressedConsole } from "../test-support/console-fixtures.js";
 import {
   createDeferred,
   sleep,
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
+
+const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
 
 test("CodexWorkerPool does not surface completed command output in progress without commentary", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -19,15 +23,15 @@ test("CodexWorkerPool does not surface completed command output in progress with
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 18901,
     topicName: "Command-only progress test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -126,8 +130,95 @@ test("CodexWorkerPool does not surface completed command output in progress with
   finishGate.resolve();
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
-  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
   assert.equal(sentMessages.at(-1)?.text, "FINAL_ONLY");
+});
+
+test("CodexWorkerPool keeps long silent runs on neutral progress instead of synthetic thoughts", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 18902,
+    topicName: "Silent liveness progress test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const sentMessages = [];
+  const editedMessages = [];
+  const finishGate = createDeferred();
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+      async sendChatAction() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: () => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await finishGate.promise;
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "silent-progress-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "show liveness",
+    message: {
+      message_id: 1902,
+      message_thread_id: 18902,
+    },
+  });
+
+  const run = workerPool.getActiveRun(session.session_key);
+  assert.ok(run);
+  run.state.startedAtMs -= 20_000;
+
+  await sleep(1100);
+  await workerPool.sendTypingAction(run);
+  await sleep(50);
+
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
+  assert.equal(editedMessages.length, 0);
+
+  finishGate.resolve();
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 });
 
 test("CodexWorkerPool keeps commentary agent messages in progress and only final_answer becomes the final reply", async () => {
@@ -136,15 +227,15 @@ test("CodexWorkerPool keeps commentary agent messages in progress and only final
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1891,
     topicName: "Agent message phase test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -260,15 +351,15 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 190,
     topicName: "Progress shell cleanup test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -276,7 +367,7 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
   const editedMessages = [];
   const deferred = createDeferred();
   const noisyTelegramCommand =
-    `/bin/bash -lc "sleep 29 && node --input-type=module -e 'const payload = { chat_id: -1003577434463, message_thread_id: 1560, text: \\"Тест\\" }; const res = await fetch(\\"https://api.telegram.org/botTOKEN/sendMessage\\", { method: \\"POST\\" });'"`;
+    `/bin/bash -lc "sleep 29 && node --input-type=module -e 'const payload = { chat_id: -1001234567890, message_thread_id: 1560, text: \\"Тест\\" }; const res = await fetch(\\"https://api.telegram.org/botTOKEN/sendMessage\\", { method: \\"POST\\" });'"`;
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
@@ -361,7 +452,7 @@ test("CodexWorkerPool never leaks noisy shell wrapper commands into progress", a
   deferred.resolve();
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
-  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
   assert.equal(
     editedMessages.some(
       (payload) =>
@@ -380,15 +471,15 @@ test("CodexWorkerPool retries the final reply once after a Telegram rate limit",
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 191,
     topicName: "Final reply retry test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -397,7 +488,7 @@ test("CodexWorkerPool retries the final reply once after a Telegram rate limit",
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           sentMessages.push(payload);
           return { message_id: 1 };
         }
@@ -467,7 +558,7 @@ test("CodexWorkerPool retries the final reply once after a Telegram rate limit",
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
 
   assert.equal(finalReplyAttempts, 2);
-  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
   assert.equal(sentMessages.at(-1).text, "done");
 });
 
@@ -477,15 +568,15 @@ test("CodexWorkerPool retries the final reply after a transient transport hiccup
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1911,
     topicName: "Final reply transient retry test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -494,7 +585,7 @@ test("CodexWorkerPool retries the final reply after a transient transport hiccup
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           sentMessages.push(payload);
           return { message_id: 1 };
         }
@@ -566,7 +657,7 @@ test("CodexWorkerPool retries the final reply after a transient transport hiccup
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
 
   assert.equal(finalReplyAttempts, 2);
-  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
   assert.equal(sentMessages.at(-1).text, "done");
 });
 
@@ -577,25 +668,17 @@ test("CodexWorkerPool keeps the final answer in the progress bubble when transie
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1912,
     topicName: "Final reply progress fallback test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
-  session = await sessionStore.patch(session, {
-    auto_mode: {
-      enabled: true,
-      phase: "running",
-      omni_bot_id: "8603043042",
-    },
-  });
-
   const sentMessages = [];
   const editedMessages = [];
   const deletedMessages = [];
@@ -603,7 +686,7 @@ test("CodexWorkerPool keeps the final answer in the progress bubble when transie
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           sentMessages.push(payload);
           return { message_id: 1 };
         }
@@ -683,6 +766,211 @@ test("CodexWorkerPool keeps the final answer in the progress bubble when transie
   assert.deepEqual(spikeFinalEvent.telegram_message_ids, ["1"]);
 });
 
+test("CodexWorkerPool keeps a long final answer visible in the progress bubble when chunked delivery fails transiently", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  let session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 1913,
+    topicName: "Chunked progress fallback",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+  let finalReplyAttempts = 0;
+  const longReply = "x".repeat(5000);
+  const sentMessages = [];
+  const editedMessages = [];
+  const deletedMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
+          sentMessages.push(payload);
+          return { message_id: 1 };
+        }
+
+        finalReplyAttempts += 1;
+        const error = new Error("fetch failed");
+        error.cause = { code: "UND_ERR_SOCKET" };
+        throw error;
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        return { ok: true };
+      },
+      async deleteMessage(payload) {
+        deletedMessages.push(payload);
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    spikeFinalEventStore,
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent(
+          {
+            kind: "agent_message",
+            text: longReply,
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              text: longReply,
+            },
+          },
+        );
+
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "reply-progress-fallback-long-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "keep the long final answer visible through progress fallback",
+    message: {
+      message_id: 223,
+      message_thread_id: 1913,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(finalReplyAttempts, 3);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(sentMessages.length, 1);
+  assert.equal(deletedMessages.length, 0);
+  assert.match(editedMessages.at(-1)?.text || "", /\[truncated\]$/u);
+  assert.deepEqual(spikeFinalEvent.telegram_message_ids, ["1"]);
+});
+
+test("CodexWorkerPool keeps the progress-bubble final visible if later Spike final persistence fails", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  let session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 19121,
+    topicName: "Final reply progress persistence failure test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+  const sentMessages = [];
+  const editedMessages = [];
+  const deletedMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
+          sentMessages.push(payload);
+          return { message_id: 1 };
+        }
+
+        const error = new Error("fetch failed");
+        error.cause = { code: "UND_ERR_SOCKET" };
+        throw error;
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        return { ok: true };
+      },
+      async deleteMessage(payload) {
+        deletedMessages.push(payload);
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent(
+          {
+            kind: "agent_message",
+            text: "done",
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              text: "done",
+            },
+          },
+        );
+
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "reply-progress-persist-failure-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    }),
+  });
+  workerPool.emitSpikeFinalEvent = async () => {
+    throw new Error("spike final persistence failed");
+  };
+
+  await withSuppressedConsole("error", async () => {
+    await workerPool.startPromptRun({
+      session,
+      prompt: "keep final answer visible even if spike final persistence fails",
+      message: {
+        message_id: 2221,
+        message_thread_id: 19121,
+      },
+    });
+    await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
+  });
+
+  assert.equal(sentMessages.length, 1);
+  assert.equal(deletedMessages.length, 0);
+  assert.equal(editedMessages.at(-1)?.text, "done");
+});
+
 test("CodexWorkerPool preserves already-delivered final chunks in Spike metadata when a later chunk fails", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -690,25 +978,17 @@ test("CodexWorkerPool preserves already-delivered final chunks in Spike metadata
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1913,
     topicName: "Final reply partial delivery metadata test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
-  session = await sessionStore.patch(session, {
-    auto_mode: {
-      enabled: true,
-      phase: "running",
-      omni_bot_id: "8603043042",
-    },
-  });
-
   const sentMessages = [];
   let finalReplyAttempts = 0;
   const originalConsoleError = console.error;
@@ -718,7 +998,7 @@ test("CodexWorkerPool preserves already-delivered final chunks in Spike metadata
     const workerPool = new CodexWorkerPool({
       api: {
         async sendMessage(payload) {
-          if (payload.text === "...") {
+          if (payload.text === INITIAL_PROGRESS_TEXT) {
             sentMessages.push(payload);
             return { message_id: 1 };
           }
@@ -805,22 +1085,22 @@ test("CodexWorkerPool parks the session when final reply delivery discovers an u
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1914,
     topicName: "Final reply parked topic test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           return { message_id: 1 };
         }
 
@@ -910,15 +1190,15 @@ test("CodexWorkerPool falls back to a plain topic send when the reply target dis
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 1931,
     topicName: "Reply target fallback",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -927,7 +1207,7 @@ test("CodexWorkerPool falls back to a plain topic send when the reply target dis
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           sentMessages.push(payload);
           return { message_id: 1 };
         }
@@ -1000,7 +1280,7 @@ test("CodexWorkerPool falls back to a plain topic send when the reply target dis
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
 
   assert.equal(finalReplyAttempts, 2);
-  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
   assert.equal(sentMessages.at(-1).text, "done");
   assert.equal(sentMessages.at(-1).reply_to_message_id, undefined);
 });
@@ -1011,15 +1291,15 @@ test("CodexWorkerPool keeps running when the initial progress bubble cannot be s
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 194,
     topicName: "Initial progress failure test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1027,7 +1307,7 @@ test("CodexWorkerPool keeps running when the initial progress bubble cannot be s
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           throw new Error("Telegram API sendMessage failed: Too Many Requests: retry after 0");
         }
 
@@ -1104,15 +1384,15 @@ test("CodexWorkerPool does not start when initial progress delivery parks the to
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 195,
     topicName: "Initial progress parked topic test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1160,6 +1440,73 @@ test("CodexWorkerPool does not start when initial progress delivery parks the to
   assert.equal(workerPool.getActiveRun(session.session_key), null);
 });
 
+test("CodexWorkerPool dismisses a partially delivered progress bubble when startup fails before the run exists", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-progress-leak-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 196,
+    topicName: "Initial progress partial failure test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const deletedMessages = [];
+  const originalSendInitial = TelegramProgressMessage.prototype.sendInitial;
+  TelegramProgressMessage.prototype.sendInitial = async function sendInitialAndFail() {
+    this.messageId = 77;
+    throw new Error("Telegram API sendMessage failed: chat write forbidden");
+  };
+
+  try {
+    const workerPool = new CodexWorkerPool({
+      api: {
+        async sendMessage() {
+          throw new Error("sendMessage should not be called directly");
+        },
+        async deleteMessage(payload) {
+          deletedMessages.push(payload);
+          return true;
+        },
+      },
+      config: {
+        codexBinPath: "codex",
+        maxParallelSessions: 1,
+      },
+      sessionStore,
+      serviceState: {
+        acceptedPrompts: 0,
+        lastPromptAt: null,
+        activeRunCount: 0,
+      },
+    });
+
+    await assert.rejects(
+      workerPool.startPromptRun({
+        session,
+        prompt: "fail before run exists",
+        message: {
+          message_id: 26,
+          message_thread_id: 196,
+        },
+      }),
+      /chat write forbidden/u,
+    );
+  } finally {
+    TelegramProgressMessage.prototype.sendInitial = originalSendInitial;
+  }
+
+  assert.equal(deletedMessages.length, 1);
+  assert.equal(deletedMessages[0].message_id, 77);
+});
+
 test("CodexWorkerPool keeps completed session state when final reply delivery fails", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -1167,25 +1514,17 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 192,
     topicName: "Final reply failure state test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
-  session = await sessionStore.patch(session, {
-    auto_mode: {
-      enabled: true,
-      phase: "running",
-      omni_bot_id: "8603043042",
-    },
-  });
-
   const sentMessages = [];
   const deletedMessages = [];
   const originalConsoleError = console.error;
@@ -1195,7 +1534,7 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
     const workerPool = new CodexWorkerPool({
       api: {
         async sendMessage(payload) {
-          if (payload.text === "...") {
+          if (payload.text === INITIAL_PROGRESS_TEXT) {
             sentMessages.push(payload);
             return { message_id: 1 };
           }
@@ -1278,6 +1617,266 @@ test("CodexWorkerPool keeps completed session state when final reply delivery fa
   }
 });
 
+test("CodexWorkerPool treats a zero-exit run without a final answer as failure instead of synthetic success", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 194,
+    topicName: "Missing final answer",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const sentMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    spikeFinalEventStore,
+    runTask: () => ({
+      child: { kill() {} },
+      finished: Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        threadId: "missing-final-answer-thread",
+        warnings: [],
+        resumeReplacement: null,
+      }),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "simulate a zero-exit run without a final answer",
+    message: {
+      message_id: 24,
+      message_thread_id: 194,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "failed");
+  assert.match(reloaded.last_agent_reply, /Не смог закончить run/u);
+  assert.equal(sentMessages.at(-1)?.text, reloaded.last_agent_reply);
+  assert.doesNotMatch(reloaded.last_agent_reply, /^Готово\.$/u);
+});
+
+test("CodexWorkerPool does not complete exec-json failures from a premature final candidate", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 195,
+    topicName: "Exec premature final",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const sentMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent({
+          kind: "agent_message",
+          eventType: "item.completed",
+          text: "premature final candidate",
+          messagePhase: "final_answer",
+        });
+        return {
+          backend: "exec-json",
+          ok: false,
+          exitCode: 1,
+          signal: null,
+          threadId: "exec-premature-final-thread",
+          warnings: ["Codex exec stream ended before turn.completed"],
+          resumeReplacement: null,
+          preserveContinuity: true,
+          abortReason: "exec_stream_incomplete",
+        };
+      })(),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "simulate exec-json failure after an agent message",
+    message: {
+      message_id: 24,
+      message_thread_id: 195,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const exchangeLog = await sessionStore.loadExchangeLog(reloaded);
+  assert.equal(reloaded.last_run_status, "failed");
+  assert.match(reloaded.last_agent_reply, /Не смог закончить run/u);
+  assert.doesNotMatch(reloaded.last_agent_reply, /premature final candidate/u);
+  assert.equal(reloaded.codex_thread_id, "exec-premature-final-thread");
+  assert.equal(exchangeLog.at(-1)?.status, "failed");
+  assert.equal(sentMessages.at(-1)?.text, reloaded.last_agent_reply);
+});
+
+test("CodexWorkerPool retries transient model-capacity failures before surfacing a run failure", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 196,
+    topicName: "Model capacity retry test",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+  const sentMessages = [];
+  let runTaskCalls = 0;
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+      upstreamModelCapacityRetryDelaysMs: [0],
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ onEvent }) => {
+      runTaskCalls += 1;
+      if (runTaskCalls === 1) {
+        return {
+          child: { kill() {} },
+          finished: Promise.reject(
+            new Error("Selected model is at capacity. Please try a different model."),
+          ),
+        };
+      }
+
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onEvent({
+            kind: "thread",
+            eventType: "thread.started",
+            text: "Codex thread started: capacity-retry-thread",
+            threadId: "capacity-retry-thread",
+          });
+          await onEvent({
+            kind: "agent_message",
+            text: "Recovered after model capacity retry.",
+            messagePhase: "final_answer",
+          });
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "capacity-retry-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "retry after model capacity",
+    message: {
+      message_id: 24,
+      message_thread_id: 196,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 4000);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(runTaskCalls, 2);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.match(reloaded.last_agent_reply, /Recovered after model capacity retry/u);
+  assert.doesNotMatch(sentMessages.at(-1)?.text || "", /Selected model is at capacity/u);
+});
+
 test("CodexWorkerPool persists failure text into session state, exchange log, and Spike final events", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
@@ -1285,29 +1884,21 @@ test("CodexWorkerPool persists failure text into session state, exchange log, an
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 193,
     topicName: "Failure persistence test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
-  session = await sessionStore.patch(session, {
-    auto_mode: {
-      enabled: true,
-      phase: "running",
-      omni_bot_id: "8603043042",
-    },
-  });
-
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           return { message_id: 1 };
         }
 
@@ -1360,29 +1951,22 @@ test("CodexWorkerPool persists failure text into session state, exchange log, an
   assert.match(spikeFinalEvent.final_reply_text, /runner exploded/u);
 });
 
-test("CodexWorkerPool skips late Spike final events after auto mode is turned off", async () => {
+test("CodexWorkerPool persists late Spike final events without legacy auto gating", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
-  let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
     topicId: 194,
-    topicName: "Late final event off test",
+    topicName: "Late final event test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
-    },
-  });
-  session = await sessionStore.patch(session, {
-    auto_mode: {
-      enabled: true,
-      phase: "running",
-      omni_bot_id: "8603043042",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1421,19 +2005,12 @@ test("CodexWorkerPool skips late Spike final events after auto mode is turned of
     }),
   });
 
-  await sessionStore.patch(session, {
-    auto_mode: {
-      enabled: false,
-      phase: "off",
-    },
-  });
-
   const result = await workerPool.emitSpikeFinalEvent(
     {
       session,
       state: {
         status: "completed",
-        finalAgentMessage: "finished after /auto off",
+        finalAgentMessage: "finished after the late final",
         replyToMessageId: 41,
         threadId: "late-final-thread",
       },
@@ -1447,9 +2024,10 @@ test("CodexWorkerPool skips late Spike final events after auto mode is turned of
   );
 
   const spikeFinalEvent = await spikeFinalEventStore.load(session);
-  assert.equal(result, null);
-  assert.equal(spikeFinalEvent.status, null);
-  assert.equal(spikeFinalEvent.exchange_log_entries, 0);
+  assert.equal(result.status, "completed");
+  assert.equal(spikeFinalEvent.status, "completed");
+  assert.equal(spikeFinalEvent.final_reply_text, "finished after the late final");
+  assert.deepEqual(spikeFinalEvent.telegram_message_ids, ["501"]);
 });
 
 test("CodexWorkerPool passes image attachments to codex and file attachments via prompt context", async () => {
@@ -1458,17 +2036,19 @@ test("CodexWorkerPool passes image attachments to codex and file attachments via
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 189,
     topicName: "Attachment prompt test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
+  session.prompt_suffix_enabled = true;
+  session.prompt_suffix_text = "TOPIC\nAnswer briefly in this topic.";
 
   const runCalls = [];
   const workerPool = new CodexWorkerPool({
@@ -1488,13 +2068,21 @@ test("CodexWorkerPool passes image attachments to codex and file attachments via
       maxParallelSessions: 1,
     },
     sessionStore,
+    globalPromptSuffixStore: {
+      async load() {
+        return {
+          prompt_suffix_enabled: true,
+          prompt_suffix_text: "GLOBAL\nNever overcomplicate.",
+        };
+      },
+    },
     serviceState: {
       acceptedPrompts: 0,
       lastPromptAt: null,
       activeRunCount: 0,
     },
-    runTask: ({ prompt, imagePaths }) => {
-      runCalls.push({ prompt, imagePaths });
+    runTask: ({ prompt, imagePaths, baseInstructions }) => {
+      runCalls.push({ prompt, imagePaths, baseInstructions });
       return {
         child: { kill() {} },
         finished: Promise.resolve({
@@ -1535,13 +2123,19 @@ test("CodexWorkerPool passes image attachments to codex and file attachments via
 
   assert.equal(runCalls.length, 1);
   assert.deepEqual(runCalls[0].imagePaths, ["/tmp/test-photo.jpg"]);
-  assert.match(runCalls[0].prompt, /Telegram topic routing context:/u);
-  assert.match(runCalls[0].prompt, /topic_id: 189/u);
-  assert.match(runCalls[0].prompt, /topic_context_file: .*telegram-topic-context\.md/u);
+  assert.doesNotMatch(runCalls[0].prompt, /Context:/u);
+  assert.doesNotMatch(runCalls[0].prompt, /Work Style:/u);
+  assert.match(runCalls[0].baseInstructions, /Context:/u);
+  assert.match(
+    runCalls[0].baseInstructions,
+    /\n\nWork Style:\nTOPIC\nAnswer briefly in this topic\./u,
+  );
+  assert.match(runCalls[0].baseInstructions, /Telegram topic 189 \(-1001234567890:189\)/u);
+  assert.match(runCalls[0].baseInstructions, /topic context file: .*telegram-topic-context\.md/u);
   assert.match(runCalls[0].prompt, /К сообщению приложены вложения из Telegram/u);
   assert.match(runCalls[0].prompt, /image: \/tmp\/test-photo\.jpg/u);
   assert.match(runCalls[0].prompt, /file: \/tmp\/test-doc\.txt/u);
-  assert.match(runCalls[0].prompt, /Запрос пользователя:\nПосмотри вложения/u);
+  assert.match(runCalls[0].prompt, /\n\nПосмотри вложения$/u);
 });
 
 test("CodexWorkerPool runs different sessions in parallel and enforces busy and capacity limits", async () => {
@@ -1550,39 +2144,39 @@ test("CodexWorkerPool runs different sessions in parallel and enforces busy and 
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const sessionA = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 201,
     topicName: "Parallel A",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   const sessionB = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 202,
     topicName: "Parallel B",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   const sessionC = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 203,
     topicName: "Parallel C",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 

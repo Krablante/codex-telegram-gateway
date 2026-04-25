@@ -1,5 +1,7 @@
 import { getTopicIdFromMessage } from "./session-key.js";
 
+import { appendTopicHostSuffix, getHostRecordId } from "../hosts/topic-host.js";
+
 function buildPurgeAfterIso(retentionHours) {
   return new Date(Date.now() + retentionHours * 60 * 60 * 1000).toISOString();
 }
@@ -51,15 +53,33 @@ function getLifecycleEvent(message) {
   return null;
 }
 
+async function listKnownHostIds(hostRegistryService, currentHostId) {
+  if (typeof hostRegistryService?.listHosts === "function") {
+    const hosts = await hostRegistryService.listHosts();
+    return [...new Set(
+      hosts
+        .map((host) => getHostRecordId(host))
+        .filter(Boolean),
+    )];
+  }
+
+  const normalizedCurrentHostId = String(currentHostId ?? "").trim().toLowerCase();
+  return normalizedCurrentHostId ? [normalizedCurrentHostId] : [];
+}
+
 export class SessionLifecycleManager {
   constructor({
+    api = null,
     config,
+    hostRegistryService = null,
     sessionStore,
     sessionCompactor = null,
     workerPool = null,
     runtimeObserver = null,
   }) {
+    this.api = api;
     this.config = config;
+    this.hostRegistryService = hostRegistryService;
     this.sessionStore = sessionStore;
     this.sessionCompactor = sessionCompactor;
     this.workerPool = workerPool;
@@ -110,9 +130,43 @@ export class SessionLifecycleManager {
       return { handled: true, event: event.kind, session: active };
     }
 
+    const knownHostIds = await listKnownHostIds(
+      this.hostRegistryService,
+      this.config.currentHostId,
+    );
+    const desiredTopicName = appendTopicHostSuffix(
+      event.topicName || session.topic_name,
+      session.execution_host_id,
+      128,
+      knownHostIds,
+    );
     const updated = await this.sessionStore.patch(session, {
-      topic_name: event.topicName || session.topic_name,
+      topic_name: desiredTopicName,
     });
+    if (
+      event.kind === "edited"
+      && desiredTopicName
+      && event.topicName
+      && desiredTopicName !== event.topicName
+      && typeof this.api?.editForumTopic === "function"
+    ) {
+      try {
+        await this.api.editForumTopic({
+          chat_id: message.chat.id,
+          message_thread_id: Number(topicId),
+          name: desiredTopicName,
+        });
+      } catch (error) {
+        await this.runtimeObserver?.noteSessionLifecycle({
+          action: "topic-title-sync-failed",
+          session: updated,
+          reason: String(error?.message || error || "topic-title-sync-failed"),
+          previousState: session.lifecycle_state,
+          nextState: updated.lifecycle_state,
+          trigger: "service-message",
+        });
+      }
+    }
     return { handled: true, event: event.kind, session: updated };
   }
 
@@ -175,7 +229,7 @@ export class SessionLifecycleManager {
         continue;
       }
 
-      let purged = null;
+      let purged;
       try {
         purged = await this.sessionStore.purge(
           session,

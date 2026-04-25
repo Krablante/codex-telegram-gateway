@@ -2,7 +2,6 @@ import {
   getSessionUiLanguage,
   normalizeUiLanguage,
 } from "../../i18n/ui-language.js";
-import { getTopicLabel } from "../command-parsing.js";
 
 export function isEnglish(language) {
   return normalizeUiLanguage(language) === "eng";
@@ -14,17 +13,15 @@ export function buildInterruptMessage(
   interrupted,
   language = getSessionUiLanguage(session),
 ) {
-  return [
-    interrupted
-      ? (isEnglish(language) ? "Stopping the run." : "Останавливаю run.")
-      : (isEnglish(language)
-          ? "There is no active run here right now."
-          : "Сейчас тут нет активного run."),
-    "",
-    `session_key: ${session.session_key}`,
-    `chat_id: ${message.chat.id}`,
-    `topic_id: ${getTopicLabel(message)}`,
-  ].join("\n");
+  void message;
+  void session;
+  return interrupted
+    ? (isEnglish(language)
+        ? "Stop requested. I will confirm here when the run actually stops."
+        : "Запрос на остановку принял. Подтвержу здесь, когда run реально остановится.")
+    : (isEnglish(language)
+        ? "There is no active run here right now."
+        : "Сейчас тут нет активного run.");
 }
 
 export async function finalizeHandledCommand({

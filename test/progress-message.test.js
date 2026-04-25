@@ -26,7 +26,7 @@ test("TelegramProgressMessage falls back to append-only updates after a non-edit
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
   });
 
@@ -64,7 +64,7 @@ test("TelegramProgressMessage retries the same bubble after a transient edit fai
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
   });
 
@@ -103,7 +103,7 @@ test("TelegramProgressMessage avoids append-only fallback when lifecycle handler
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
     onDeliveryError: async (error) => {
       reportedErrors.push(error.message);
@@ -138,7 +138,7 @@ test("TelegramProgressMessage can dismiss the current progress bubble", async ()
         return true;
       },
     },
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     messageThreadId: 55,
   });
 
@@ -149,4 +149,98 @@ test("TelegramProgressMessage can dismiss the current progress bubble", async ()
   assert.equal(deletedMessages.length, 1);
   assert.equal(deletedMessages[0].message_id, 41);
   assert.equal(progress.messageId, null);
+});
+
+test("TelegramProgressMessage ignores queued progress after finalization starts", async () => {
+  const editedMessages = [];
+  let releaseEdit;
+  const firstEditGate = new Promise((resolve) => {
+    releaseEdit = resolve;
+  });
+  const progress = new TelegramProgressMessage({
+    api: {
+      async sendMessage() {
+        return { message_id: 51 };
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        if (editedMessages.length === 1) {
+          await firstEditGate;
+        }
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    chatId: -1001234567890,
+    messageThreadId: 55,
+  });
+
+  await progress.sendInitial("Start");
+  progress.pendingText = "Thought before final";
+  const firstFlush = progress.runSerialized(() => progress.flushPending());
+  const finalized = progress.finalize("Final answer");
+  progress.queueUpdate("Stale thought after final");
+  releaseEdit();
+  await firstFlush;
+  await finalized;
+
+  assert.deepEqual(editedMessages.map((message) => message.text), [
+    "Final answer",
+  ]);
+  assert.equal(progress.currentText, "Final answer");
+  assert.equal(progress.pendingText, null);
+});
+
+test("TelegramProgressMessage keeps the final text after an in-flight progress edit fails", async () => {
+  const editedMessages = [];
+  let releaseFirstEditStarted;
+  let releaseFirstEditGate;
+  const firstEditStarted = new Promise((resolve) => {
+    releaseFirstEditStarted = resolve;
+  });
+  const firstEditGate = new Promise((resolve) => {
+    releaseFirstEditGate = resolve;
+  });
+  let failFirstEdit = true;
+  const progress = new TelegramProgressMessage({
+    api: {
+      async sendMessage() {
+        return { message_id: 61 };
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        if (failFirstEdit) {
+          failFirstEdit = false;
+          releaseFirstEditStarted();
+          await firstEditGate;
+          throw new Error("temporary edit failure");
+        }
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    chatId: -1001234567890,
+    messageThreadId: 55,
+  });
+
+  await progress.sendInitial("Start");
+  progress.pendingText = "Old progress";
+  const firstFlush = progress.runSerialized(() => progress.flushPending());
+  await firstEditStarted;
+  const finalized = progress.finalize("Final answer");
+  releaseFirstEditGate();
+
+  await firstFlush;
+  await finalized;
+
+  assert.deepEqual(editedMessages.map((message) => message.text), [
+    "Old progress",
+    "Final answer",
+  ]);
+  assert.equal(progress.currentText, "Final answer");
+  assert.equal(progress.pendingText, null);
 });

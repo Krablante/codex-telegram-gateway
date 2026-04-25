@@ -19,29 +19,29 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1003577434463:81",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:81",
+    chat_id: "-1001234567890",
     topic_id: "82",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   };
   const waitCommand = {
     text: "wait 600",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 910,
     message_thread_id: 82,
   };
   const attachmentMessage = {
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 911,
     message_thread_id: 82,
     media_group_id: "docs-2",
@@ -54,8 +54,8 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
     },
   };
   const secondAttachmentMessage = {
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 912,
     message_thread_id: 82,
     media_group_id: "docs-2",
@@ -69,29 +69,29 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
   };
   const textMessage = {
     text: "Ура!!! Значит всё работает отлично",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 913,
     message_thread_id: 82,
   };
   const secondTextMessage = {
     text: "Теперь я тестирую wait окно.",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 914,
     message_thread_id: 82,
   };
   const flushMessage = {
     text: "Все",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 915,
     message_thread_id: 82,
   };
   const followUpTextMessage = {
     text: "Это уже следующий prompt без повторного /wait.",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 916,
     message_thread_id: 82,
   };
@@ -110,14 +110,14 @@ test("handleIncomingMessage uses plain /wait as a local one-shot window and rese
       async ensureSessionForMessage() {
         return {
           ...session,
-          session_key: `-1003577434463:${attachmentMessage.message_thread_id}`,
+          session_key: `-1001234567890:${attachmentMessage.message_thread_id}`,
           topic_id: String(attachmentMessage.message_thread_id),
         };
       },
       async ensureRunnableSessionForMessage(message) {
         return {
           ...session,
-          session_key: `-1003577434463:${message.message_thread_id}`,
+          session_key: `-1001234567890:${message.message_thread_id}`,
           topic_id: String(message.message_thread_id),
         };
       },
@@ -234,30 +234,30 @@ test("handleIncomingMessage keeps /wait global persistent across topics", async 
   };
   const waitCommand = {
     text: "/wait global 600",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 920,
     message_thread_id: 81,
     entities: [{ type: "bot_command", offset: 0, length: 5 }],
   };
   const firstTopicMessage = {
     text: "first buffered part",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 921,
     message_thread_id: 82,
   };
   const secondTopicMessage = {
     text: "second buffered part",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 922,
     message_thread_id: 83,
   };
   const flushMessage = {
     text: "Все",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 923,
     message_thread_id: 84,
   };
@@ -275,31 +275,31 @@ test("handleIncomingMessage keeps /wait global persistent across topics", async 
     sessionService: {
       async ensureSessionForMessage(message) {
         return {
-          session_key: `-1003577434463:${message.message_thread_id}`,
-          chat_id: "-1003577434463",
+          session_key: `-1001234567890:${message.message_thread_id}`,
+          chat_id: "-1001234567890",
           topic_id: String(message.message_thread_id),
           lifecycle_state: "active",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
           workspace_binding: {
-            repo_root: "/home/bloob/atlas",
-            cwd: "/home/bloob/atlas",
+            repo_root: "/srv/codex-workspace",
+            cwd: "/srv/codex-workspace",
             branch: "main",
-            worktree_path: "/home/bloob/atlas",
+            worktree_path: "/srv/codex-workspace",
           },
         };
       },
       async ensureRunnableSessionForMessage(message) {
         return {
-          session_key: `-1003577434463:${message.message_thread_id}`,
-          chat_id: "-1003577434463",
+          session_key: `-1001234567890:${message.message_thread_id}`,
+          chat_id: "-1001234567890",
           topic_id: String(message.message_thread_id),
           lifecycle_state: "active",
           workspace_binding: {
-            repo_root: "/home/bloob/atlas",
-            cwd: "/home/bloob/atlas",
+            repo_root: "/srv/codex-workspace",
+            cwd: "/srv/codex-workspace",
             branch: "main",
-            worktree_path: "/home/bloob/atlas",
+            worktree_path: "/srv/codex-workspace",
           },
         };
       },

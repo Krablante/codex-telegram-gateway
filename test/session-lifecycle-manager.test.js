@@ -20,16 +20,16 @@ async function makeStore() {
 function buildConfig() {
   return {
     parkedSessionRetentionHours: 24,
-    telegramForumChatId: "-1003577434463",
+    telegramForumChatId: "-1001234567890",
   };
 }
 
 function buildBinding() {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/srv/codex-workspace",
+    cwd: "/srv/codex-workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/srv/codex-workspace",
   };
 }
 
@@ -38,7 +38,7 @@ test("SessionLifecycleManager parks a session on forum_topic_closed", async () =
   const interrupts = [];
   const lifecycleEvents = [];
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 55,
     topicName: "Test topic 1",
     createdVia: "test",
@@ -65,7 +65,7 @@ test("SessionLifecycleManager parks a session on forum_topic_closed", async () =
   });
 
   const result = await manager.handleServiceMessage({
-    chat: { id: -1003577434463 },
+    chat: { id: -1001234567890 },
     message_thread_id: 55,
     forum_topic_closed: {},
   });
@@ -86,7 +86,7 @@ test("SessionLifecycleManager reactivates a parked session on forum_topic_reopen
   const sessionStore = await makeStore();
   const lifecycleEvents = [];
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 56,
     topicName: "Test topic 2",
     createdVia: "test",
@@ -107,7 +107,7 @@ test("SessionLifecycleManager reactivates a parked session on forum_topic_reopen
   });
 
   const result = await manager.handleServiceMessage({
-    chat: { id: -1003577434463 },
+    chat: { id: -1001234567890 },
     message_thread_id: 56,
     forum_topic_reopened: {},
   });
@@ -127,7 +127,7 @@ test("SessionLifecycleManager does not reactivate a purged session on forum_topi
   const sessionStore = await makeStore();
   const lifecycleEvents = [];
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 560,
     topicName: "Purged topic",
     createdVia: "test",
@@ -147,7 +147,7 @@ test("SessionLifecycleManager does not reactivate a purged session on forum_topi
   });
 
   const result = await manager.handleServiceMessage({
-    chat: { id: -1003577434463 },
+    chat: { id: -1001234567890 },
     message_thread_id: 560,
     forum_topic_reopened: {},
   });
@@ -163,7 +163,7 @@ test("SessionLifecycleManager does not reactivate a purged session on forum_topi
 test("SessionLifecycleManager does not re-park a purged session on forum_topic_closed", async () => {
   const sessionStore = await makeStore();
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 561,
     topicName: "Purged closed topic",
     createdVia: "test",
@@ -177,7 +177,7 @@ test("SessionLifecycleManager does not re-park a purged session on forum_topic_c
   });
 
   const result = await manager.handleServiceMessage({
-    chat: { id: -1003577434463 },
+    chat: { id: -1001234567890 },
     message_thread_id: 561,
     forum_topic_closed: {},
   });
@@ -192,7 +192,7 @@ test("SessionLifecycleManager does not re-park a purged session on forum_topic_c
 test("SessionLifecycleManager updates topic name on forum_topic_edited", async () => {
   const sessionStore = await makeStore();
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 57,
     topicName: "Old name",
     createdVia: "test",
@@ -205,7 +205,7 @@ test("SessionLifecycleManager updates topic name on forum_topic_edited", async (
   });
 
   await manager.handleServiceMessage({
-    chat: { id: -1003577434463 },
+    chat: { id: -1001234567890 },
     message_thread_id: 57,
     forum_topic_edited: {
       name: "New name",
@@ -216,18 +216,112 @@ test("SessionLifecycleManager updates topic name on forum_topic_edited", async (
   assert.equal(updated.topic_name, "New name");
 });
 
+test("SessionLifecycleManager preserves the execution host suffix on forum_topic_edited", async () => {
+  const sessionStore = await makeStore();
+  const editCalls = [];
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 58,
+    topicName: "Old name (worker-a)",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+    executionHostId: "worker-a",
+    executionHostLabel: "worker-a",
+  });
+
+  const manager = new SessionLifecycleManager({
+    api: {
+      async editForumTopic(payload) {
+        editCalls.push(payload);
+      },
+    },
+    config: buildConfig(),
+    hostRegistryService: {
+      async listHosts() {
+        return [{ host_id: "controller" }, { host_id: "worker-a" }, { host_id: "worker-b" }];
+      },
+    },
+    sessionStore,
+  });
+
+  await manager.handleServiceMessage({
+    chat: { id: -1001234567890 },
+    message_thread_id: 58,
+    forum_topic_edited: {
+      name: "New name",
+    },
+  });
+
+  const updated = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(updated.topic_name, "New name (worker-a)");
+  assert.deepEqual(editCalls, [
+    {
+      chat_id: -1001234567890,
+      message_thread_id: 58,
+      name: "New name (worker-a)",
+    },
+  ]);
+});
+
+test("SessionLifecycleManager replaces a stale host suffix on forum_topic_edited", async () => {
+  const sessionStore = await makeStore();
+  const editCalls = [];
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 580,
+    topicName: "Old name (worker-a)",
+    createdVia: "test",
+    workspaceBinding: buildBinding(),
+    executionHostId: "worker-a",
+    executionHostLabel: "worker-a",
+  });
+
+  const manager = new SessionLifecycleManager({
+    api: {
+      async editForumTopic(payload) {
+        editCalls.push(payload);
+      },
+    },
+    config: buildConfig(),
+    hostRegistryService: {
+      async listHosts() {
+        return [{ host_id: "controller" }, { host_id: "worker-a" }, { host_id: "worker-b" }];
+      },
+    },
+    sessionStore,
+  });
+
+  await manager.handleServiceMessage({
+    chat: { id: -1001234567890 },
+    message_thread_id: 580,
+    forum_topic_edited: {
+      name: "New name (worker-b)",
+    },
+  });
+
+  const updated = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(updated.topic_name, "New name (worker-a)");
+  assert.deepEqual(editCalls, [
+    {
+      chat_id: -1001234567890,
+      message_thread_id: 580,
+      name: "New name (worker-a)",
+    },
+  ]);
+});
+
 test("SessionLifecycleManager sweeps expired parked sessions and preserves pinned ones", async () => {
   const sessionStore = await makeStore();
   const lifecycleEvents = [];
   const expired = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 58,
     topicName: "Expired",
     createdVia: "test",
     workspaceBinding: buildBinding(),
   });
   const pinned = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 59,
     topicName: "Pinned",
     createdVia: "test",
@@ -272,7 +366,7 @@ test("SessionLifecycleManager parks a session on topic-unavailable transport err
   const sessionStore = await makeStore();
   const interrupts = [];
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 60,
     topicName: "Transport error",
     createdVia: "test",
@@ -310,7 +404,7 @@ test("SessionLifecycleManager keeps the original purge deadline when the same to
   const sessionStore = await makeStore();
   const lifecycleEvents = [];
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 601,
     topicName: "Repeated parking",
     createdVia: "test",

@@ -185,14 +185,14 @@ export function buildPetDisplayBaseName(value) {
   return path.basename(getZooProjectRoot(value) || "project") || "project";
 }
 
-function getPetDisplayVisibility(value, atlasWorkspaceRoot) {
+function getPetDisplayVisibility(value, workspaceRoot) {
   const projectRoot = normalizeText(getZooProjectRoot(value));
-  const workspaceRoot = normalizeText(atlasWorkspaceRoot);
-  if (!projectRoot || !workspaceRoot) {
+  const normalizedWorkspaceRoot = normalizeText(workspaceRoot);
+  if (!projectRoot || !normalizedWorkspaceRoot) {
     return "priv";
   }
 
-  const relativePath = path.relative(workspaceRoot, projectRoot);
+  const relativePath = path.relative(normalizedWorkspaceRoot, projectRoot);
   if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     return "priv";
   }
@@ -201,11 +201,11 @@ function getPetDisplayVisibility(value, atlasWorkspaceRoot) {
   return segments[0] === "work" && segments[1] === "public" ? "pub" : "priv";
 }
 
-export function computeCanonicalPetDisplayNames(pets, atlasWorkspaceRoot) {
+export function computeCanonicalPetDisplayNames(pets, workspaceRoot) {
   const entries = (pets || []).map((pet, index) => ({
     key: normalizeText(pet?.key) || normalizeText(pet?.pet_id) || `pet-${index}`,
     baseName: buildPetDisplayBaseName(pet),
-    visibility: getPetDisplayVisibility(pet, atlasWorkspaceRoot),
+    visibility: getPetDisplayVisibility(pet, workspaceRoot),
   }));
 
   const countsByBaseName = new Map();
@@ -250,12 +250,12 @@ export function isZooMenuNotModifiedError(error) {
   return String(error?.message ?? "").toLowerCase().includes("message is not modified");
 }
 
-export function buildZooBindingForPet(binding, atlasWorkspaceRoot) {
+export function buildZooBindingForPet(binding, workspaceRoot) {
   const projectRoot = getZooProjectRoot(binding);
   return {
     projectRoot,
     cwdRelativeToWorkspaceRoot:
-      path.relative(atlasWorkspaceRoot, projectRoot) || ".",
+      path.relative(workspaceRoot, projectRoot) || ".",
   };
 }
 

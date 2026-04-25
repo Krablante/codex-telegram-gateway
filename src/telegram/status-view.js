@@ -4,25 +4,21 @@ import {
   getSessionUiLanguage,
   normalizeUiLanguage,
 } from "../i18n/ui-language.js";
-import { loadCodexConfigProfile } from "../config/runtime-config.js";
 import {
   formatReasoningEffort,
-  loadAvailableCodexModels,
   resolveCodexRuntimeProfile,
 } from "../session-manager/codex-runtime-settings.js";
+import { loadAvailableCodexModelsForSession } from "../session-manager/codex-runtime-host.js";
 import {
   buildLegacyContextSnapshot,
   normalizeContextSnapshot,
 } from "../session-manager/context-snapshot.js";
 import { buildCodexLimitsStatusLines } from "../codex-runtime/limits.js";
 import { getTopicLabel } from "./command-parsing.js";
+import { buildHostStatusLines } from "./command-handlers/host-commands.js";
 
 function isEnglish(language = DEFAULT_UI_LANGUAGE) {
   return normalizeUiLanguage(language) === "eng";
-}
-
-function isOmniEnabled(surface = null) {
-  return surface?.omniEnabled !== false;
 }
 
 function getLanguageLabel(language = DEFAULT_UI_LANGUAGE) {
@@ -86,9 +82,14 @@ async function resolveStatusRuntimeProfile(
     typeof sessionService.getGlobalCodexSettings === "function"
       ? await sessionService.getGlobalCodexSettings()
       : null;
-  const availableModels = await loadAvailableCodexModels({
-    configPath: state.codexConfigPath,
-  });
+  const availableModels =
+    typeof sessionService.loadAvailableCodexModels === "function"
+      ? await sessionService.loadAvailableCodexModels(session)
+      : await loadAvailableCodexModelsForSession({
+        session,
+        defaultConfigPath: state.codexConfigPath,
+        hostRegistryService: sessionService.hostRegistryService,
+      });
   return resolveCodexRuntimeProfile({
     session,
     globalSettings,
@@ -96,30 +97,6 @@ async function resolveStatusRuntimeProfile(
     target,
     availableModels,
   });
-}
-
-async function loadStatusDisplayConfig(state) {
-  const configPath =
-    typeof state?.codexConfigPath === "string" && state.codexConfigPath.trim()
-      ? state.codexConfigPath.trim()
-      : null;
-  if (!configPath) {
-    return null;
-  }
-
-  try {
-    const profile = await loadCodexConfigProfile(configPath);
-    return {
-      contextWindow: Number.isInteger(profile.contextWindow)
-        ? profile.contextWindow
-        : null,
-      autoCompactTokenLimit: Number.isInteger(profile.autoCompactTokenLimit)
-        ? profile.autoCompactTokenLimit
-        : null,
-    };
-  } catch {
-    return null;
-  }
 }
 
 function buildContextStatusLines(
@@ -146,6 +123,9 @@ function buildContextStatusLines(
     return [
       ...lines,
       english
+        ? "usage source: latest completed turn after Codex prompt pruning"
+        : "источник usage: последний завершённый turn после pruning в Codex",
+      english
         ? "context usage: no completed turn yet"
         : "использование контекста: ещё нет завершённого turn",
       `${english ? "context tokens" : "токены контекста"}: ${english ? "unknown" : "неизвестно"} / ${formatNumber(contextWindow, language)}`,
@@ -166,6 +146,9 @@ function buildContextStatusLines(
       : null;
 
   lines.push(
+    english
+      ? "usage source: latest completed turn after Codex prompt pruning"
+      : "источник usage: последний завершённый turn после pruning в Codex",
     `${english ? "context usage" : "использование контекста"}: ${formatPercent(usagePercent, language)}`,
     `${english ? "context tokens" : "токены контекста"}: ${formatNumber(totalTokens, language)} / ${formatNumber(contextWindow, language)}`,
     `${english ? "available tokens" : "доступно токенов"}: ${formatNumber(availableTokens, language)}`,
@@ -191,22 +174,45 @@ export function buildStatusMessage(
   language = getSessionUiLanguage(session),
   limitsSummary = null,
   displayConfig = null,
+  executionHost = null,
 ) {
   const english = isEnglish(language);
-  const omniEnabled = isOmniEnabled(state);
+  const hostStatus =
+    executionHost
+    || (
+      session?.execution_host_id
+        ? {
+            ok: !session.execution_host_last_failure,
+            hostId: session.execution_host_id,
+            hostLabel: session.execution_host_label,
+            lastReadyAt: session.execution_host_last_ready_at ?? null,
+            failureReason: session.execution_host_last_failure ?? null,
+          }
+        : null
+    );
   const runStatus = activeRun?.state.status ?? session.last_run_status ?? "idle";
+  const backend = activeRun?.state?.backend
+    ?? state.codexBackend
+    ?? session.last_run_backend
+    ?? session.codex_backend
+    ?? "unknown";
   const effectiveContextSnapshot = buildEffectiveContextSnapshot(
     state,
     session,
     activeRun,
     contextSnapshot,
   );
-  const contextWindow =
-    (Number.isInteger(displayConfig?.contextWindow)
+  const explicitConfiguredContextWindow =
+    Number.isInteger(displayConfig?.contextWindow)
       ? displayConfig.contextWindow
-      : null) ??
-    effectiveContextSnapshot?.model_context_window ??
+      : null;
+  const configuredContextWindow =
+    explicitConfiguredContextWindow ??
     (Number.isInteger(state.codexContextWindow) ? state.codexContextWindow : null);
+  const contextWindow =
+    explicitConfiguredContextWindow ??
+    configuredContextWindow ??
+    effectiveContextSnapshot?.model_context_window;
   const autoCompactTokenLimit =
     (Number.isInteger(displayConfig?.autoCompactTokenLimit)
       ? displayConfig.autoCompactTokenLimit
@@ -218,10 +224,6 @@ export function buildStatusMessage(
     model: state.codexModel ?? null,
     reasoningEffort: state.codexReasoningEffort ?? null,
   };
-  const omniProfile = runtimeProfiles?.omni ?? {
-    model: state.codexModel ?? null,
-    reasoningEffort: state.codexReasoningEffort ?? null,
-  };
 
   return [
     english ? "Status" : "Статус",
@@ -229,27 +231,26 @@ export function buildStatusMessage(
     `${english ? "topic" : "тема"}: ${session.topic_name ?? getTopicLabel(message)}`,
     `${english ? "session" : "сессия"}: ${session.lifecycle_state}`,
     `run: ${runStatus}`,
+    `backend: ${backend}`,
     `${english ? "folder" : "папка"}: ${session.workspace_binding.cwd}`,
     `${english ? "branch" : "ветка"}: ${session.workspace_binding.branch ?? "none"}`,
     "",
+    ...(hostStatus
+      ? [
+          ...buildHostStatusLines(hostStatus, language, { session }),
+          "",
+        ]
+      : []),
     `${english ? "language" : "язык"}: ${getLanguageLabel(language)}`,
     `${english ? "model" : "модель"}: ${spikeProfile.model ?? (english ? "unknown" : "неизвестно")}`,
     `${english ? "reasoning" : "reasoning"}: ${formatCodexSettingValue("reasoning", spikeProfile.reasoningEffort, language)}`,
-    ...(omniEnabled
-      ? [
-          `${english ? "omni model" : "omni model"}: ${omniProfile.model ?? (english ? "unknown" : "неизвестно")}`,
-          `${english ? "omni reasoning" : "omni reasoning"}: ${formatCodexSettingValue("reasoning", omniProfile.reasoningEffort, language)}`,
-        ]
-      : []),
     `${english ? "context window" : "context window"}: ${formatNumber(contextWindow, language)}`,
     `${english ? "auto-compact" : "auto-compact"}: ${formatNumber(autoCompactTokenLimit, language)}`,
     "",
     ...buildCodexLimitsStatusLines(limitsSummary, language),
     "",
     ...buildContextStatusLines(effectiveContextSnapshot, language, {
-      configuredContextWindow: Number.isInteger(displayConfig?.contextWindow)
-        ? displayConfig.contextWindow
-        : null,
+      configuredContextWindow,
     }),
   ].join("\n");
 }
@@ -292,29 +293,23 @@ export async function resolveStatusView({
     state,
     "spike",
   );
-  const omniRuntimeProfile =
-    isOmniEnabled(state)
-      ? await resolveStatusRuntimeProfile(
-          sessionService,
-          handledSession,
-          state,
-          "omni",
-        )
-      : null;
   const limitsSummary =
     typeof sessionService.getCodexLimitsSummary === "function"
       ? await sessionService.getCodexLimitsSummary({ allowStale: true })
       : null;
   const runtimeProfiles = {
     spike: spikeRuntimeProfile,
-    ...(isOmniEnabled(state) ? { omni: omniRuntimeProfile } : {}),
   };
-  const displayConfig = await loadStatusDisplayConfig(state);
+  const executionHost =
+    typeof sessionService.resolveSessionExecution === "function"
+      ? await sessionService.resolveSessionExecution(handledSession)
+      : null;
 
   return {
     session: handledSession,
     activeRun,
     contextSnapshot: contextState.snapshot,
+    executionHost,
     runtimeProfiles,
     limitsSummary,
     language,
@@ -327,7 +322,8 @@ export async function resolveStatusView({
       runtimeProfiles,
       language,
       limitsSummary,
-      displayConfig,
+      null,
+      executionHost,
     ),
   };
 }

@@ -6,12 +6,13 @@ import path from "node:path";
 
 import { CodexWorkerPool } from "../src/pty-worker/worker-pool.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
-import { SpikeFinalEventStore } from "../src/session-manager/spike-final-event-store.js";
 import {
   createDeferred,
   sleep,
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
+
+const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
 
 test("CodexWorkerPool buffers live steer input while the run is still starting and flushes it into the same run", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -19,15 +20,15 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 203,
     topicName: "Steer buffer",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -55,6 +56,7 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
     },
     config: {
       codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
       maxParallelSessions: 1,
     },
     sessionStore,
@@ -148,21 +150,71 @@ test("CodexWorkerPool buffers live steer input while the run is still starting a
   assert.equal(sentMessages.at(-1).reply_to_message_id, 601);
 });
 
+test("CodexWorkerPool buffers live steer for the exec-json backend while the run starts", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-exec-no-steer-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 204,
+    topicName: "Exec buffered steer",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+  const workerPool = new CodexWorkerPool({
+    api: {},
+    config: {
+      codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: () => {
+      throw new Error("not used");
+    },
+  });
+
+  workerPool.startingRuns.add(session.session_key);
+  const steered = await workerPool.steerActiveRun({
+    session,
+    rawPrompt: "queue me instead",
+    message: {
+      message_id: 602,
+      message_thread_id: 204,
+    },
+  });
+
+  assert.equal(steered.ok, true);
+  assert.equal(steered.reason, "steer-buffered");
+  assert.equal(workerPool.pendingLiveSteers.has(session.session_key), true);
+});
+
 test("CodexWorkerPool restarts the run after an upstream interrupt that happens after accepted live steer", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-live-steer-restart-"),
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2033,
     topicName: "Live steer restart",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -186,6 +238,7 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
     },
     config: {
       codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
       maxParallelSessions: 1,
     },
     sessionStore,
@@ -321,15 +374,15 @@ test("CodexWorkerPool restarts a normal run after an upstream interrupt before t
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2034,
     topicName: "Upstream restart",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -476,15 +529,15 @@ test("CodexWorkerPool survives two upstream interrupts before a later same-threa
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2035,
     topicName: "Upstream restart twice",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -631,15 +684,15 @@ test("CodexWorkerPool clears stale continuity hints before a fresh rebuild witho
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 20355,
     topicName: "Fresh rebuild",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   const continuitySeed = await sessionStore.patch(session, {
@@ -751,7 +804,8 @@ test("CodexWorkerPool clears stale continuity hints before a fresh rebuild witho
   await waitFor(() => workerPool.getActiveRun(continuitySeed.session_key) === null, 5000);
 
   assert.equal(runCalls.length, 2);
-  assert.equal(runCalls[0].sessionThreadId, "stale-thread");
+  assert.equal(runCalls[0].sessionThreadId, null);
+  assert.equal(runCalls[0].skipThreadHistoryLookup, false);
   assert.equal(runCalls[1].sessionThreadId, null);
   assert.equal(runCalls[1].skipThreadHistoryLookup, true);
 
@@ -768,15 +822,15 @@ test("CodexWorkerPool keeps a captured final answer when upstream aborts after t
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2036,
     topicName: "Upstream final answer",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1145,26 +1199,28 @@ test("CodexWorkerPool keeps root thread state when foreign subagent events arriv
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2032,
     topicName: "Foreign thread isolation",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
   const sentMessages = [];
+  const editedMessages = [];
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
         sentMessages.push(payload);
         return { message_id: sentMessages.length };
       },
-      async editMessageText() {
+      async editMessageText(payload) {
+        editedMessages.push(payload);
         return { ok: true };
       },
       async deleteMessage() {
@@ -1336,6 +1392,179 @@ test("CodexWorkerPool keeps root thread state when foreign subagent events arriv
   assert.equal(reloaded.codex_thread_id, "root-thread");
   assert.equal(reloaded.last_agent_reply, "Корневой финал.");
   assert.equal(sentMessages.at(-1).text, "Корневой финал.");
+  assert.equal(
+    editedMessages.some((payload) => /сабагент/u.test(payload.text)),
+    false,
+  );
+});
+
+test("CodexWorkerPool keeps main-thread progress visible while hiding internal orchestration noise", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-progress-thought-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 2036,
+    topicName: "Progress thought",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const sentMessages = [];
+  const editedMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent(
+          {
+            kind: "thread",
+            eventType: "thread.started",
+            threadId: "thought-thread",
+          },
+          {
+            type: "thread.started",
+            thread_id: "thought-thread",
+          },
+        );
+        await onEvent(
+          {
+            kind: "agent_message",
+            messagePhase: "commentary",
+            text: "Сначала проверю реальный lifecycle run, потом добью точечный race.",
+            threadId: "thought-thread",
+            isPrimaryThreadEvent: true,
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              phase: "commentary",
+              text: "Сначала проверю реальный lifecycle run, потом добью точечный race.",
+            },
+          },
+        );
+        await onEvent(
+          {
+            kind: "agent_message",
+            messagePhase: "commentary",
+            text: "Spawning a subagent to inspect the repo before I continue.",
+            threadId: "thought-thread",
+            isPrimaryThreadEvent: true,
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              phase: "commentary",
+              text: "Spawning a subagent to inspect the repo before I continue.",
+            },
+          },
+        );
+        await onEvent(
+          {
+            kind: "agent_message",
+            messagePhase: "commentary",
+            text: "Анализирую код и текущее состояние.",
+            threadId: "thought-thread",
+            isPrimaryThreadEvent: true,
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              phase: "commentary",
+              text: "Анализирую код и текущее состояние.",
+            },
+          },
+        );
+        await onEvent(
+          {
+            kind: "agent_message",
+            messagePhase: "final_answer",
+            text: "Финал без leakage.",
+            threadId: "thought-thread",
+            isPrimaryThreadEvent: true,
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              phase: "final_answer",
+              text: "Финал без leakage.",
+            },
+          },
+        );
+
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "thought-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
+    }),
+  });
+
+  const started = await workerPool.startPromptRun({
+    session,
+    prompt: "Покажи нормальную мысль, но не светись orchestration.",
+    message: {
+      message_id: 611,
+      message_thread_id: 2036,
+    },
+  });
+
+  assert.equal(started.ok, true);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
+
+  assert.equal(
+    editedMessages.some((payload) => /subagent|inspect the repo/u.test(payload.text)),
+    false,
+  );
+  assert.equal(
+    editedMessages.some((payload) => /Анализирую код и текущее состояние/u.test(payload.text)),
+    true,
+  );
+  assert.equal(sentMessages.at(-1)?.text, "Финал без leakage.");
+  const progressNotes = await sessionStore.loadProgressNotes(session);
+  assert.deepEqual(
+    progressNotes.map((entry) => entry.text),
+    [
+      "Сначала проверю реальный lifecycle run, потом добью точечный race.",
+      "Анализирую код и текущее состояние.",
+    ],
+  );
 });
 
 test("CodexWorkerPool does not let late live events clobber a completed run back to running", async () => {
@@ -1344,15 +1573,15 @@ test("CodexWorkerPool does not let late live events clobber a completed run back
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2031,
     topicName: "Late event race",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1465,15 +1694,15 @@ test("CodexWorkerPool surfaces non-interrupt run failures instead of interrupted
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 203,
     topicName: "Failure reply",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1539,15 +1768,15 @@ test("CodexWorkerPool keeps repeated upstream SIGINT runs as interrupted after t
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2032,
     topicName: "Upstream interrupt reply",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1622,15 +1851,15 @@ test("CodexWorkerPool localizes failure replies to English when the session UI l
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2031,
     topicName: "English failure",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -1699,15 +1928,15 @@ test("CodexWorkerPool treats a starting run as busy before progress delivery com
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 204,
     topicName: "Starting busy guard",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1718,7 +1947,7 @@ test("CodexWorkerPool treats a starting run as busy before progress delivery com
     api: {
       async sendMessage(payload) {
         sentMessages.push(payload);
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           await progressDeferred.promise;
         }
 
@@ -1793,7 +2022,7 @@ test("CodexWorkerPool treats a starting run as busy before progress delivery com
     },
   });
 
-  await waitFor(() => sentMessages.some((payload) => payload.text === "..."));
+  await waitFor(() => sentMessages.some((payload) => payload.text === INITIAL_PROGRESS_TEXT));
   const secondStart = await workerPool.startPromptRun({
     session,
     prompt: "guard-second",
@@ -1818,15 +2047,15 @@ test("CodexWorkerPool shutdown waits for a reserved start to become interruptibl
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 205,
     topicName: "Shutdown reserved start",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -1839,7 +2068,7 @@ test("CodexWorkerPool shutdown waits for a reserved start to become interruptibl
     api: {
       async sendMessage(payload) {
         sentMessages.push(payload);
-        if (payload.text === "...") {
+        if (payload.text === INITIAL_PROGRESS_TEXT) {
           await progressDeferred.promise;
         }
 
@@ -1890,7 +2119,7 @@ test("CodexWorkerPool shutdown waits for a reserved start to become interruptibl
     },
   });
 
-  await waitFor(() => sentMessages.some((payload) => payload.text === "..."));
+  await waitFor(() => sentMessages.some((payload) => payload.text === INITIAL_PROGRESS_TEXT));
   const shutdownPromise = workerPool.shutdown();
   let shutdownFinished = false;
   shutdownPromise.then(() => {
@@ -1950,15 +2179,15 @@ test("CodexWorkerPool keeps a completed final answer even if interrupt lands lat
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2041,
     topicName: "Late interrupt",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 

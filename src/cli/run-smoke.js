@@ -5,19 +5,16 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { assertSmokeSupported, resolveSmokeVariant } from "./run-smoke-common.js";
+import { assertSmokeSupported } from "./run-smoke-common.js";
 
 const execFileAsync = promisify(execFile);
 
 async function main() {
-  const isOmni = resolveVariant() === "omni";
-  const serviceName = isOmni
-    ? "codex-telegram-gateway-omni.service"
-    : "codex-telegram-gateway.service";
+  const serviceName = "codex-telegram-gateway.service";
   await assertSmokeSupported(serviceName, { execFileAsync });
 
   const scriptPath = fileURLToPath(
-    new URL(isOmni ? "./run-omni.js" : "./run.js", import.meta.url),
+    new URL("./run.js", import.meta.url),
   );
   const child = spawn(process.execPath, [scriptPath], {
     stdio: "inherit",
@@ -25,7 +22,6 @@ async function main() {
       ...process.env,
       RUN_ONCE: "1",
       TELEGRAM_POLL_TIMEOUT_SECS: "1",
-      ...(isOmni ? { OMNI_SKIP_PENDING_SCAN: "1" } : {}),
     },
   });
 

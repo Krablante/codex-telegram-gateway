@@ -1,5 +1,5 @@
 @echo off
 setlocal
 cd /d "%~dp0\..\.."
-node --test
+node scripts\run-node-tests.mjs %*
 exit /b %errorlevel%

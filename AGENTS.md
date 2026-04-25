@@ -14,8 +14,9 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 
 - `transport/` responsibility stays Telegram-specific
 - `session-manager/` owns routing, lifecycle, and persistence
-- `pty-worker/` owns the Codex `app-server` transport, live steer, rollout recovery, and worker lifecycle
-- native resume/recovery now follows real Codex history surfaces first: `thread/list`, `provider_session_id`, rollout path, and `session_key` before any compact fallback
+- `codex-exec/` owns the default `codex exec --json` backend for normal Telegram runs
+- `pty-worker/` owns worker lifecycle, progress/final delivery, busy/queue handling, remote execution routing, and the fallback Codex `app-server` transport
+- `CODEX_GATEWAY_BACKEND=app-server` is legacy debug only and requires `CODEX_ENABLE_LEGACY_APP_SERVER=1`
 - compact briefs are expected to preserve still-active user-specific rules and delivery instructions from the exchange log without inventing fake placeholders
 - while `/compact` is rebuilding the brief, direct prompt starts for that topic should stay blocked instead of racing a second run against the fresh start
 - `telegram/command-handlers/` owns domain-specific command behavior; keep central routers thin
@@ -28,7 +29,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - default CLI env file: `${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
 - default `make` env file: `.env`
 - default state root: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
-- a legacy compatibility alias is still accepted for `WORKSPACE_ROOT`
+- optional workspace root override: `WORKSPACE_ROOT`
 
 ## Run and validate
 
@@ -42,13 +43,19 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - `make user-spike-audit`
 - `make service-install`
 - `make service-rollout`
+- `make service-restart`
 - `make service-restart-live`
+- `make check-syntax`
+- `make lint`
+- `make typecheck`
+- `make test-exec`
+- `make hygiene`
 - `make test-live`
 - `make test`
 
 ## Operator preferences
 
-- for “restart the live bot”, use `make service-restart-live`; it restarts `Omni` when that unit is installed and then rolls `Spike` softly
+- for “restart the live bot”, use `make service-restart` or `make service-restart-live`; both use the session-aware soft rollout path
 - never use raw `systemctl restart codex-telegram-gateway.service` for ordinary live updates; that is the blind hard-restart path and can cut an active run
 - `make admin ARGS='status'` is also the fastest operator check for heartbeat freshness, pid liveness, the resolved and configured `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and parsed MCP server list before assuming `pitlane` is broken
 

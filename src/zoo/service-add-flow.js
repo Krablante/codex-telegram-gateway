@@ -199,7 +199,7 @@ export async function runLookup(service, {
     const lookup = await service.lookupRunner({
       codexBinPath: service.config.codexBinPath,
       outputDir: service.zooStore.runsDir,
-      workspaceRoot: service.config.atlasWorkspaceRoot,
+      workspaceRoot: service.config.workspaceRoot,
       description,
     });
     let currentTopicState = await service.zooStore.loadTopic({ force: true });
@@ -241,7 +241,7 @@ export async function runLookup(service, {
         cwd: getZooProjectRoot(binding),
         resolved_path: getZooProjectRoot(binding),
       },
-    ], service.config.atlasWorkspaceRoot);
+    ], service.config.workspaceRoot);
     await service.persistCanonicalPetDisplayNames(existingPets, candidateDisplayNames);
     await service.zooStore.patchTopic({
       pending_add: {
@@ -302,7 +302,7 @@ export async function confirmPendingAdd(service, {
 
   try {
     const binding = await service.sessionService.resolveBindingPath(pendingAdd.candidate_path);
-    const zooBinding = buildZooBindingForPet(binding, service.config.atlasWorkspaceRoot);
+    const zooBinding = buildZooBindingForPet(binding, service.config.workspaceRoot);
     const existingPet = await service.zooStore.findPetByResolvedPath(zooBinding.projectRoot);
     if (existingPet) {
       await service.zooStore.patchTopic({
@@ -329,7 +329,7 @@ export async function confirmPendingAdd(service, {
         cwd: zooBinding.projectRoot,
         resolved_path: zooBinding.projectRoot,
       },
-    ], service.config.atlasWorkspaceRoot);
+    ], service.config.workspaceRoot);
     await service.persistCanonicalPetDisplayNames(existingPets, displayNames);
     const pet = await service.zooStore.savePet({
       pet_id: petId,
@@ -409,7 +409,7 @@ export async function reconcilePetDisplayNames(service, pets = null, extraPets =
       ...currentPets,
       ...(extraPets || []).filter(Boolean),
     ],
-    service.config.atlasWorkspaceRoot,
+    service.config.workspaceRoot,
   );
   return service.persistCanonicalPetDisplayNames(currentPets, displayNames);
 }

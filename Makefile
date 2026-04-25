@@ -3,7 +3,7 @@
 ENV_FILE ?= .env
 NODE ?= node
 
-.PHONY: config doctor run run-omni smoke smoke-omni soak test test-live user-login user-status user-e2e user-spike-audit admin service-install service-install-omni service-status service-status-omni service-logs service-logs-omni service-rollout service-restart service-hard-restart service-restart-omni service-restart-live
+.PHONY: config doctor host-bootstrap host-bootstrap-runtime host-doctor host-remote-smoke host-sync host-sync-install host-sync-status run smoke soak lint typecheck check-syntax test test-exec test-cleanup hygiene hygiene-knip hygiene-depcheck hygiene-audit test-live test-live-exec test-live-app-server user-login user-status user-e2e user-spike-audit admin service-install service-status service-logs service-rollout service-restart service-restart-live service-hard-restart
 
 config:
 	@test -f "$(ENV_FILE)" || { \
@@ -15,26 +15,72 @@ config:
 doctor: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/doctor.js
 
+host-bootstrap: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/host-bootstrap.js
+
+host-bootstrap-runtime: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/host-bootstrap-runtime.js $(ARGS)
+
+host-doctor: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/host-doctor.js
+
+host-remote-smoke: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/host-remote-smoke.js $(ARGS)
+
+host-sync: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/host-sync.js
+
+host-sync-install: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/install-host-sync-timer.js
+
+host-sync-status:
+	systemctl --user --no-pager --full status codex-telegram-gateway-host-sync.timer
+
 run: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run.js
-
-run-omni: config
-	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-omni.js
 
 smoke: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-smoke.js
 
-smoke-omni: config
-	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-smoke.js --omni
-
 soak: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/soak.js
 
-test:
-	$(NODE) --test
+lint:
+	npm run lint
 
-test-live: config
-	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-live-tests.js
+typecheck:
+	npm run typecheck
+
+check-syntax:
+	$(NODE) scripts/check-syntax.mjs
+
+test:
+	$(NODE) scripts/run-node-tests.mjs $(ARGS)
+
+test-exec:
+	$(NODE) scripts/run-node-tests.mjs --suite exec $(ARGS)
+
+test-cleanup:
+	$(NODE) scripts/run-node-tests.mjs --cleanup-only $(ARGS)
+
+hygiene-knip:
+	npm run hygiene:knip
+
+hygiene-depcheck:
+	npm run hygiene:depcheck
+
+hygiene-audit:
+	npm audit --omit=dev --audit-level=moderate
+
+hygiene: hygiene-knip hygiene-depcheck hygiene-audit
+
+test-live: test-live-exec
+
+test-live-exec: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-live-tests.js --exec-json $(ARGS)
+
+test-live-app-server: config
+	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/run-live-tests.js --app-server $(ARGS)
 
 user-login: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/user-login.js
@@ -54,40 +100,18 @@ admin: config
 service-install: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/install-user-service.js
 
-service-install-omni: config
-	SERVICE_VARIANT=omni ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/install-user-service.js
-
 service-status:
 	systemctl --user --no-pager --full status codex-telegram-gateway.service
 
-service-status-omni:
-	systemctl --user --no-pager --full status codex-telegram-gateway-omni.service
-
 service-logs:
 	journalctl --user -u codex-telegram-gateway.service -n 100 --no-pager
-
-service-logs-omni:
-	journalctl --user -u codex-telegram-gateway-omni.service -n 100 --no-pager
 
 service-rollout:
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/service-rollout.js
 
 service-restart: service-rollout
 
-service-restart-live:
-	@load_state="$$(systemctl --user show codex-telegram-gateway-omni.service --property LoadState --value 2>/dev/null || true)"; \
-	if [ "$$load_state" = "loaded" ]; then \
-		$(MAKE) service-restart-omni; \
-	elif [ "$$load_state" = "not-found" ] || [ -z "$$load_state" ]; then \
-		echo "codex-telegram-gateway-omni.service is not installed; skipping Omni restart"; \
-	else \
-		echo "Unable to determine codex-telegram-gateway-omni.service load state: $$load_state" >&2; \
-		exit 1; \
-	fi
-	@$(MAKE) service-rollout
+service-restart-live: service-rollout
 
 service-hard-restart:
 	systemctl --user restart codex-telegram-gateway.service
-
-service-restart-omni:
-	systemctl --user restart codex-telegram-gateway-omni.service

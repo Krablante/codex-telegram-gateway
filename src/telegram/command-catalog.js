@@ -8,6 +8,8 @@ const SPIKE_GROUP_COMMANDS = {
     buildCommand("guide", "Send the beginner PDF guidebook"),
     buildCommand("clear", "Clear General and keep only the active menu"),
     buildCommand("new", "Create a new work topic"),
+    buildCommand("hosts", "Show available execution hosts"),
+    buildCommand("host", "Show one execution host status"),
     buildCommand("zoo", "Open the dedicated Zoo topic"),
     buildCommand("status", "Show session and runtime status"),
     buildCommand("limits", "Show the current Codex rate limits"),
@@ -29,6 +31,8 @@ const SPIKE_GROUP_COMMANDS = {
     buildCommand("guide", "Отправить PDF-гайдбук для новичка"),
     buildCommand("clear", "Очистить General и оставить только active menu"),
     buildCommand("new", "Создать новую рабочую тему"),
+    buildCommand("hosts", "Показать доступные execution hosts"),
+    buildCommand("host", "Показать статус одного execution host"),
     buildCommand("zoo", "Открыть отдельный Zoo topic"),
     buildCommand("status", "Показать статус сессии и рантайма"),
     buildCommand("limits", "Показать текущие лимиты Codex"),
@@ -57,32 +61,6 @@ const SPIKE_PRIVATE_COMMANDS = {
     buildCommand("help", "Показать помощь по private lane"),
     buildCommand("status", "Показать статус emergency lane"),
     buildCommand("interrupt", "Остановить emergency run"),
-  ],
-};
-
-const OMNI_GROUP_COMMANDS = {
-  eng: [
-    buildCommand("auto", "Arm, inspect, or stop Omni auto mode"),
-    buildCommand("omni", "Ask Omni about the current auto state"),
-  ],
-  rus: [
-    buildCommand("auto", "Включить, проверить или выключить /auto"),
-    buildCommand("omni", "Спросить Omni про текущий auto state"),
-  ],
-};
-
-const SPIKE_OMNI_COMMANDS = {
-  eng: [
-    buildCommand("auto", "Omni auto mode for this topic"),
-    buildCommand("omni", "Ask Omni about the current auto state"),
-    buildCommand("omni_model", "Set or inspect the Omni model"),
-    buildCommand("omni_reasoning", "Set or inspect Omni reasoning"),
-  ],
-  rus: [
-    buildCommand("auto", "Режим Omni /auto для этого топика"),
-    buildCommand("omni", "Спросить Omni про текущий auto state"),
-    buildCommand("omni_model", "Omni model для топика или global"),
-    buildCommand("omni_reasoning", "Omni reasoning для топика или global"),
   ],
 };
 
@@ -120,13 +98,6 @@ function buildTelegramCommandClearPlan(kind, forumChatId) {
     throw new Error("buildTelegramCommandClearPlan requires forumChatId");
   }
 
-  if (kind === "omni") {
-    return buildLocalizedScopeEntries([
-      { type: "all_group_chats" },
-      { type: "chat", chat_id: normalizedForumChatId },
-    ]);
-  }
-
   if (kind === "spike") {
     return buildLocalizedScopeEntries([
       { type: "default" },
@@ -142,7 +113,6 @@ function buildTelegramCommandClearPlan(kind, forumChatId) {
 export function buildTelegramCommandSyncPlan(
   kind,
   forumChatId,
-  { omniEnabled = true } = {},
 ) {
   const normalizedForumChatId = String(forumChatId || "").trim();
   if (!normalizedForumChatId) {
@@ -150,39 +120,16 @@ export function buildTelegramCommandSyncPlan(
   }
 
   if (kind === "spike") {
-    const spikeGroupCommands = {
-      eng: [
-        ...SPIKE_GROUP_COMMANDS.eng,
-        ...(omniEnabled ? SPIKE_OMNI_COMMANDS.eng : []),
-      ],
-      rus: [
-        ...SPIKE_GROUP_COMMANDS.rus,
-        ...(omniEnabled ? SPIKE_OMNI_COMMANDS.rus : []),
-      ],
-    };
     return [
-      ...buildLocalizedEntries({ type: "default" }, spikeGroupCommands),
-      ...buildLocalizedEntries({ type: "all_group_chats" }, spikeGroupCommands),
+      ...buildLocalizedEntries({ type: "default" }, SPIKE_GROUP_COMMANDS),
+      ...buildLocalizedEntries({ type: "all_group_chats" }, SPIKE_GROUP_COMMANDS),
       ...buildLocalizedEntries(
         { type: "chat", chat_id: normalizedForumChatId },
-        spikeGroupCommands,
+        SPIKE_GROUP_COMMANDS,
       ),
       ...buildLocalizedEntries(
         { type: "all_private_chats" },
         SPIKE_PRIVATE_COMMANDS,
-      ),
-    ];
-  }
-
-  if (kind === "omni") {
-    if (!omniEnabled) {
-      return [];
-    }
-    return [
-      ...buildLocalizedEntries({ type: "all_group_chats" }, OMNI_GROUP_COMMANDS),
-      ...buildLocalizedEntries(
-        { type: "chat", chat_id: normalizedForumChatId },
-        OMNI_GROUP_COMMANDS,
       ),
     ];
   }

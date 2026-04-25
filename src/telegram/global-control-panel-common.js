@@ -1,4 +1,4 @@
-export const GLOBAL_CONTROL_OPERATION_CHAINS = new Map();
+const GLOBAL_CONTROL_OPERATION_CHAINS = new Map();
 
 export function buildAuthMessageForCallbackQuery(callbackQuery) {
   return {

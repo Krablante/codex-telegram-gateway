@@ -1,7 +1,6 @@
 import path from "node:path";
 
 import { normalizeSessionIds } from "./session-key.js";
-import { AUTO_LAST_SPIKE_FINAL_FILE_NAME } from "./auto-mode.js";
 import { TOPIC_CONTEXT_FILE_NAME } from "./topic-context.js";
 import { META_LOCK_DIR_NAME } from "./session-store-common.js";
 import {
@@ -20,6 +19,7 @@ import {
 import {
   appendExchangeLogEntry,
   listSessions,
+  listSessionsWithFile,
   loadActiveBrief,
   loadCompactState,
   loadExchangeLog,
@@ -29,6 +29,10 @@ import {
   writeSessionJson,
   writeSessionText,
 } from "./session-store-files.js";
+import {
+  appendProgressNoteEntry,
+  loadProgressNotes,
+} from "./session-progress-journal.js";
 
 export class SessionStore {
   constructor(sessionsRoot) {
@@ -60,17 +64,18 @@ export class SessionStore {
     return path.join(this.getSessionDir(chatId, topicId), "exchange-log.jsonl");
   }
 
+  getProgressNotesPath(chatId, topicId) {
+    return path.join(this.getSessionDir(chatId, topicId), "progress-notes.jsonl");
+  }
+
+  getExecJsonRunLogPath(chatId, topicId) {
+    return path.join(this.getSessionDir(chatId, topicId), "exec-json-run.jsonl");
+  }
+
   getTopicContextPath(chatId, topicId) {
     return path.join(
       this.getSessionDir(chatId, topicId),
       TOPIC_CONTEXT_FILE_NAME,
-    );
-  }
-
-  getAutoLastSpikeFinalPath(chatId, topicId) {
-    return path.join(
-      this.getSessionDir(chatId, topicId),
-      AUTO_LAST_SPIKE_FINAL_FILE_NAME,
     );
   }
 
@@ -120,6 +125,10 @@ export class SessionStore {
     return listSessions(this);
   }
 
+  async listSessionsWithFile(relativePath) {
+    return listSessionsWithFile(this, relativePath);
+  }
+
   async loadCompactState(meta) {
     return loadCompactState(this, meta);
   }
@@ -138,6 +147,14 @@ export class SessionStore {
 
   async appendExchangeLogEntry(meta, entry) {
     return appendExchangeLogEntry(this, meta, entry);
+  }
+
+  async loadProgressNotes(meta, options = {}) {
+    return loadProgressNotes(this, meta, options);
+  }
+
+  async appendProgressNoteEntry(meta, entry) {
+    return appendProgressNoteEntry(this, meta, entry);
   }
 
   async writeSessionText(meta, relativePath, content) {

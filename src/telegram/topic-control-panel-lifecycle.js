@@ -20,7 +20,9 @@ export async function ensureTopicControlPanelMessage({
   api,
   config,
   controlState = null,
+  forceRecreate = false,
   forceStatusMessage = false,
+  lifecycleManager = null,
   recreateOnUnchanged = false,
   preferredMessageId = null,
   promptFragmentAssembler,
@@ -48,15 +50,31 @@ export async function ensureTopicControlPanelMessage({
   const resolvedSession = view.session ?? session;
   const payload = buildTopicControlPanelPayload({
     language,
-    omniEnabled: config.omniEnabled !== false,
+    notice: resolvedControlState.notice,
     pendingInput: resolvedControlState.pending_input,
     screen,
     session: resolvedSession,
     view,
   });
   const messageId = preferredMessageId ?? resolvedControlState.menu_message_id;
+  const handlePanelTransportError = async (error, fallbackMessageId = messageId) => {
+    const lifecycleResult = await lifecycleManager?.handleTransportError(
+      resolvedSession,
+      error,
+    );
+    if (!lifecycleResult?.handled) {
+      return null;
+    }
 
-  if (messageId) {
+    return {
+      created: false,
+      messageId: fallbackMessageId ?? null,
+      parked: lifecycleResult.parked === true,
+      session: lifecycleResult.session || resolvedSession,
+    };
+  };
+
+  if (messageId && !forceRecreate) {
     try {
       await api.editMessageText({
         chat_id: resolvedSession.chat_id,
@@ -67,6 +85,7 @@ export async function ensureTopicControlPanelMessage({
       await topicControlPanelStore.patch(resolvedSession, {
         menu_message_id: messageId,
         active_screen: screen,
+        notice: null,
         pending_input: syncPendingInputMessageId(
           resolvedControlState.pending_input,
           messageId,
@@ -89,6 +108,7 @@ export async function ensureTopicControlPanelMessage({
           await topicControlPanelStore.patch(resolvedSession, {
             menu_message_id: messageId,
             active_screen: screen,
+            notice: null,
             pending_input: syncPendingInputMessageId(
               resolvedControlState.pending_input,
               messageId,
@@ -98,7 +118,12 @@ export async function ensureTopicControlPanelMessage({
             await pinTopicControlPanelMessageSafe(api, resolvedSession, messageId);
           }
           if (forceStatusMessage) {
-            await sendStatusMessage(api, resolvedSession, buildMenuRefreshMessage(language));
+            await sendStatusMessage(
+              api,
+              resolvedSession,
+              buildMenuRefreshMessage(language),
+              lifecycleManager,
+            );
           }
           return {
             created: false,
@@ -107,17 +132,30 @@ export async function ensureTopicControlPanelMessage({
           };
         }
       } else if (!isRecoverableEditError(error)) {
+        const lifecycleResult = await handlePanelTransportError(error, messageId);
+        if (lifecycleResult) {
+          return lifecycleResult;
+        }
         throw error;
       }
     }
   }
 
-  const sent = await api.sendMessage({
-    chat_id: resolvedSession.chat_id,
-    message_thread_id: Number(resolvedSession.topic_id),
-    text: payload.text,
-    reply_markup: payload.reply_markup,
-  });
+  let sent;
+  try {
+    sent = await api.sendMessage({
+      chat_id: resolvedSession.chat_id,
+      message_thread_id: Number(resolvedSession.topic_id),
+      text: payload.text,
+      reply_markup: payload.reply_markup,
+    });
+  } catch (error) {
+    const lifecycleResult = await handlePanelTransportError(error, messageId);
+    if (lifecycleResult) {
+      return lifecycleResult;
+    }
+    throw error;
+  }
   const nextMessageId =
     Number.isInteger(sent?.message_id) && sent.message_id > 0
       ? sent.message_id
@@ -126,6 +164,7 @@ export async function ensureTopicControlPanelMessage({
   await topicControlPanelStore.patch(resolvedSession, {
     menu_message_id: resolvedMessageId,
     active_screen: screen,
+    notice: null,
     pending_input: syncPendingInputMessageId(
       resolvedControlState.pending_input,
       resolvedMessageId,

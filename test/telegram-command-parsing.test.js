@@ -6,6 +6,7 @@ import {
   extractBotCommand,
   getTopicLabel,
   isAuthorizedMessage,
+  parseHostCommandArgs,
   parseLanguageCommandArgs,
   parseNewTopicCommandArgs,
   parsePromptSuffixCommandArgs,
@@ -15,10 +16,10 @@ import {
 } from "../src/telegram/command-parsing.js";
 
 const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789"],
   telegramAllowedBotIds: ["8603043042"],
-  telegramForumChatId: "-1003577434463",
+  telegramForumChatId: "-1001234567890",
 };
 
 test("extractBotCommand parses direct commands and bot username suffix", () => {
@@ -130,12 +131,14 @@ test("parseQueueCommandArgs distinguishes queue actions from prompt text", () =>
 test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit binding path", () => {
   assert.deepEqual(parseNewTopicCommandArgs("Slice 4 test"), {
     bindingPath: null,
+    executionHostId: null,
     title: "Slice 4 test",
   });
   assert.deepEqual(
-    parseNewTopicCommandArgs("cwd=/home/bloob/atlas Gateway topic"),
+    parseNewTopicCommandArgs("cwd=/srv/codex-workspace Gateway topic"),
     {
-      bindingPath: "/home/bloob/atlas",
+      bindingPath: "/srv/codex-workspace",
+      executionHostId: null,
       title: "Gateway topic",
     },
   );
@@ -143,6 +146,7 @@ test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit bin
     parseNewTopicCommandArgs("--cwd=homelab/infra/automation/codex-telegram-gateway"),
     {
       bindingPath: "homelab/infra/automation/codex-telegram-gateway",
+      executionHostId: null,
       title: "",
     },
   );
@@ -150,9 +154,38 @@ test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit bin
     parseNewTopicCommandArgs('cwd="C:/Users/Konstantin/Source Repos" Windows topic'),
     {
       bindingPath: "C:/Users/Konstantin/Source Repos",
+      executionHostId: null,
       title: "Windows topic",
     },
   );
+  assert.deepEqual(
+    parseNewTopicCommandArgs('host=worker-a cwd=homelab/infra "Remote gateway topic"'),
+    {
+      bindingPath: "homelab/infra",
+      executionHostId: "worker-a",
+      title: "Remote gateway topic",
+    },
+  );
+  assert.deepEqual(
+    parseNewTopicCommandArgs("--host=worker-b Research topic"),
+    {
+      bindingPath: null,
+      executionHostId: "worker-b",
+      title: "Research topic",
+    },
+  );
+});
+
+test("parseHostCommandArgs extracts one optional host id", () => {
+  assert.deepEqual(parseHostCommandArgs(""), {
+    hostId: null,
+  });
+  assert.deepEqual(parseHostCommandArgs("worker-a"), {
+    hostId: "worker-a",
+  });
+  assert.deepEqual(parseHostCommandArgs('"worker-b" extra'), {
+    hostId: "worker-b",
+  });
 });
 
 test("parsePromptSuffixCommandArgs supports show, toggle, and set modes", () => {
@@ -334,8 +367,8 @@ test("parseScopedRuntimeSettingCommandArgs supports topic and global modes", () 
 
 test("isAuthorizedMessage allows trusted human and trusted bot principals in configured chat", () => {
   const message = {
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
   };
 
   assert.equal(isAuthorizedMessage(message, config), true);
@@ -343,7 +376,7 @@ test("isAuthorizedMessage allows trusted human and trusted bot principals in con
     isAuthorizedMessage(
       {
         from: { id: 8603043042, is_bot: true },
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
       config,
     ),
@@ -363,7 +396,7 @@ test("isAuthorizedMessage allows trusted human and trusted bot principals in con
     isAuthorizedMessage(
       {
         from: { id: 999999999, is_bot: true },
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
       config,
     ),
@@ -373,13 +406,13 @@ test("isAuthorizedMessage allows trusted human and trusted bot principals in con
 
 test("buildReplyMessageParams keeps topic routing when message_thread_id exists", () => {
   const message = {
-    chat: { id: -1003577434463 },
+    chat: { id: -1001234567890 },
     message_id: 77,
     message_thread_id: 42,
   };
 
   assert.deepEqual(buildReplyMessageParams(message, "ok"), {
-    chat_id: -1003577434463,
+    chat_id: -1001234567890,
     text: "ok",
     message_thread_id: 42,
     reply_to_message_id: 77,

@@ -5,7 +5,7 @@ import { PassThrough } from "node:stream";
 
 import { runCodexTask } from "../src/pty-worker/codex-runner.js";
 
-test("runCodexTask initializes completion handlers before child lifecycle starts", async () => {
+test("runCodexTask initializes completion handlers before early child lifecycle failures", async () => {
   const run = runCodexTask({
     codexBinPath: "codex",
     cwd: process.cwd(),
@@ -29,8 +29,10 @@ test("runCodexTask initializes completion handlers before child lifecycle starts
   });
 
   assert.equal(typeof run.steer, "function");
-  const finished = await run.finished;
-  assert.equal(finished.exitCode, 0);
+  await assert.rejects(
+    run.finished,
+    /Codex app-server ended before startup/u,
+  );
 });
 
 test("runCodexTask disables detached app-server launches on Windows", () => {

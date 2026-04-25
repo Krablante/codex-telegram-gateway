@@ -11,10 +11,10 @@ import {
 import { PromptFragmentAssembler } from "../src/telegram/prompt-fragment-assembler.js";
 
 const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789"],
   telegramAllowedBotIds: ["8603043042"],
-  telegramForumChatId: "-1003577434463",
+  telegramForumChatId: "-1001234567890",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -133,8 +133,8 @@ test("handleIncomingMessage replies with guidance in General topic for /status",
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState,
     sessionService: {
@@ -179,8 +179,8 @@ test("handleIncomingMessage uses the global panel ENG language for General-topic
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState,
     sessionService: {
@@ -216,8 +216,8 @@ test("handleIncomingMessage returns Codex limits in General without requiring a 
     message: {
       text: "/limits",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -263,8 +263,8 @@ test("handleIncomingMessage accepts /wait global from General", async () => {
     message: {
       text: "/wait global 60",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     promptFragmentAssembler,
     serviceState: {
@@ -285,8 +285,8 @@ test("handleIncomingMessage accepts /wait global from General", async () => {
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1003577434463 },
-    from: { id: 5825672398 },
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
   });
 
   assert.equal(result.command, "wait");
@@ -313,8 +313,8 @@ test("handleIncomingMessage keeps /wait global replies in ENG when General panel
     message: {
       text: "/wait global 60",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     promptFragmentAssembler,
     serviceState: {
@@ -360,8 +360,8 @@ test("handleIncomingMessage stores a global Spike model via /model global", asyn
     message: {
       text: "/model global gpt-5.4-mini",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState,
     sessionService: {
@@ -369,8 +369,6 @@ test("handleIncomingMessage stores a global Spike model via /model global", asyn
         return {
           spike_model: null,
           spike_reasoning_effort: null,
-          omni_model: null,
-          omni_reasoning_effort: null,
         };
       },
       async updateGlobalCodexSetting(target, kind, value) {
@@ -378,8 +376,6 @@ test("handleIncomingMessage stores a global Spike model via /model global", asyn
         return {
           spike_model: value,
           spike_reasoning_effort: null,
-          omni_model: null,
-          omni_reasoning_effort: null,
         };
       },
     },
@@ -426,8 +422,8 @@ test("handleIncomingMessage keeps global model replies in ENG when General panel
     message: {
       text: "/model global gpt-5.4-mini",
       entities: [{ type: "bot_command", offset: 0, length: 6 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState,
     sessionService: {
@@ -435,8 +431,6 @@ test("handleIncomingMessage keeps global model replies in ENG when General panel
         return {
           spike_model: null,
           spike_reasoning_effort: null,
-          omni_model: null,
-          omni_reasoning_effort: null,
         };
       },
       async updateGlobalCodexSetting(target, kind, value) {
@@ -444,8 +438,6 @@ test("handleIncomingMessage keeps global model replies in ENG when General panel
         return {
           spike_model: value,
           spike_reasoning_effort: null,
-          omni_model: null,
-          omni_reasoning_effort: null,
         };
       },
     },
@@ -490,8 +482,8 @@ test("handleIncomingMessage validates /reasoning global against the global targe
           ],
         },
         {
-          slug: "gpt-5.1-codex-mini",
-          display_name: "GPT-5.1-Codex-Mini",
+          slug: "gpt-5.4-mini",
+          display_name: "GPT-5.4-Mini",
           default_reasoning_level: "medium",
           supported_reasoning_levels: [
             { effort: "medium" },
@@ -512,18 +504,18 @@ test("handleIncomingMessage validates /reasoning global against the global targe
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1003577434463:77",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
     topic_id: "77",
     topic_name: "Runtime topic",
     lifecycle_state: "active",
     ui_language: "eng",
-    spike_model_override: "gpt-5.1-codex-mini",
+    spike_model_override: "gpt-5.4-mini",
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   };
 
@@ -541,8 +533,8 @@ test("handleIncomingMessage validates /reasoning global against the global targe
     message: {
       text: "/reasoning global xhigh",
       entities: [{ type: "bot_command", offset: 0, length: 10 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState,
@@ -554,8 +546,6 @@ test("handleIncomingMessage validates /reasoning global against the global targe
         return {
           spike_model: "gpt-5.4",
           spike_reasoning_effort: null,
-          omni_model: null,
-          omni_reasoning_effort: null,
         };
       },
       async updateGlobalCodexSetting(target, kind, value) {
@@ -563,8 +553,6 @@ test("handleIncomingMessage validates /reasoning global against the global targe
         return {
           spike_model: "gpt-5.4",
           spike_reasoning_effort: value,
-          omni_model: null,
-          omni_reasoning_effort: null,
         };
       },
       async resolveCodexRuntimeProfile(current, { target }) {
@@ -604,108 +592,7 @@ test("handleIncomingMessage validates /reasoning global against the global targe
   assert.match(sent[0].text, /global default: Extra High \(xhigh\)/u);
 });
 
-test("handleIncomingMessage stores topic Omni reasoning via /omni_reasoning", async () => {
-  const sent = [];
-  const updates = [];
-  const serviceState = {
-    ignoredUpdates: 0,
-    handledCommands: 0,
-    lastCommandName: null,
-    lastCommandAt: null,
-  };
-  const session = {
-    session_key: "-1003577434463:77",
-    chat_id: "-1003577434463",
-    topic_id: "77",
-    topic_name: "Runtime topic",
-    lifecycle_state: "active",
-    ui_language: "eng",
-    omni_reasoning_effort_override: null,
-    workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
-      branch: "main",
-      worktree_path: "/home/bloob/atlas",
-    },
-  };
-
-  const result = await handleIncomingMessage({
-    api: {
-      async sendMessage(payload) {
-        sent.push(payload);
-      },
-    },
-    botUsername: "gatewaybot",
-    config,
-    message: {
-      text: "/omni_reasoning xhigh",
-      entities: [{ type: "bot_command", offset: 0, length: 15 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
-      message_thread_id: 77,
-    },
-    serviceState,
-    sessionService: {
-      async ensureSessionForMessage() {
-        return session;
-      },
-      async getGlobalCodexSettings() {
-        return {
-          spike_model: null,
-          spike_reasoning_effort: null,
-          omni_model: null,
-          omni_reasoning_effort: null,
-        };
-      },
-      async updateSessionCodexSetting(current, target, kind, value) {
-        updates.push({ target, kind, value });
-        return {
-          ...current,
-          omni_reasoning_effort_override: value,
-        };
-      },
-      async resolveCodexRuntimeProfile(current, { target }) {
-        return target === "omni"
-          ? {
-              model: "gpt-5.4",
-              modelSource: "default",
-              reasoningEffort:
-                current.omni_reasoning_effort_override ?? "medium",
-              reasoningSource: current.omni_reasoning_effort_override
-                ? "topic"
-                : "default",
-            }
-          : {
-              model: "gpt-5.4",
-              modelSource: "default",
-              reasoningEffort: "medium",
-              reasoningSource: "default",
-            };
-      },
-      async recordHandledSession(_, current) {
-        return current;
-      },
-    },
-    workerPool: {
-      getActiveRun() {
-        return null;
-      },
-      interrupt() {
-        return false;
-      },
-    },
-  });
-
-  assert.equal(result.command, "omni_reasoning");
-  assert.deepEqual(updates, [
-    { target: "omni", kind: "reasoning", value: "xhigh" },
-  ]);
-  assert.match(sent[0].text, /Omni reasoning updated\./u);
-  assert.match(sent[0].text, /topic override: Extra High \(xhigh\)/u);
-  assert.match(sent[0].text, /effective: Extra High \(xhigh\) \(topic\)/u);
-});
-
-test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /status", async () => {
+test("handleIncomingMessage shows the resolved Spike runtime profile in /status", async () => {
   const sent = [];
   const serviceState = {
     ignoredUpdates: 0,
@@ -718,17 +605,17 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
     codexAutoCompactTokenLimit: 300000,
   };
   const session = {
-    session_key: "-1003577434463:77",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
     topic_id: "77",
     topic_name: "Status topic",
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   };
 
@@ -743,8 +630,8 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
     message: {
       text: "/status",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState,
@@ -791,25 +678,23 @@ test("handleIncomingMessage shows resolved Spike and Omni runtime profiles in /s
   assert.equal(result.command, "status");
   assert.match(sent[0].text, /модель: gpt-5\.4-mini/u);
   assert.match(sent[0].text, /reasoning: High \(high\)/u);
-  assert.match(sent[0].text, /omni model: gpt-5\.4/u);
-  assert.match(sent[0].text, /omni reasoning: Low \(low\)/u);
   assert.match(sent[0].text, /лимиты 5h: 89% осталось/u);
 });
 
 test("handleIncomingMessage shows topic-local Codex limits", async () => {
   const sent = [];
   const session = {
-    session_key: "-1003577434463:77",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
     topic_id: "77",
     topic_name: "Limits topic",
     lifecycle_state: "active",
     ui_language: "eng",
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   };
 
@@ -824,8 +709,8 @@ test("handleIncomingMessage shows topic-local Codex limits", async () => {
     message: {
       text: "/limits",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -861,6 +746,69 @@ test("handleIncomingMessage shows topic-local Codex limits", async () => {
   assert.match(sent[0].text, /7d: 67% left/u);
 });
 
+test("handleIncomingMessage reports /interrupt as a stop request, not a completed stop", async () => {
+  const sent = [];
+  const session = {
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    topic_name: "Interrupt topic",
+    lifecycle_state: "active",
+    ui_language: "eng",
+    workspace_binding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  };
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "/interrupt",
+      entities: [{ type: "bot_command", offset: 0, length: 10 }],
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return session;
+      },
+      async recordHandledSession() {
+        return session;
+      },
+    },
+    workerPool: {
+      getActiveRun() {
+        return { state: { status: "running" } };
+      },
+      interrupt() {
+        return true;
+      },
+    },
+  });
+
+  assert.equal(result.command, "interrupt");
+  assert.match(
+    sent[0].text,
+    /Stop requested\. I will confirm here when the run actually stops\./u,
+  );
+});
+
 test("handleIncomingMessage updates the topic UI language with /language eng", async () => {
   const sent = [];
   let patched = null;
@@ -871,17 +819,17 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     lastCommandAt: null,
   };
   const session = {
-    session_key: "-1003577434463:77",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
     topic_id: "77",
     topic_name: "Language topic",
     lifecycle_state: "active",
     ui_language: "rus",
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   };
 
@@ -896,8 +844,8 @@ test("handleIncomingMessage updates the topic UI language with /language eng", a
     message: {
       text: "/language eng",
       entities: [{ type: "bot_command", offset: 0, length: 9 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState,

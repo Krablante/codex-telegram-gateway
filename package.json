@@ -1,6 +1,6 @@
 {
   "name": "codex-telegram-gateway",
-  "version": "0.3.44",
+  "version": "0.3.67",
   "description": "Telegram forum-topic gateway for the real Codex CLI runtime.",
   "keywords": [
     "telegram",
@@ -29,12 +29,20 @@
     "install-user-service": "node src/cli/install-user-service.js",
     "runbook:build": "node scripts/generate-runbook-pdf.mjs",
     "run": "node src/cli/run.js",
-    "run:omni": "node src/cli/run-omni.js",
     "smoke": "node src/cli/run-smoke.js",
-    "smoke:omni": "node src/cli/run-smoke.js --omni",
     "soak": "node src/cli/soak.js",
-    "test": "node --test",
+    "lint": "eslint src scripts test test-support",
+    "typecheck": "tsc --noEmit",
+    "check:syntax": "node scripts/check-syntax.mjs",
+    "test": "node scripts/run-node-tests.mjs",
+    "test:cleanup": "node scripts/run-node-tests.mjs --cleanup-only",
+    "test:exec": "node scripts/run-node-tests.mjs --suite exec",
+    "hygiene:knip": "knip --reporter compact",
+    "hygiene:depcheck": "depcheck --json",
+    "hygiene": "npm run hygiene:knip && npm run hygiene:depcheck && npm audit --omit=dev --audit-level=moderate",
     "test:live": "node src/cli/run-live-tests.js",
+    "test:live:exec": "node src/cli/run-live-tests.js --exec-json",
+    "test:live:app-server": "node src/cli/run-live-tests.js --app-server",
     "user:e2e": "node src/cli/user-live-e2e.js",
     "user:spike-audit": "node src/cli/user-live-spike-audit.js",
     "user:login": "node src/cli/user-login.js",
@@ -46,5 +54,13 @@
   "dependencies": {
     "pdfkit": "^0.18.0",
     "telegram": "^2.26.22"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "depcheck": "^1.4.7",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0",
+    "knip": "^6.6.3",
+    "typescript": "^6.0.3"
   }
 }

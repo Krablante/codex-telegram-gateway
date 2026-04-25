@@ -44,6 +44,7 @@ test("UpdateForwardingServer forwards payloads over loopback HTTP", async () => 
   try {
     const response = await forwardUpdate({
       endpoint: server.endpoint,
+      authToken: "secret-token",
       payload: {
         type: "spike-update",
         update: {
@@ -55,6 +56,7 @@ test("UpdateForwardingServer forwards payloads over loopback HTTP", async () => 
     assert.deepEqual(response, {
       echoed: {
         type: "spike-update",
+        auth_token: "secret-token",
         update: {
           update_id: 42,
         },
@@ -166,6 +168,7 @@ test("forwardUpdate surfaces remote handler failures", async () => {
     await assert.rejects(
       forwardUpdate({
         endpoint: server.endpoint,
+        authToken: "secret-token",
         payload: {
           type: "spike-update",
         },
@@ -189,6 +192,9 @@ test("probeForwardingEndpoint verifies the generation identity over loopback IPC
     endpoint,
     onRequest: async (payload) => {
       if (payload?.type === "generation-probe") {
+        if (payload.instance_token !== instanceToken) {
+          throw new Error("bad token");
+        }
         return {
           generation_id: generationId,
           instance_token: instanceToken,
@@ -215,6 +221,38 @@ test("probeForwardingEndpoint verifies the generation identity over loopback IPC
         endpoint: server.endpoint,
         generationId,
         instanceToken: "wrong-token",
+      }),
+      false,
+    );
+  } finally {
+    await server.stop();
+  }
+});
+
+test("probeForwardingEndpoint rejects a mismatched returned instance token", async () => {
+  const generationId = `gen-${crypto.randomUUID()}`;
+  const instanceToken = crypto.randomUUID();
+  const endpoint = buildForwardingEndpoint({
+    stateRoot: "/tmp/codex-state",
+    serviceKind: "spike",
+    generationId,
+  });
+  const server = new UpdateForwardingServer({
+    endpoint,
+    onRequest: async () => ({
+      generation_id: generationId,
+      instance_token: "other-token",
+    }),
+  });
+
+  await server.start();
+
+  try {
+    assert.equal(
+      await probeForwardingEndpoint({
+        endpoint: server.endpoint,
+        generationId,
+        instanceToken,
       }),
       false,
     );

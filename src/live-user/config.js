@@ -2,9 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { parseEnvText } from "../config/env-file.js";
-import { ensureFileMode, writeTextAtomic } from "../state/file-utils.js";
+import {
+  ensureFileMode,
+  ensurePrivateDirectory,
+  writeTextAtomic,
+} from "../state/file-utils.js";
 
-export const LIVE_USER_TESTING_DIR_NAME = "live-user-testing";
+const LIVE_USER_TESTING_DIR_NAME = "live-user-testing";
 export const TELEGRAM_USER_ENV_FILE_NAME = "telegram-user.env";
 export const TELEGRAM_USER_SESSION_FILE_NAME = "telegram-user-session.txt";
 export const TELEGRAM_USER_ACCOUNT_FILE_NAME = "telegram-user-account.json";
@@ -76,7 +80,7 @@ export function buildTelegramUserEnvTemplate(paths) {
 }
 
 export async function ensureTelegramUserBootstrapFiles(paths) {
-  await fs.mkdir(paths.liveUserRoot, { recursive: true });
+  await ensurePrivateDirectory(paths.liveUserRoot);
   await Promise.all([
     ensureFileMode(paths.envFilePath, TELEGRAM_USER_PRIVATE_FILE_MODE),
     ensureFileMode(paths.sessionFilePath, TELEGRAM_USER_PRIVATE_FILE_MODE),

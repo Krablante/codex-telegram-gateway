@@ -1,8 +1,8 @@
-export const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramAllowedUserIds: ["5825672398"],
+const config = {
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789"],
   telegramAllowedBotIds: ["8603043042"],
-  telegramForumChatId: "-1003577434463",
+  telegramForumChatId: "-1001234567890",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -42,22 +42,21 @@ export function createServiceState(overrides = {}) {
     ...overrides,
   };
 }
-export const createPromptServiceState = createServiceState;
 
 export function createWorkspaceBinding(overrides = {}) {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/srv/codex-workspace",
+    cwd: "/srv/codex-workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/srv/codex-workspace",
     ...overrides,
   };
 }
 
 export function createTopicSession(overrides = {}) {
   return {
-    session_key: "-1003577434463:77",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:77",
+    chat_id: "-1001234567890",
     topic_id: "77",
     lifecycle_state: "active",
     ui_language: "rus",
@@ -80,4 +79,3 @@ export function captureApi() {
     },
   };
 }
-export const createPromptSession = createTopicSession;

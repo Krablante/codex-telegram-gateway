@@ -6,16 +6,14 @@ const DEFAULT_CODEX_CONFIG_PATH = path.join(os.homedir(), ".codex", "config.toml
 const DEFAULT_MODELS_CACHE_FILE_NAME = "models_cache.json";
 
 export const BUILTIN_CODEX_MODELS = [
+  { slug: "gpt-5.5", displayName: "GPT-5.5" },
   { slug: "gpt-5.4", displayName: "GPT-5.4" },
   { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" },
   { slug: "gpt-5.3-codex", displayName: "GPT-5.3-Codex" },
-  { slug: "gpt-5.2-codex", displayName: "GPT-5.2-Codex" },
   { slug: "gpt-5.2", displayName: "GPT-5.2" },
-  { slug: "gpt-5.1-codex-max", displayName: "GPT-5.1-Codex-Max" },
-  { slug: "gpt-5.1-codex-mini", displayName: "GPT-5.1-Codex-Mini" },
 ];
 
-export const CODEX_REASONING_EFFORTS = [
+const CODEX_REASONING_EFFORTS = [
   { value: "none", label: "None" },
   { value: "minimal", label: "Minimal" },
   { value: "low", label: "Low" },
@@ -28,8 +26,8 @@ const DEFAULT_CODEX_REASONING_EFFORTS = CODEX_REASONING_EFFORTS.filter(
   (entry) => ["low", "medium", "high", "xhigh"].includes(entry.value),
 );
 
-const GLOBAL_RUNTIME_SETTING_TARGETS = new Set(["spike", "omni", "compact"]);
-const SESSION_RUNTIME_SETTING_TARGETS = new Set(["spike", "omni"]);
+const GLOBAL_RUNTIME_SETTING_TARGETS = new Set(["spike", "compact"]);
+const SESSION_RUNTIME_SETTING_TARGETS = new Set(["spike"]);
 const RUNTIME_SETTING_KINDS = new Set(["model", "reasoning"]);
 
 function normalizeString(value) {
@@ -46,7 +44,69 @@ function normalizeDisplayName(value) {
     .replace(/\bgpt\b/giu, "GPT");
 }
 
-export function getCodexModelsCachePath(configPath = DEFAULT_CODEX_CONFIG_PATH) {
+function normalizeModelVisibility(value) {
+  return normalizeString(value)?.toLowerCase() ?? null;
+}
+
+function normalizeModelPriority(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
+function sortNormalizedModels(models) {
+  models.sort((left, right) => {
+    if (left.priority !== null && right.priority !== null && left.priority !== right.priority) {
+      return left.priority - right.priority;
+    }
+    if (left.priority !== null) {
+      return -1;
+    }
+    if (right.priority !== null) {
+      return 1;
+    }
+    return left.displayName.localeCompare(right.displayName, "en", { sensitivity: "base" });
+  });
+
+  return models.map(({ priority, ...model }) => model);
+}
+
+function normalizeCatalogModels(payload, { visibleOnly = false } = {}) {
+  const models = Array.isArray(payload?.models) ? payload.models : [];
+  const seen = new Set();
+  const normalized = [];
+
+  for (const model of models) {
+    const slug = normalizeString(model?.slug)?.toLowerCase();
+    if (!slug || seen.has(slug)) {
+      continue;
+    }
+
+    const visibility = normalizeModelVisibility(model?.visibility) || "list";
+    if (visibleOnly && visibility !== "list") {
+      continue;
+    }
+
+    seen.add(slug);
+    normalized.push({
+      slug,
+      displayName: normalizeDisplayName(model?.display_name) || slug,
+      priority: normalizeModelPriority(model?.priority),
+      defaultReasoningLevel:
+        normalizeReasoningEffort(model?.default_reasoning_level) ?? null,
+      supportedReasoningLevels: Array.isArray(model?.supported_reasoning_levels)
+        ? model.supported_reasoning_levels
+          .map((entry) => ({
+            effort: normalizeReasoningEffort(entry?.effort),
+            description: normalizeString(entry?.description),
+          }))
+          .filter((entry) => entry.effort)
+        : [],
+    });
+  }
+
+  return sortNormalizedModels(normalized);
+}
+
+function getCodexModelsCachePath(configPath = DEFAULT_CODEX_CONFIG_PATH) {
   return path.join(path.dirname(configPath || DEFAULT_CODEX_CONFIG_PATH), DEFAULT_MODELS_CACHE_FILE_NAME);
 }
 
@@ -56,34 +116,7 @@ export async function loadAvailableCodexModels({
 } = {}) {
   try {
     const payload = JSON.parse(await fs.readFile(modelsCachePath, "utf8"));
-    const models = Array.isArray(payload?.models) ? payload.models : [];
-    const seen = new Set();
-    const normalized = [];
-
-    for (const model of models) {
-      const slug = normalizeString(model?.slug)?.toLowerCase();
-      if (!slug || seen.has(slug)) {
-        continue;
-      }
-
-      seen.add(slug);
-      normalized.push({
-        slug,
-        displayName: normalizeDisplayName(model?.display_name) || slug,
-        defaultReasoningLevel:
-          normalizeReasoningEffort(model?.default_reasoning_level) ?? null,
-        supportedReasoningLevels: Array.isArray(model?.supported_reasoning_levels)
-          ? model.supported_reasoning_levels
-            .map((entry) => ({
-              effort: normalizeReasoningEffort(entry?.effort),
-              description: normalizeString(entry?.description),
-            }))
-            .filter((entry) => entry.effort)
-          : [],
-      });
-    }
-
-    return normalized.length > 0 ? normalized : BUILTIN_CODEX_MODELS;
+    return normalizeCatalogModels(payload);
   } catch (error) {
     if (error?.code === "ENOENT" || error instanceof SyntaxError) {
       return BUILTIN_CODEX_MODELS;
@@ -93,7 +126,23 @@ export async function loadAvailableCodexModels({
   }
 }
 
-export function normalizeRuntimeSettingTarget(target, { scope = "any" } = {}) {
+export async function loadVisibleCodexModels({
+  configPath = DEFAULT_CODEX_CONFIG_PATH,
+  modelsCachePath = getCodexModelsCachePath(configPath),
+} = {}) {
+  try {
+    const payload = JSON.parse(await fs.readFile(modelsCachePath, "utf8"));
+    return normalizeCatalogModels(payload, { visibleOnly: true });
+  } catch (error) {
+    if (error?.code === "ENOENT" || error instanceof SyntaxError) {
+      return BUILTIN_CODEX_MODELS;
+    }
+
+    throw error;
+  }
+}
+
+function normalizeRuntimeSettingTarget(target, { scope = "any" } = {}) {
   const normalized = String(target ?? "").trim().toLowerCase();
   if (scope === "session") {
     return SESSION_RUNTIME_SETTING_TARGETS.has(normalized) ? normalized : null;
@@ -106,7 +155,7 @@ export function normalizeRuntimeSettingTarget(target, { scope = "any" } = {}) {
   return null;
 }
 
-export function normalizeRuntimeSettingKind(kind) {
+function normalizeRuntimeSettingKind(kind) {
   const normalized = String(kind ?? "").trim().toLowerCase();
   return RUNTIME_SETTING_KINDS.has(normalized) ? normalized : null;
 }
@@ -199,8 +248,6 @@ export function buildEmptyGlobalCodexSettingsState() {
     updated_at: null,
     spike_model: null,
     spike_reasoning_effort: null,
-    omni_model: null,
-    omni_reasoning_effort: null,
     compact_model: null,
     compact_reasoning_effort: null,
   };
@@ -212,8 +259,6 @@ export function normalizeGlobalCodexSettingsState(payload) {
     updated_at: payload?.updated_at ?? null,
     spike_model: normalizeString(payload?.spike_model)?.toLowerCase() ?? null,
     spike_reasoning_effort: normalizeReasoningEffort(payload?.spike_reasoning_effort),
-    omni_model: normalizeString(payload?.omni_model)?.toLowerCase() ?? null,
-    omni_reasoning_effort: normalizeReasoningEffort(payload?.omni_reasoning_effort),
     compact_model: normalizeString(payload?.compact_model)?.toLowerCase() ?? null,
     compact_reasoning_effort: normalizeReasoningEffort(payload?.compact_reasoning_effort),
   };
@@ -405,10 +450,7 @@ export function resolveCodexRuntimeProfile({
   target = "spike",
   availableModels = null,
 } = {}) {
-  const fallbackReasoningEffort =
-    target === "omni"
-      ? normalizeReasoningEffort(config?.omniDefaultReasoningEffort) || "high"
-      : normalizeReasoningEffort(config?.codexReasoningEffort);
+  const fallbackReasoningEffort = normalizeReasoningEffort(config?.codexReasoningEffort);
   const modelField = getSessionRuntimeSettingFieldName(target, "model");
   const reasoningField = getSessionRuntimeSettingFieldName(target, "reasoning");
   const globalModelField = getGlobalRuntimeSettingFieldName(target, "model");

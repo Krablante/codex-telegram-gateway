@@ -1,6 +1,6 @@
 import {
   getSupportedReasoningLevelsForModel,
-  loadAvailableCodexModels,
+  loadVisibleCodexModels,
   normalizeModelOverride,
   normalizeReasoningEffort,
   resolveCodexRuntimeProfile,
@@ -19,10 +19,6 @@ export function buildDispatchCommandText(action) {
   const commandNameForTarget = (target, kind) => {
     if (target === "spike") {
       return kind === "model" ? "model" : "reasoning";
-    }
-
-    if (target === "omni") {
-      return kind === "model" ? "omni_model" : "omni_reasoning";
     }
 
     return null;
@@ -134,9 +130,12 @@ export async function applyGlobalControlActionDirect({
       return { handled: true };
     }
 
-    const availableModels = await loadAvailableCodexModels({
-      configPath: config.codexConfigPath,
-    });
+    const availableModels =
+      typeof sessionService.loadVisibleCodexModels === "function"
+        ? await sessionService.loadVisibleCodexModels()
+        : await loadVisibleCodexModels({
+          configPath: config.codexConfigPath,
+        });
     const normalizedModel = normalizeModelOverride(action.value, availableModels);
     if (!normalizedModel) {
       return {
@@ -160,19 +159,20 @@ export async function applyGlobalControlActionDirect({
     }
 
     const normalizedReasoning = normalizeReasoningEffort(action.value);
-    const availableModels = await loadAvailableCodexModels({
-      configPath: config.codexConfigPath,
-    });
+    const runtimeModels =
+      typeof sessionService.loadAvailableCodexModels === "function"
+        ? await sessionService.loadAvailableCodexModels()
+        : [];
     const globalSettings = await sessionService.getGlobalCodexSettings();
     const runtimeProfile = resolveCodexRuntimeProfile({
       session: null,
       globalSettings,
       config,
       target: action.target,
-      availableModels,
+      availableModels: runtimeModels,
     });
     const supportedLevels = getSupportedReasoningLevelsForModel(
-      availableModels,
+      runtimeModels,
       runtimeProfile.model,
     ).map((entry) => entry.value);
 

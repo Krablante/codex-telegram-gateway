@@ -52,16 +52,15 @@ export function createServiceState(overrides = {}) {
 
 export function createWorkspaceBinding(overrides = {}) {
   return {
-    repo_root: "/home/bloob/atlas",
-    cwd: "/home/bloob/atlas",
+    repo_root: "/srv/codex-workspace",
+    cwd: "/srv/codex-workspace",
     branch: "main",
-    worktree_path: "/home/bloob/atlas",
+    worktree_path: "/srv/codex-workspace",
     ...overrides,
   };
 }
 
 export const DEFAULT_WORKSPACE_BINDING = createWorkspaceBinding();
-export const createWorkerPoolServiceState = createServiceState;
 
 export async function createTempSessionStore(
   prefix = "codex-telegram-gateway-sessions-",
@@ -79,7 +78,7 @@ export async function createTempSessionStore(
 export async function createSession(
   sessionStore,
   {
-    chatId = -1003577434463,
+    chatId = -1001234567890,
     topicId = 144,
     topicName = "Worker pool test",
     createdVia = "command/new",

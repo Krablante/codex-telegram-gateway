@@ -39,7 +39,7 @@ export async function ensureGlobalControlPanelMessage({
   });
   const payload = buildGlobalControlPanelPayload({
     language,
-    omniEnabled: config.omniEnabled !== false,
+    notice: resolvedControlState.notice,
     pendingInput: resolvedControlState.pending_input,
     screen,
     view,
@@ -58,6 +58,7 @@ export async function ensureGlobalControlPanelMessage({
       await globalControlPanelStore.patch({
         menu_message_id: messageId,
         active_screen: screen,
+        notice: null,
         pending_input: syncPendingInputMessageId(
           resolvedControlState.pending_input,
           messageId,
@@ -72,6 +73,7 @@ export async function ensureGlobalControlPanelMessage({
         await globalControlPanelStore.patch({
           menu_message_id: messageId,
           active_screen: screen,
+          notice: null,
           pending_input: syncPendingInputMessageId(
             resolvedControlState.pending_input,
             messageId,
@@ -106,6 +108,7 @@ export async function ensureGlobalControlPanelMessage({
   await globalControlPanelStore.patch({
     menu_message_id: resolvedMessageId,
     active_screen: screen,
+    notice: null,
     pending_input: syncPendingInputMessageId(
       resolvedControlState.pending_input,
       resolvedMessageId,

@@ -103,7 +103,7 @@ async function findRolloutPathBySuffix(sessionsRoot, suffix) {
     return null;
   }
 
-  let years = [];
+  let years;
   try {
     years = await fs.readdir(sessionsRoot, { withFileTypes: true });
   } catch (error) {
@@ -189,7 +189,7 @@ export async function readLatestContextSnapshot({
   let discoveredSessionId = normalizedProviderSessionId;
 
   for (const line of lines) {
-    let event = null;
+    let event;
     try {
       event = JSON.parse(line);
     } catch {

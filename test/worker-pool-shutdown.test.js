@@ -6,10 +6,7 @@ import path from "node:path";
 
 import { CodexWorkerPool } from "../src/pty-worker/worker-pool.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
-import { SpikeFinalEventStore } from "../src/session-manager/spike-final-event-store.js";
 import {
-  createDeferred,
-  sleep,
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
 
@@ -19,15 +16,15 @@ test("CodexWorkerPool resumes the stored thread after an interrupted run", async
   );
   const sessionStore = new SessionStore(sessionsRoot);
   let session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2054,
     topicName: "Interrupted continuation",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   session = await sessionStore.patch(session, {
@@ -113,15 +110,15 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 492,
     topicName: "Termination hook test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -200,7 +197,7 @@ test("CodexWorkerPool calls onRunTerminated after the run slot is released", asy
     session,
     prompt: "Run the termination hook test.",
     message: {
-      chat: { id: -1003577434463 },
+      chat: { id: -1001234567890 },
       message_id: 7001,
       message_thread_id: 492,
     },

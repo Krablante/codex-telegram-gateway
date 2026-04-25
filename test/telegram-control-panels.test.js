@@ -40,8 +40,8 @@ test("handleIncomingMessage opens the persistent global control panel in General
     message: {
       text: "/global",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     promptFragmentAssembler: new PromptFragmentAssembler(),
     serviceState,
@@ -59,24 +59,29 @@ test("handleIncomingMessage opens the persistent global control panel in General
   assert.match(sent[0].text, /Global control panel/u);
   assert.doesNotMatch(sent[0].text, /Закрепи это сообщение/u);
   assert.match(sent[0].text, /interface language: RUS/u);
+  assert.match(sent[0].text, /topic hosts: 2 ready \/ 3/u);
   assert.match(sent[0].text, /лимиты: безлимит/u);
   assert.match(sent[0].text, /spike: .+ \([a-z]+\)/u);
   assert.doesNotMatch(sent[0].text, /spike reasoning:/u);
   assert.equal(Array.isArray(sent[0].reply_markup.inline_keyboard), true);
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[0].map((button) => button.text),
-    ["Bot Settings", "Language"],
+    ["New Topic", "Hosts"],
   );
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[1].map((button) => button.text),
-    ["Guide", "Help"],
+    ["Bot Settings", "Language"],
   );
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[2].map((button) => button.text),
-    ["Wait", "Suffix"],
+    ["Guide", "Help"],
   );
   assert.deepEqual(
     sent[0].reply_markup.inline_keyboard[3].map((button) => button.text),
+    ["Wait", "Suffix"],
+  );
+  assert.deepEqual(
+    sent[0].reply_markup.inline_keyboard[4].map((button) => button.text),
     ["Zoo", "Clear"],
   );
   assert.equal(
@@ -112,8 +117,8 @@ test("handleIncomingMessage opens the persistent global control panel when Gener
     message: {
       text: "/global",
       entities: [{ type: "bot_command", offset: 0, length: 7 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 0,
     },
     promptFragmentAssembler: new PromptFragmentAssembler(),
@@ -130,6 +135,404 @@ test("handleIncomingMessage opens the persistent global control panel when Gener
   assert.equal(result.command, "global");
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /Global control panel/u);
+});
+
+test("handleIncomingCallbackQuery opens the new-topic host picker inside the global menu", async () => {
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-new-topic",
+      data: "gcfg:n:nt",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-menu-navigated");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /New topic host picker/u);
+  assert.match(edited[0].text, /- worker-a: ready/u);
+  assert.equal(
+    edited[0].reply_markup.inline_keyboard.some((row) =>
+      row.some((button) => button.text === "worker-a"),
+    ),
+    true,
+  );
+});
+
+test("handleIncomingCallbackQuery starts new-topic title input directly with one configured host", async () => {
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-single-host-new-topic",
+      data: "gcfg:n:nt",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService({
+      async listTopicCreationHosts() {
+        return [
+          {
+            ok: true,
+            hostId: "controller",
+            hostLabel: "controller",
+            lastReadyAt: "2026-04-21T19:00:00.000Z",
+            failureReason: null,
+          },
+        ];
+      },
+    }),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-pending-input-started");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /Global control panel/u);
+  assert.doesNotMatch(edited[0].text, /New topic host picker/u);
+  assert.match(edited[0].text, /pending input: topic title; send the next text message/u);
+  assert.match(edited[0].text, /status: Send the next text message with the new topic title\./u);
+  assert.doesNotMatch(edited[0].text, /for host controller/u);
+  assert.equal(store.getState().active_screen, "root");
+  assert.equal(store.getState().pending_input.kind, "new_topic_title");
+  assert.equal(store.getState().pending_input.requested_host_id, "controller");
+  assert.equal(store.getState().pending_input.single_host_auto_selected, true);
+});
+
+test("handleIncomingCallbackQuery keeps host picker when one of several hosts is ready", async () => {
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-one-ready-new-topic",
+      data: "gcfg:n:nt",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService({
+      async listTopicCreationHosts() {
+        return [
+          {
+            ok: true,
+            hostId: "controller",
+            hostLabel: "controller",
+            lastReadyAt: "2026-04-21T19:00:00.000Z",
+            failureReason: null,
+          },
+          {
+            ok: false,
+            hostId: "worker-a",
+            hostLabel: "worker-a",
+            lastReadyAt: null,
+            failureReason: "host-not-ready",
+          },
+          {
+            ok: false,
+            hostId: "worker-b",
+            hostLabel: "worker-b",
+            lastReadyAt: null,
+            failureReason: "codex-auth",
+          },
+        ];
+      },
+    }),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-menu-navigated");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /New topic host picker/u);
+  assert.match(edited[0].text, /- controller: ready/u);
+  assert.match(edited[0].text, /- worker-a: not-ready/u);
+  assert.equal(store.getState().active_screen, "new_topic");
+  assert.equal(store.getState().pending_input, null);
+  assert.deepEqual(
+    edited[0].reply_markup.inline_keyboard
+      .flat()
+      .filter((button) => ["controller", "worker-a", "worker-b"].includes(button.text))
+      .map((button) => button.text),
+    ["controller"],
+  );
+});
+
+test("handleIncomingCallbackQuery routes global callbacks before topic-only fallback", async () => {
+  const edited = [];
+  const answered = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "root",
+    ui_language: "eng",
+  });
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-with-topic-store",
+      data: "gcfg:n:nt",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: store,
+    topicControlPanelStore: createTopicControlPanelStore(),
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-menu-navigated");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.match(edited[0].text, /New topic host picker/u);
+});
+
+test("handleGlobalControlCallbackQuery reports an unavailable stale host picker selection", async () => {
+  const answered = [];
+  const edited = [];
+  const sent = [];
+  const store = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "new_topic",
+    ui_language: "eng",
+  });
+
+  const result = await handleGlobalControlCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    callbackQuery: {
+      id: "cbq-global-new-topic-unavailable",
+      data: "gcfg:nh:worker-b",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 901,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    dispatchCommand() {
+      throw new Error("should not dispatch /new for an unavailable host");
+    },
+    globalControlPanelStore: store,
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    sessionService: createGlobalControlSessionService(),
+  });
+
+  assert.equal(result.reason, "global-control-host-unavailable");
+  assert.equal(answered.length, 1);
+  assert.equal(edited.length, 1);
+  assert.equal(sent.length, 0);
+  assert.match(edited[0].text, /Host worker-b is unavailable right now/u);
+});
+
+test("handleIncomingMessage creates a host-bound topic from the global host picker reply", async () => {
+  const edited = [];
+  const sent = [];
+  const createCalls = [];
+  const promptFragmentAssembler = new PromptFragmentAssembler();
+  const globalControlPanelStore = createGlobalControlPanelStore({
+    menu_message_id: 901,
+    active_screen: "new_topic",
+    ui_language: "eng",
+    pending_input: {
+      kind: "new_topic_title",
+      requested_at: "2026-04-21T19:20:00.000Z",
+      requested_by_user_id: "123456789",
+      menu_message_id: 901,
+      screen: "new_topic",
+      requested_host_id: "worker-a",
+      requested_host_label: "worker-a",
+    },
+  });
+  const sessionService = createGlobalControlSessionService({
+    async resolveInheritedBinding() {
+      return {
+        binding: {
+          repo_root: "/srv/codex-workspace",
+          cwd: "/srv/codex-workspace",
+          branch: "main",
+          worktree_path: "/srv/codex-workspace",
+        },
+        inheritedFromSessionKey: null,
+      };
+    },
+    async createTopicSession(params) {
+      createCalls.push(params);
+      return {
+        forumTopic: {
+          name: "Remote bound topic (worker-a)",
+          message_thread_id: 77,
+        },
+        session: {
+          session_key: "-1001234567890:77",
+          chat_id: "-1001234567890",
+          topic_id: "77",
+          topic_name: "Remote bound topic (worker-a)",
+          lifecycle_state: "active",
+          ui_language: "eng",
+          execution_host_id: "worker-a",
+          execution_host_label: "worker-a",
+          workspace_binding: {
+            repo_root: "/srv/codex-workspace",
+            cwd: "/srv/codex-workspace",
+            branch: "main",
+            worktree_path: "/srv/codex-workspace",
+          },
+        },
+      };
+    },
+    async recordHandledSession() {},
+  });
+
+  await handleIncomingMessage({
+    api: {
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+      async sendMessage(payload) {
+        sent.push(payload);
+        return { message_id: 950 + sent.length };
+      },
+      async pinChatMessage() {},
+    },
+    botUsername: "gatewaybot",
+    config,
+    globalControlPanelStore,
+    message: {
+      text: "Remote bound topic",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+    },
+    promptFragmentAssembler,
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService,
+    topicControlPanelStore: createTopicControlPanelStore(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(createCalls.length, 1);
+  assert.equal(createCalls[0].executionHostId, "worker-a");
+  assert.equal(createCalls[0].title, "Remote bound topic");
+  assert.equal(globalControlPanelStore.getState().pending_input, null);
+  assert.equal(edited.length >= 1, true);
+  assert.equal(sent.some((payload) => /Remote bound topic \(worker-a\)/u.test(payload.text)), true);
 });
 
 test("handleIncomingMessage keeps /menu General guidance in the selected General language", async () => {
@@ -150,8 +553,8 @@ test("handleIncomingMessage keeps /menu General guidance in the selected General
     message: {
       text: "/menu",
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
     },
     serviceState: {
       ignoredUpdates: 0,
@@ -201,10 +604,10 @@ test("handleIncomingCallbackQuery applies a global wait preset from the control 
     callbackQuery: {
       id: "cbq-1",
       data: "gcfg:w:60",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -221,8 +624,8 @@ test("handleIncomingCallbackQuery applies a global wait preset from the control 
   });
 
   const waitState = promptFragmentAssembler.getStateForMessage({
-    chat: { id: -1003577434463 },
-    from: { id: 5825672398 },
+    chat: { id: -1001234567890 },
+    from: { id: 123456789 },
   });
 
   assert.equal(result.reason, "global-control-action-applied");
@@ -261,10 +664,10 @@ test("handleGlobalControlCallbackQuery reports unavailable global wait without t
     callbackQuery: {
       id: "cbq-wait-unavailable",
       data: "gcfg:w:60",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -279,8 +682,8 @@ test("handleGlobalControlCallbackQuery reports unavailable global wait without t
   assert.equal(result.reason, "global-control-action-applied");
   assert.equal(answered.length, 1);
   assert.equal(edited.length, 1);
-  assert.equal(sent.length, 1);
-  assert.match(sent[0].text, /Manual collection window|Manual collection windows/u);
+  assert.equal(sent.length, 0);
+  assert.match(edited[0].text, /Manual collection window|Manual collection windows/u);
 });
 
 test("handleIncomingCallbackQuery updates the global panel language and refreshes the menu", async () => {
@@ -309,10 +712,10 @@ test("handleIncomingCallbackQuery updates the global panel language and refreshe
     callbackQuery: {
       id: "cbq-language",
       data: "gcfg:l:eng",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -335,13 +738,13 @@ test("handleIncomingCallbackQuery updates the global panel language and refreshe
   assert.equal(result.reason, "global-control-language-updated");
   assert.equal(answered.length, 1);
   assert.equal(edited.length, 1);
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 0);
   assert.equal(store.getState().ui_language, "eng");
   assert.equal(store.getState().active_screen, "root");
   assert.match(edited[0].text, /Global control panel/u);
   assert.match(edited[0].text, /interface language: ENG/u);
   assert.match(edited[0].text, /limits: unlimited/u);
-  assert.match(sent[0].text, /Interface language updated\./u);
+  assert.match(edited[0].text, /Interface language updated\./u);
 });
 
 test("handleIncomingCallbackQuery opens bot settings inside the global control menu", async () => {
@@ -365,10 +768,10 @@ test("handleIncomingCallbackQuery opens bot settings inside the global control m
     callbackQuery: {
       id: "cbq-global-bots",
       data: "gcfg:n:b",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -428,10 +831,10 @@ test("handleIncomingCallbackQuery applies compact model from the global control 
     callbackQuery: {
       id: "cbq-global-compact-model",
       data: "gcfg:m:c:gpt-5.4-mini",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -479,10 +882,10 @@ test("handleIncomingCallbackQuery applies compact reasoning from the global cont
     callbackQuery: {
       id: "cbq-global-compact-reasoning",
       data: "gcfg:r:c:high",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -508,6 +911,52 @@ test("handleIncomingCallbackQuery applies compact reasoning from the global cont
   assert.equal(settings.compact_reasoning_effort, "high");
 });
 
+test("handleIncomingCallbackQuery rejects stale global menu callbacks", async () => {
+  const answered = [];
+  const edited = [];
+
+  const result = await handleIncomingCallbackQuery({
+    api: {
+      async answerCallbackQuery(payload) {
+        answered.push(payload);
+      },
+      async editMessageText(payload) {
+        edited.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    callbackQuery: {
+      id: "cbq-global-stale",
+      data: "gcfg:n:b",
+      from: { id: 123456789, is_bot: false },
+      message: {
+        message_id: 900,
+        chat: { id: -1001234567890 },
+      },
+    },
+    config,
+    globalControlPanelStore: createGlobalControlPanelStore({
+      menu_message_id: 901,
+      active_screen: "root",
+      ui_language: "rus",
+    }),
+    promptFragmentAssembler: new PromptFragmentAssembler(),
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: createGlobalControlSessionService(),
+    workerPool: buildIdleWorkerPool(),
+  });
+
+  assert.equal(result.reason, "global-control-menu-expired");
+  assert.equal(edited.length, 0);
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /устарело/u);
+});
+
 test("handleIncomingCallbackQuery shows the full global suffix text on the suffix screen", async () => {
   const edited = [];
   const longSuffix = [
@@ -530,10 +979,10 @@ test("handleIncomingCallbackQuery shows the full global suffix text on the suffi
     callbackQuery: {
       id: "cbq-suffix-full",
       data: "gcfg:n:s",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -590,10 +1039,10 @@ test("handleIncomingCallbackQuery sends help cards in the selected global panel 
     callbackQuery: {
       id: "cbq-help",
       data: "gcfg:h:show",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -643,10 +1092,10 @@ test("handleIncomingCallbackQuery sends the guidebook in the selected global pan
     callbackQuery: {
       id: "cbq-guide",
       data: "gcfg:g:show",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -692,7 +1141,7 @@ test("handleGlobalControlCallbackQuery dispatches /zoo from the global root menu
     callbackQuery: {
       id: "cbq-zoo-shortcut",
       data: "gcfg:z:show",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
         chat,
@@ -714,7 +1163,7 @@ test("handleGlobalControlCallbackQuery dispatches /zoo from the global root menu
   assert.equal(result.reason, "global-control-zoo-opened");
   assert.equal(answered.length, 1);
   assert.deepEqual(dispatched, [{
-    actor: { id: 5825672398, is_bot: false },
+    actor: { id: 123456789, is_bot: false },
     chat,
     commandText: "/zoo",
   }]);
@@ -740,10 +1189,10 @@ test("handleIncomingCallbackQuery keeps zoo routing alive for the global Zoo but
     callbackQuery: {
       id: "cbq-zoo-live-route",
       data: "gcfg:z:show",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
       },
     },
     config,
@@ -798,7 +1247,7 @@ test("handleGlobalControlCallbackQuery dispatches /clear from the global root me
     callbackQuery: {
       id: "cbq-clear-shortcut",
       data: "gcfg:c:run",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
         message_id: 901,
         chat,
@@ -820,7 +1269,7 @@ test("handleGlobalControlCallbackQuery dispatches /clear from the global root me
   assert.equal(result.reason, "global-control-clear-run");
   assert.equal(answered.length, 1);
   assert.deepEqual(dispatched, [{
-    actor: { id: 5825672398, is_bot: false },
+    actor: { id: 123456789, is_bot: false },
     chat,
     commandText: "/clear",
   }]);

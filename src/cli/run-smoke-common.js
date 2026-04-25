@@ -1,9 +1,5 @@
 import process from "node:process";
 
-export function resolveSmokeVariant(argv = process.argv) {
-  return argv.includes("--omni") ? "omni" : "spike";
-}
-
 function isInactiveUserServiceError(error) {
   return Number(error?.code) === 3 || Number(error?.code) === 4;
 }
@@ -38,6 +34,7 @@ export async function assertSmokeSupported(
 
     throw new Error(
       `Unable to confirm ${serviceName} is inactive via systemctl --user; fix the user service state first. ${error?.stderr?.trim() || error?.stdout?.trim() || error?.message || ""}`.trim(),
+      { cause: error },
     );
   }
 }

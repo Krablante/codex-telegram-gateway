@@ -8,7 +8,6 @@ import { promisify } from "node:util";
 import { loadRuntimeConfig } from "../config/runtime-config.js";
 import {
   MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION,
-  SYSTEMD_USER_OMNI_SERVICE_NAME,
   SYSTEMD_USER_SERVICE_NAME,
   buildServicePathEntries,
   buildUnsupportedSystemdUserMessage,
@@ -64,26 +63,16 @@ async function readSystemdVersion() {
 }
 
 async function main() {
-  const omniVariant = process.env.SERVICE_VARIANT === "omni";
   if (!isSystemdUserSupported()) {
-    throw new Error(buildUnsupportedSystemdUserMessage({
-      omniVariant,
-    }));
+    throw new Error(buildUnsupportedSystemdUserMessage());
   }
 
   const config = await loadRuntimeConfig();
-  const serviceName = omniVariant
-    ? SYSTEMD_USER_OMNI_SERVICE_NAME
-    : SYSTEMD_USER_SERVICE_NAME;
-  const description = omniVariant
-    ? "Codex Telegram Gateway Omni"
-    : "Codex Telegram Gateway";
-  const scriptPath = omniVariant ? "src/cli/run-omni.js" : "src/cli/run.js";
+  const serviceName = SYSTEMD_USER_SERVICE_NAME;
+  const description = "Codex Telegram Gateway";
+  const scriptPath = "src/cli/run.js";
   const systemdVersion = await readSystemdVersion();
-  if (
-    !omniVariant
-    && !supportsExitTypeCgroup(systemdVersion)
-  ) {
+  if (!supportsExitTypeCgroup(systemdVersion)) {
     throw new Error(
       `Spike session-aware service install requires systemd >= ${MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION} for ExitType=cgroup; detected ${systemdVersion ?? "unknown"}. Use foreground runs or upgrade systemd.`,
     );
@@ -100,7 +89,7 @@ async function main() {
     pathEntries: buildServicePathEntries({ nodePath }),
     description,
     scriptPath,
-    exitType: omniVariant ? null : "cgroup",
+    exitType: "cgroup",
   });
 
   await fs.mkdir(path.dirname(unitPath), { recursive: true });

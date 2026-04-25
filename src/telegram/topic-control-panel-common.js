@@ -1,4 +1,6 @@
-export const TOPIC_CONTROL_OPERATION_CHAINS = new Map();
+import { safeSendMessage } from "./topic-delivery.js";
+
+const TOPIC_CONTROL_OPERATION_CHAINS = new Map();
 
 export function buildAuthMessageForCallbackQuery(callbackQuery) {
   return {
@@ -20,12 +22,17 @@ export function isNotModifiedError(error) {
   return String(error?.message ?? "").toLowerCase().includes("message is not modified");
 }
 
-export async function sendStatusMessage(api, session, text) {
-  await api.sendMessage({
-    chat_id: session.chat_id,
-    message_thread_id: Number(session.topic_id),
-    text,
-  });
+export async function sendStatusMessage(api, session, text, lifecycleManager = null) {
+  return safeSendMessage(
+    api,
+    {
+      chat_id: session.chat_id,
+      message_thread_id: Number(session.topic_id),
+      text,
+    },
+    session,
+    lifecycleManager,
+  );
 }
 
 export async function answerCallbackQuerySafe(api, callbackQueryId, text = undefined) {

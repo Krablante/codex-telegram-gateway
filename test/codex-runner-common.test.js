@@ -8,6 +8,7 @@ import {
   buildCodexArgs,
   buildTurnInput,
   hasChildExited,
+  isRelevantWarning,
   summarizeCodexEvent,
   waitForListenUrl,
 } from "../src/pty-worker/codex-runner.js";
@@ -31,6 +32,8 @@ test("buildCodexArgs appends model and reasoning overrides", () => {
     listenUrl: "ws://127.0.0.1:40187",
     model: "gpt-5.4-mini",
     reasoningEffort: "high",
+    contextWindow: 400000,
+    autoCompactTokenLimit: 375000,
   }), [
     "app-server",
     "--listen",
@@ -39,6 +42,10 @@ test("buildCodexArgs appends model and reasoning overrides", () => {
     'model="gpt-5.4-mini"',
     "-c",
     'model_reasoning_effort="high"',
+    "-c",
+    "model_context_window=400000",
+    "-c",
+    "model_auto_compact_token_limit=375000",
     "-c",
     'sandbox_mode="danger-full-access"',
     "-c",
@@ -165,6 +172,24 @@ test("summarizeCodexEvent still understands legacy exec events", () => {
   });
 });
 
+test("summarizeCodexEvent keeps legacy agent message phase and ids", () => {
+  const summary = summarizeCodexEvent({
+    type: "item.completed",
+    thread_id: "thread-legacy",
+    turn_id: "turn-legacy",
+    item: {
+      type: "agent_message",
+      text: "still thinking",
+      phase: "commentary",
+    },
+  });
+
+  assert.equal(summary.kind, "agent_message");
+  assert.equal(summary.messagePhase, "commentary");
+  assert.equal(summary.threadId, "thread-legacy");
+  assert.equal(summary.turnId, "turn-legacy");
+});
+
 test("hasChildExited ignores child.killed until the process really exits", () => {
   assert.equal(
     hasChildExited({
@@ -189,6 +214,27 @@ test("hasChildExited ignores child.killed until the process really exits", () =>
       signalCode: null,
     }),
     true,
+  );
+});
+
+test("isRelevantWarning ignores recoverable stale write_stdin router noise", () => {
+  assert.equal(
+    isRelevantWarning(
+      "\u001b[31mERROR\u001b[0m codex_core::tools::router: error=write_stdin failed: Unknown process id 81651",
+    ),
+    true,
+  );
+  assert.equal(
+    isRelevantWarning(
+      "\u001b[31mERROR\u001b[0m codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open",
+    ),
+    true,
+  );
+  assert.equal(
+    isRelevantWarning(
+      "\u001b[31mERROR\u001b[0m codex_core::tools::router: error=write_stdin failed: permission denied",
+    ),
+    false,
   );
 });
 

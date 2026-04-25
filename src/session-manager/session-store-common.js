@@ -24,6 +24,3 @@ export {
   readMetaJson,
   readOptionalText,
 } from "./session-store-io.js";
-export {
-  AUTO_LAST_SPIKE_FINAL_FILE_NAME,
-} from "./auto-mode.js";

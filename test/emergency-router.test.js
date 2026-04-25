@@ -1,21 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { EmergencyPrivateChatRouter } from "../src/emergency/private-chat-router.js";
+import { withSuppressedConsole } from "../test-support/console-fixtures.js";
 
 const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramAllowedUserIds: ["5825672398", "5825672400"],
-  repoRoot: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-  stateRoot: "/home/bloob/atlas/state/homelab/infra/automation/codex-telegram-gateway",
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789", "5825672400"],
+  repoRoot: "/srv/codex-workspace/codex-telegram-gateway",
+  stateRoot: "/srv/codex-workspace/state/codex-telegram-gateway",
   codexBinPath: "codex",
 };
 
 function buildPrivateMessage(overrides = {}) {
   return {
     text: "fix the gateway",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: 5825672398, type: "private" },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: 123456789, type: "private" },
     message_id: 1,
     ...overrides,
   };
@@ -24,8 +28,8 @@ function buildPrivateMessage(overrides = {}) {
 function buildTopicMessage(overrides = {}) {
   return {
     text: "normal topic message",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463, type: "supergroup" },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890, type: "supergroup" },
     message_thread_id: 2203,
     message_id: 1,
     ...overrides,
@@ -221,6 +225,54 @@ test("EmergencyPrivateChatRouter clears buffered attachments when a command arri
   assert.match(sent.at(-1).text, /Emergency status/u);
 });
 
+test("EmergencyPrivateChatRouter removes expired buffered attachment files", async () => {
+  const tmpDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-emergency-"),
+  );
+  const filePath = path.join(tmpDir, "pending.log");
+  await fs.writeFile(filePath, "pending\n", "utf8");
+  let now = 1_000;
+  const router = new EmergencyPrivateChatRouter({
+    api: {
+      async sendMessage() {},
+      async sendChatAction() {},
+    },
+    config,
+    now: () => now,
+    async ingestAttachments() {
+      return [
+        {
+          file_path: filePath,
+          telegram_file_unique_id: "uniq-file-expiring",
+          is_image: false,
+        },
+      ];
+    },
+  });
+
+  try {
+    await router.handleMessage(
+      buildPrivateMessage({
+        text: undefined,
+        document: {
+          file_id: "file-1",
+          file_unique_id: "uniq-file-expiring",
+          file_name: "pending.log",
+          mime_type: "text/plain",
+          file_size: 8,
+        },
+      }),
+    );
+    now += 16 * 60 * 1000;
+    await router.handleMessage(buildPrivateMessage({ text: undefined }));
+
+    await assert.rejects(() => fs.stat(filePath), { code: "ENOENT" });
+    assert.equal(router.pendingAttachments.length, 0);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test("EmergencyPrivateChatRouter reports status and supports interrupt", async () => {
   const sent = [];
   let killCount = 0;
@@ -310,7 +362,7 @@ test("EmergencyPrivateChatRouter refuses to start while normal topic runs are ac
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     normalRunState: {
       hasActiveRuns: () => true,
@@ -385,7 +437,7 @@ test("EmergencyPrivateChatRouter blocks normal topic prompts while emergency mod
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     startRun() {
       return {
@@ -417,7 +469,7 @@ test("EmergencyPrivateChatRouter blocks competing topic prompts from any allowed
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     startRun() {
       return {
@@ -453,7 +505,7 @@ test("EmergencyPrivateChatRouter lets topic commands pass through while emergenc
     },
     config: {
       ...config,
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     botUsername: "gatewaybot",
     startRun() {
@@ -593,16 +645,18 @@ test("EmergencyPrivateChatRouter survives a failed start acknowledgement and sti
     },
   });
 
-  const result = await router.handleMessage(buildPrivateMessage());
-  assert.equal(result.reason, "emergency-started");
-  assert.equal(router.isActive(), true);
+  await withSuppressedConsole("warn", async () => {
+    const result = await router.handleMessage(buildPrivateMessage());
+    assert.equal(result.reason, "emergency-started");
+    assert.equal(router.isActive(), true);
 
-  resolveDone({
-    ok: true,
-    interrupted: false,
-    finalReply: "fixed",
+    resolveDone({
+      ok: true,
+      interrupted: false,
+      finalReply: "fixed",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(router.isActive(), false);
 });
 

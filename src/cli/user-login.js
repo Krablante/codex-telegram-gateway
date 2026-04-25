@@ -128,6 +128,7 @@ export async function authorizeTelegramUser({
       ) {
         throw new Error(
           `Telegram login code expired. Request a new code and rerun ${buildUserLoginRetryHint()}.`,
+          { cause: error },
         );
       }
 

@@ -6,6 +6,25 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.67] - 2026-04-25
+
+Changed:
+
+- updated the public gateway to the current single-bot runtime architecture with `codex exec --json` as the default backend and the legacy `app-server` path gated behind `CODEX_ENABLE_LEGACY_APP_SERVER=1`
+- restored neutral public defaults for state/config/workspace paths: XDG config/state on Linux, `%LOCALAPPDATA%` on Windows, repo-local `.env` for `make`, and `WORKSPACE_ROOT` as the explicit workspace override
+- added the shipped host-affinity slice for controller/worker style deployments, including host registry, host sync, remote runtime bootstrap, remote smoke checks, remote exec-json dispatch, and remote file delivery
+- refreshed public package metadata, scripts, Make targets, docs, runbooks, guidebook sources, and validation tooling for the current runtime surface
+
+Fixed:
+
+- tightened exec-json live steer, context-window recovery, stale-run recovery, progress-note compaction, remote image staging cleanup, Telegram file delivery limits, and private state-file permissions
+- removed obsolete autonomy/secondary-runner entrypoints from the current public runtime and documentation
+- anonymized examples, fixtures, and public docs so release artifacts stay environment-neutral
+
+Tests:
+
+- added focused exec-json, host-affinity, recovery, file-delivery, progress, guidebook, language-coverage, lint, typecheck, syntax, and hygiene coverage for the updated public surface
+
 ## [0.3.44] - 2026-04-21
 
 Fixed:
@@ -211,7 +230,7 @@ Docs:
 
 - public AGENTS and Telegram surface docs now recommend keeping MCP/tooling guidance in the persistent global suffix, with `pitlane`, `tavily`, `context7`, and `requests` called out explicitly
 - README notes now record the live full-access app-server behavior, stuck-run cleanup, upstream interrupt finalization, and inline Telegram rate-limit retry path
-- runbook, deployment, testing, architecture, and state-contract docs now use generic public paths/state-root wording instead of private Atlas-specific examples, and the public restart path is documented consistently as `make service-restart-live`
+- runbook, deployment, testing, architecture, and state-contract docs now use generic public paths/state-root wording instead of environment-specific examples, and the public restart path is documented consistently as `make service-restart-live`
 
 Tests:
 

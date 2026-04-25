@@ -764,17 +764,17 @@ function getLanguage(language = DEFAULT_UI_LANGUAGE) {
   return normalizeUiLanguage(language) === "eng" ? "eng" : "rus";
 }
 
-export function getZooCreatureProfile(kind) {
+function getZooCreatureProfile(kind) {
   return CREATURE_PROFILES[kind] || CREATURE_PROFILES.cat;
 }
 
-export function getZooTemperamentProfile(seed, creatureKind = "cat") {
+function getZooTemperamentProfile(seed, creatureKind = "cat") {
   return TEMPERAMENT_PROFILES[
     stableIndex(`${creatureKind}:${String(seed || "")}`, "temperament", TEMPERAMENT_PROFILES.length)
   ];
 }
 
-export function getZooTemperamentProfileById(temperamentId) {
+function getZooTemperamentProfileById(temperamentId) {
   return TEMPERAMENT_PROFILE_BY_ID.get(normalizeIdentityText(temperamentId)) || null;
 }
 
@@ -805,26 +805,6 @@ export function getZooCreatureVoicePrompt(kind, language = DEFAULT_UI_LANGUAGE) 
   return profile.persona[normalizedLanguage] || profile.persona.eng;
 }
 
-export function getZooTemperamentLabel(
-  seed,
-  creatureKind,
-  language = DEFAULT_UI_LANGUAGE,
-) {
-  const profile = getZooTemperamentProfile(seed, creatureKind);
-  const normalizedLanguage = getLanguage(language);
-  return profile.labels[normalizedLanguage] || profile.labels.eng;
-}
-
-export function getZooTemperamentPrompt(
-  seed,
-  creatureKind,
-  language = DEFAULT_UI_LANGUAGE,
-) {
-  const profile = getZooTemperamentProfile(seed, creatureKind);
-  const normalizedLanguage = getLanguage(language);
-  return profile.prompt[normalizedLanguage] || profile.prompt.eng;
-}
-
 export function getZooPetTemperamentLabel(pet, language = DEFAULT_UI_LANGUAGE) {
   const profile = getZooPetTemperamentProfile(pet);
   const normalizedLanguage = getLanguage(language);
@@ -837,23 +817,7 @@ export function getZooPetTemperamentPrompt(pet, language = DEFAULT_UI_LANGUAGE) 
   return profile.prompt[normalizedLanguage] || profile.prompt.eng;
 }
 
-export function getZooTemperamentRefreshLead(
-  seed,
-  creatureKind,
-  language = DEFAULT_UI_LANGUAGE,
-  frameIndex = 0,
-) {
-  const profile = getZooTemperamentProfile(seed, creatureKind);
-  const normalizedLanguage = getLanguage(language);
-  const variants = profile.refreshLead?.[normalizedLanguage] || profile.refreshLead?.eng || [];
-  if (!Array.isArray(variants) || variants.length === 0) {
-    return "";
-  }
-
-  return variants[Math.abs(Number(frameIndex) || 0) % variants.length];
-}
-
-export function getZooPetTemperamentRefreshLead(
+function getZooPetTemperamentRefreshLead(
   pet,
   language = DEFAULT_UI_LANGUAGE,
   frameIndex = 0,
@@ -880,28 +844,6 @@ export function getZooPoseLines({
   }
 
   return frames[Math.abs(Number(frameIndex) || 0) % frames.length];
-}
-
-export function getZooRefreshStatus({
-  creatureKind,
-  seed = "",
-  language = DEFAULT_UI_LANGUAGE,
-  frameIndex = 0,
-}) {
-  const profile = getZooCreatureProfile(creatureKind);
-  const normalizedLanguage = getLanguage(language);
-  const variants = profile.refreshStatus[normalizedLanguage] || profile.refreshStatus.eng || [];
-  if (!Array.isArray(variants) || variants.length === 0) {
-    const fallback = normalizedLanguage === "eng"
-      ? "checking the project"
-      : "проверяю проект";
-    const lead = getZooTemperamentRefreshLead(seed, creatureKind, language, frameIndex);
-    return lead ? `${lead} ${fallback}` : fallback;
-  }
-
-  const lead = getZooTemperamentRefreshLead(seed, creatureKind, language, frameIndex);
-  const base = variants[Math.abs(Number(frameIndex) || 0) % variants.length];
-  return lead ? `${lead} ${base}` : base;
 }
 
 export function getZooPetRefreshStatus({

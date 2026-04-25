@@ -16,11 +16,12 @@ function createSessionStore(root) {
 }
 
 async function createRunningSession(sessionStore, {
-  chatId = -1003577434463,
+  chatId = -1001234567890,
   topicId = 77,
   lastUserPrompt = "Fix the gateway continuity.",
   ownerGenerationId = "stale-generation",
   lastAgentReply = null,
+  backend = "app-server",
   providerSessionId = "provider-session-stale-123",
   rolloutPath = "/tmp/stale-rollout.jsonl",
   threadId = "thread-stale-123",
@@ -39,6 +40,8 @@ async function createRunningSession(sessionStore, {
   });
 
   return sessionStore.patch(session, {
+    codex_backend: backend,
+    last_run_backend: backend,
     provider_session_id: providerSessionId,
     codex_thread_id: threadId,
     codex_rollout_path: rolloutPath,
@@ -65,6 +68,7 @@ test("recoverStaleRunningSessions keeps recoverable dead-owner runs resumable", 
   const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
   const session = await createRunningSession(sessionStore, {});
   const recovered = await recoverStaleRunningSessions({
+    codexGatewayBackend: "app-server",
     generationStore: {
       async loadGeneration(generationId) {
         return { generation_id: generationId };
@@ -105,6 +109,239 @@ test("recoverStaleRunningSessions keeps recoverable dead-owner runs resumable", 
   assert.equal(spikeFinalEvent.thread_id, "thread-stale-123");
 });
 
+test("recoverStaleRunningSessions clears legacy rollout metadata for exec-json dead-owner runs", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-exec-json-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    backend: "exec-json",
+    providerSessionId: "stale-app-server-provider",
+    rolloutPath: "/tmp/stale-app-server-rollout.jsonl",
+    threadId: "exec-json-thread-123",
+  });
+  const recovered = await recoverStaleRunningSessions({
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const exchangeLog = await sessionStore.loadExchangeLog(reloaded);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(recovered.length, 1);
+  assert.equal(reloaded.last_run_status, "interrupted");
+  assert.equal(reloaded.codex_thread_id, "exec-json-thread-123");
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_context_snapshot, null);
+  assert.equal(reloaded.last_agent_reply, null);
+  assert.equal(exchangeLog.length, 0);
+  assert.equal(spikeFinalEvent.status, "interrupted");
+  assert.equal(spikeFinalEvent.final_reply_text, null);
+  assert.equal(spikeFinalEvent.thread_id, "exec-json-thread-123");
+});
+
+test("recoverStaleRunningSessions does not treat legacy snapshot thread as exec-json continuity", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-exec-json-snapshot-only-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    backend: "exec-json",
+    providerSessionId: "old-app-server-provider",
+    rolloutPath: "/tmp/old-app-server-rollout.jsonl",
+    threadId: null,
+  });
+  await sessionStore.patch(session, {
+    last_context_snapshot: {
+      sessionId: "old-app-server-provider",
+      rolloutPath: "/tmp/old-app-server-rollout.jsonl",
+      threadId: "snapshot-only-thread",
+    },
+  });
+
+  const recovered = await recoverStaleRunningSessions({
+    codexGatewayBackend: "exec-json",
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const exchangeLog = await sessionStore.loadExchangeLog(reloaded);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(recovered.length, 1);
+  assert.equal(reloaded.last_run_status, "failed");
+  assert.equal(reloaded.codex_backend, "exec-json");
+  assert.equal(reloaded.last_run_backend, "exec-json");
+  assert.equal(reloaded.codex_thread_id, null);
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_context_snapshot, null);
+  assert.equal(reloaded.last_agent_reply, STALE_RUN_RECOVERY_TEXT);
+  assert.equal(exchangeLog.length, 1);
+  assert.equal(exchangeLog[0].status, "failed");
+  assert.equal(exchangeLog[0].assistant_reply, STALE_RUN_RECOVERY_TEXT);
+  assert.equal(spikeFinalEvent.status, "failed");
+  assert.equal(spikeFinalEvent.final_reply_text, STALE_RUN_RECOVERY_TEXT);
+  assert.equal(spikeFinalEvent.thread_id, null);
+});
+
+test("recoverStaleRunningSessions completes exec-json runs from mirrored JSONL", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-exec-json-final-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    backend: "exec-json",
+    lastUserPrompt: "Continue after crash.",
+    providerSessionId: "old-provider",
+    rolloutPath: "/tmp/old-rollout.jsonl",
+    threadId: null,
+  });
+  const runLogPath = sessionStore.getExecJsonRunLogPath(session.chat_id, session.topic_id);
+  await fs.mkdir(path.dirname(runLogPath), { recursive: true });
+  await fs.writeFile(
+    runLogPath,
+    `${JSON.stringify({
+      type: "thread.started",
+      thread_id: "exec-json-recovered-thread",
+    })}\n${JSON.stringify({
+      type: "turn.started",
+    })}\n${JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "msg-1",
+        type: "agent_message",
+        text: "Recovered final answer from exec-json mirror.",
+      },
+    })}\n${JSON.stringify({
+      type: "turn.completed",
+      usage: {
+        input_tokens: 100,
+        cached_input_tokens: 10,
+        output_tokens: 20,
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  const recovered = await recoverStaleRunningSessions({
+    codexGatewayBackend: "exec-json",
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const exchangeLog = await sessionStore.loadExchangeLog(reloaded);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(recovered.length, 1);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.codex_backend, "exec-json");
+  assert.equal(reloaded.last_run_backend, "exec-json");
+  assert.equal(reloaded.codex_thread_id, "exec-json-recovered-thread");
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_context_snapshot, null);
+  assert.equal(
+    reloaded.last_agent_reply,
+    "Recovered final answer from exec-json mirror.",
+  );
+  assert.equal(exchangeLog.length, 1);
+  assert.equal(exchangeLog[0].status, "completed");
+  assert.equal(exchangeLog[0].user_prompt, "Continue after crash.");
+  assert.equal(
+    exchangeLog[0].assistant_reply,
+    "Recovered final answer from exec-json mirror.",
+  );
+  assert.equal(spikeFinalEvent.status, "completed");
+  assert.equal(
+    spikeFinalEvent.final_reply_text,
+    "Recovered final answer from exec-json mirror.",
+  );
+  assert.equal(spikeFinalEvent.thread_id, "exec-json-recovered-thread");
+});
+
+test("recoverStaleRunningSessions ignores stale app-server metadata when current backend is exec-json", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-current-exec-json-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sessionStore = createSessionStore(root);
+  const spikeFinalEventStore = new SpikeFinalEventStore(sessionStore);
+  const session = await createRunningSession(sessionStore, {
+    backend: "app-server",
+    providerSessionId: "old-provider-from-fallback",
+    rolloutPath: "/tmp/old-app-server-rollout.jsonl",
+    threadId: "thread-from-current-exec-json-session",
+  });
+  const recovered = await recoverStaleRunningSessions({
+    codexGatewayBackend: "exec-json",
+    generationStore: {
+      async loadGeneration(generationId) {
+        return { generation_id: generationId };
+      },
+      async isGenerationRecordVerifiablyLive() {
+        return false;
+      },
+    },
+    now: () => "2026-04-05T18:10:00.000Z",
+    sessionStore,
+    spikeFinalEventStore,
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  const spikeFinalEvent = await spikeFinalEventStore.load(reloaded);
+
+  assert.equal(recovered.length, 1);
+  assert.equal(reloaded.last_run_status, "interrupted");
+  assert.equal(reloaded.codex_thread_id, "thread-from-current-exec-json-session");
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_context_snapshot, null);
+  assert.equal(spikeFinalEvent.status, "interrupted");
+  assert.equal(spikeFinalEvent.thread_id, "thread-from-current-exec-json-session");
+});
+
 test("recoverStaleRunningSessions does not replay the previous run reply for interrupted stale recovery", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ctg-stale-run-recovery-old-final-"));
   t.after(async () => {
@@ -117,6 +354,7 @@ test("recoverStaleRunningSessions does not replay the previous run reply for int
     lastAgentReply: "OLD FINAL FROM PREVIOUS RUN",
   });
   await recoverStaleRunningSessions({
+    codexGatewayBackend: "app-server",
     generationStore: {
       async loadGeneration(generationId) {
         return { generation_id: generationId };
@@ -210,6 +448,7 @@ test("recoverStaleRunningSessions completes dead-owner runs when rollout already
     rolloutPath: null,
   });
   const recovered = await recoverStaleRunningSessions({
+    codexGatewayBackend: "app-server",
     codexSessionsRoot,
     generationStore: {
       async loadGeneration(generationId) {
@@ -311,6 +550,7 @@ test("recoverStaleRunningSessions ignores old terminal rollout records before a 
     rolloutPath: null,
   });
   await recoverStaleRunningSessions({
+    codexGatewayBackend: "app-server",
     codexSessionsRoot,
     generationStore: {
       async loadGeneration(generationId) {
@@ -367,6 +607,7 @@ test("recoverStaleRunningSessions accepts an unterminated task_complete line at 
     rolloutPath: null,
   });
   await recoverStaleRunningSessions({
+    codexGatewayBackend: "app-server",
     codexSessionsRoot,
     generationStore: {
       async loadGeneration(generationId) {

@@ -16,7 +16,7 @@ test("RuntimeObserver survives concurrent heartbeat writes in the same milliseco
       envFilePath: "/state/runtime.env",
       repoRoot: "/repo",
       stateRoot: "/state",
-      telegramForumChatId: "-1003577434463",
+      telegramForumChatId: "-1001234567890",
     },
     serviceState: {
       startedAt: "2026-03-22T12:00:00.000Z",

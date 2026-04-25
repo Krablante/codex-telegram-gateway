@@ -19,8 +19,6 @@ test("GlobalCodexSettingsStore quarantines malformed state files and falls back 
     updated_at: null,
     spike_model: null,
     spike_reasoning_effort: null,
-    omni_model: null,
-    omni_reasoning_effort: null,
     compact_model: null,
     compact_reasoning_effort: null,
   });
@@ -37,13 +35,13 @@ test("GlobalCodexSettingsStore quarantines malformed state files and falls back 
   const saved = await store.save({
     spike_model: "gpt-5.4-mini",
     spike_reasoning_effort: "high",
-    omni_model: "gpt-5.4",
-    omni_reasoning_effort: "low",
+    compact_model: "gpt-5.4",
+    compact_reasoning_effort: "low",
   });
   assert.equal(saved.spike_model, "gpt-5.4-mini");
   assert.equal(saved.spike_reasoning_effort, "high");
-  assert.equal(saved.omni_model, "gpt-5.4");
-  assert.equal(saved.omni_reasoning_effort, "low");
+  assert.equal(saved.compact_model, "gpt-5.4");
+  assert.equal(saved.compact_reasoning_effort, "low");
 });
 
 test("GlobalCodexSettingsStore patchWithCurrent serializes overlapping writes", async () => {
@@ -73,7 +71,7 @@ test("GlobalCodexSettingsStore patchWithCurrent serializes overlapping writes", 
   await firstPatchEnteredPromise;
   let secondFinished = false;
   const secondPatch = store.patchWithCurrent((current) => ({
-    omni_model: current.spike_model,
+    compact_model: current.spike_model,
   })).then(() => {
     secondFinished = true;
   });
@@ -87,5 +85,5 @@ test("GlobalCodexSettingsStore patchWithCurrent serializes overlapping writes", 
   const loaded = await store.load({ force: true });
   assert.equal(loaded.spike_model, "gpt-5.4-mini");
   assert.equal(loaded.spike_reasoning_effort, "high");
-  assert.equal(loaded.omni_model, "gpt-5.4-mini");
+  assert.equal(loaded.compact_model, "gpt-5.4-mini");
 });

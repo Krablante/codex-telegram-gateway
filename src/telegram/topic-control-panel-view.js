@@ -1,12 +1,9 @@
 import {
   DEFAULT_UI_LANGUAGE,
-  formatUiLanguageLabel,
-  normalizeUiLanguage,
 } from "../i18n/ui-language.js";
 import {
-  formatReasoningEffort,
   getSupportedReasoningLevelsForModel,
-  loadAvailableCodexModels,
+  loadVisibleCodexModels,
   resolveCodexRuntimeProfile,
 } from "../session-manager/codex-runtime-settings.js";
 import { buildCodexLimitsMenuLines } from "../codex-runtime/limits.js";
@@ -15,6 +12,37 @@ import {
   PROMPT_SUFFIX_MAX_CHARS,
 } from "../session-manager/prompt-suffix.js";
 import { resolveStatusView } from "./status-view.js";
+import {
+  buildBotProfileLine,
+  buildInlineKeyboardButton,
+  buildLanguageKeyboard as buildSharedLanguageKeyboard,
+  buildPendingInputLabel as buildSharedPendingInputLabel,
+  buildRootSummaryLine,
+  buildSuffixPreview,
+  buildWaitKeyboard as buildSharedWaitKeyboard,
+  chunkIntoRows,
+  formatConfiguredValue,
+  formatReasoningValue,
+  formatWaitDuration,
+  getLanguageLabel,
+  isEnglish,
+  normalizeControlScreenId,
+  parseStandardControlCallbackData,
+} from "./control-panel-view-common.js";
+import {
+  buildInvalidCustomWaitMessage as buildSharedInvalidCustomWaitMessage,
+  buildInvalidSuffixMessage as buildSharedInvalidSuffixMessage,
+  buildLanguageUpdatedMessage as buildSharedLanguageUpdatedMessage,
+  buildMenuRefreshMessage as buildSharedMenuRefreshMessage,
+  buildOnlyMessage as buildSharedOnlyMessage,
+  buildPendingInputCanceledMessage as buildSharedPendingInputCanceledMessage,
+  buildPendingInputNeedsTextMessage as buildSharedPendingInputNeedsTextMessage,
+  buildPendingInputStartedMessage as buildSharedPendingInputStartedMessage,
+  buildTooLongSuffixMessage as buildSharedTooLongSuffixMessage,
+  buildUnavailableModelMessage as buildSharedUnavailableModelMessage,
+  buildUnsupportedReasoningMessage as buildSharedUnsupportedReasoningMessage,
+  buildWaitUnavailableMessage as buildSharedWaitUnavailableMessage,
+} from "./control-panel-view-messages.js";
 
 export const TOPIC_CONTROL_PANEL_CALLBACK_PREFIX = "tcfg";
 
@@ -27,109 +55,48 @@ const SCREEN_CODES = {
   bot_settings: "b",
   spike_model: "sm",
   spike_reasoning: "sr",
-  omni_model: "om",
-  omni_reasoning: "or",
 };
 const SCREEN_IDS = Object.fromEntries(
   Object.entries(SCREEN_CODES).map(([screenId, code]) => [code, screenId]),
 );
 const TARGET_CODES = {
   spike: "s",
-  omni: "o",
 };
 const TARGET_IDS = {
   s: "spike",
-  o: "omni",
 };
-const WAIT_PRESETS = [
-  { label: "30s", seconds: 30 },
-  { label: "1m", seconds: 60 },
-  { label: "5m", seconds: 300 },
-  { label: "10m", seconds: 600 },
-  { label: "30m", seconds: 1800 },
-];
-
-function isEnglish(language = DEFAULT_UI_LANGUAGE) {
-  return normalizeUiLanguage(language) === "eng";
-}
-
-function getLanguageLabel(language = DEFAULT_UI_LANGUAGE) {
-  return formatUiLanguageLabel(language);
-}
-
-function buildInlineKeyboardButton(text, callbackData) {
-  return {
-    text,
-    callback_data: callbackData,
-  };
-}
-
-function chunkIntoRows(entries, size = 2) {
-  const rows = [];
-  for (let index = 0; index < entries.length; index += size) {
-    rows.push(entries.slice(index, index + size));
-  }
-  return rows;
-}
 
 export function normalizeTopicControlScreenId(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return SCREEN_CODES[normalized] ? normalized : "root";
+  return normalizeControlScreenId(value, SCREEN_CODES);
 }
 
-function formatWaitDuration(seconds, language = DEFAULT_UI_LANGUAGE) {
-  if (!Number.isInteger(seconds) || seconds <= 0) {
-    return isEnglish(language) ? "off" : "выключен";
+function buildPendingInputLabel(kind, language = DEFAULT_UI_LANGUAGE) {
+  return buildSharedPendingInputLabel(kind, language, {
+    wait_custom: isEnglish(language)
+      ? "custom local wait; send 45s / 2m / off"
+      : "custom local wait; отправь 45s / 2m / off",
+  });
+}
+
+function buildStatusLines({
+  language = DEFAULT_UI_LANGUAGE,
+  notice = null,
+  pendingInput = null,
+}) {
+  const english = isEnglish(language);
+  const lines = [];
+  if (pendingInput) {
+    lines.push(
+      "",
+      `${english ? "pending input" : "pending input"}: ${buildPendingInputLabel(pendingInput.kind, language)}`,
+    );
+    if (pendingInput.status_message) {
+      lines.push(`${english ? "status" : "status"}: ${pendingInput.status_message}`);
+    }
+  } else if (notice) {
+    lines.push("", `${english ? "notice" : "notice"}: ${notice}`);
   }
-
-  if (seconds % 60 === 0) {
-    return `${seconds / 60}m`;
-  }
-
-  return `${seconds}s`;
-}
-
-function formatConfiguredValue(value) {
-  return value || "default";
-}
-
-function formatReasoningValue(value) {
-  return formatReasoningEffort(value) || "default";
-}
-
-function buildRootSummaryLine(label, configuredValue, effectiveValue) {
-  return configuredValue
-    ? `${label}: ${configuredValue}`
-    : `${label}: default -> ${effectiveValue}`;
-}
-
-function formatCompactReasoningValue(value) {
-  return value || "default";
-}
-
-function buildPendingInputLabel(kind) {
-  if (kind === "suffix_text") {
-    return "suffix text, reply to this menu";
-  }
-
-  if (kind === "wait_custom") {
-    return "custom local wait, reply with 45s / 2m / off";
-  }
-
-  return "manual input pending";
-}
-
-function buildSuffixPreview(session, language = DEFAULT_UI_LANGUAGE) {
-  const suffixText = normalizePromptSuffixText(session?.prompt_suffix_text);
-  if (!suffixText) {
-    return isEnglish(language) ? "empty" : "empty";
-  }
-
-  return suffixText;
-}
-
-function buildBotProfileLine(label, profile) {
-  return `${label}: ${profile.model} (${formatCompactReasoningValue(profile.reasoningEffort)})`;
+  return lines;
 }
 
 function buildTopicControlPanelText({
@@ -137,7 +104,7 @@ function buildTopicControlPanelText({
   globalPromptSuffix,
   limitsSummary = null,
   language = DEFAULT_UI_LANGUAGE,
-  omniEnabled = true,
+  notice = null,
   pendingInput = null,
   profiles,
   screen = "root",
@@ -160,11 +127,12 @@ function buildTopicControlPanelText({
       "",
       `${english ? "current" : "текущее"}: ${formatWaitDuration(waitSeconds, language)}`,
       english
-        ? "Tap a preset or choose Custom and reply to this menu."
-        : "Выбери preset или нажми Custom и ответь на это menu.",
+        ? "Tap a preset or choose Custom, then send the next text message."
+        : "Выбери preset или нажми Custom, затем отправь следующее текстовое сообщение.",
       english
         ? "This is a one-topic manual collection window."
         : "Это manual collection window только для этого топика.",
+      ...buildStatusLines({ language, notice, pendingInput }),
     ].join("\n");
   }
 
@@ -181,13 +149,15 @@ function buildTopicControlPanelText({
         globalPromptSuffix?.prompt_suffix_enabled && globalSuffixText ? "on" : "off"
       }`,
       "",
-      buildSuffixPreview(session, language),
+      buildSuffixPreview(session?.prompt_suffix_text, language),
       ...(pendingInput?.kind === "suffix_text"
         ? [
             "",
-            `pending input: ${buildPendingInputLabel(pendingInput.kind)}`,
+            `pending input: ${buildPendingInputLabel(pendingInput.kind, language)}`,
+            ...(pendingInput.status_message ? [`status: ${pendingInput.status_message}`] : []),
           ]
         : []),
+      ...(pendingInput ? [] : (notice ? ["", `notice: ${notice}`] : [])),
     ].join("\n");
   }
 
@@ -210,18 +180,12 @@ function buildTopicControlPanelText({
         : "Выбери бота, настройки которого хочешь менять в этом топике.",
       "",
       buildBotProfileLine("spike", profiles.spike),
-      ...(omniEnabled
-        ? [buildBotProfileLine("omni", profiles.omni)]
-        : []),
     ].join("\n");
   }
 
-  if (screen === "spike_model" || screen === "omni_model") {
-    const target = screen === "spike_model" ? "spike" : "omni";
-    const title =
-      target === "spike"
-        ? "Spike topic model"
-        : "Omni topic model";
+  if (screen === "spike_model") {
+    const target = "spike";
+    const title = "Spike topic model";
     const configuredValue = session?.[`${target}_model_override`] ?? null;
     return [
       title,
@@ -235,12 +199,9 @@ function buildTopicControlPanelText({
     ].join("\n");
   }
 
-  if (screen === "spike_reasoning" || screen === "omni_reasoning") {
-    const target = screen === "spike_reasoning" ? "spike" : "omni";
-    const title =
-      target === "spike"
-        ? "Spike topic reasoning"
-        : "Omni topic reasoning";
+  if (screen === "spike_reasoning") {
+    const target = "spike";
+    const title = "Spike topic reasoning";
     const configuredValue = session?.[`${target}_reasoning_effort_override`] ?? null;
     return [
       title,
@@ -257,8 +218,8 @@ function buildTopicControlPanelText({
     "Topic control panel",
     "",
     english
-      ? "Buttons change values for this topic; text values are set by replying to this menu."
-      : "Кнопки меняют значения только для этого топика, текстовые значения задаются ответом на это menu.",
+      ? "Buttons change values for this topic; text values are set by sending the next text message."
+      : "Кнопки меняют значения только для этого топика, текстовые значения задаются следующим текстовым сообщением.",
     "",
     `interface language: ${getLanguageLabel(language)}`,
     buildRootSummaryLine(
@@ -279,22 +240,19 @@ function buildTopicControlPanelText({
     ),
     `global suffix routing: ${session?.prompt_suffix_topic_enabled !== false ? "on" : "off"}`,
     buildBotProfileLine("spike", profiles.spike),
-    ...(omniEnabled
-      ? [
-          buildBotProfileLine("omni", profiles.omni),
-        ]
-      : []),
     ...buildCodexLimitsMenuLines(limitsSummary, language),
     ...(pendingInput
       ? [
           "",
-          `pending input: ${buildPendingInputLabel(pendingInput.kind)}`,
+          `pending input: ${buildPendingInputLabel(pendingInput.kind, language)}`,
+          ...(pendingInput.status_message ? [`status: ${pendingInput.status_message}`] : []),
         ]
       : []),
+    ...(pendingInput ? [] : (notice ? ["", `notice: ${notice}`] : [])),
   ].join("\n");
 }
 
-function buildRootKeyboard(omniEnabled, pendingInput) {
+function buildRootKeyboard(pendingInput) {
   return [
     [
       buildInlineKeyboardButton("Bot Settings", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.bot_settings}`),
@@ -316,18 +274,12 @@ function buildRootKeyboard(omniEnabled, pendingInput) {
   ];
 }
 
-function buildBotSettingsKeyboard(omniEnabled) {
+function buildBotSettingsKeyboard() {
   return [
     [
       buildInlineKeyboardButton("Spike model", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.spike_model}`),
       buildInlineKeyboardButton("Spike reasoning", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.spike_reasoning}`),
     ],
-    ...(omniEnabled
-      ? [[
-          buildInlineKeyboardButton("Omni model", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.omni_model}`),
-          buildInlineKeyboardButton("Omni reasoning", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.omni_reasoning}`),
-        ]]
-      : []),
     [buildInlineKeyboardButton("Back", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`)],
   ];
 }
@@ -340,20 +292,10 @@ function buildStatusKeyboard() {
 }
 
 function buildWaitKeyboard() {
-  return [
-    ...chunkIntoRows(
-      WAIT_PRESETS.map((preset) =>
-        buildInlineKeyboardButton(
-          preset.label,
-          `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:w:${preset.seconds}`,
-        )),
-    ),
-    [
-      buildInlineKeyboardButton("Custom", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:w:input`),
-      buildInlineKeyboardButton("Off", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:w:off`),
-    ],
-    [buildInlineKeyboardButton("Back", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`)],
-  ];
+  return buildSharedWaitKeyboard({
+    backScreenCode: SCREEN_CODES.root,
+    callbackPrefix: TOPIC_CONTROL_PANEL_CALLBACK_PREFIX,
+  });
 }
 
 function buildSuffixKeyboard(pendingInput) {
@@ -410,18 +352,15 @@ function buildReasoningKeyboard(target, availableLevels) {
 }
 
 function buildLanguageKeyboard() {
-  return [
-    [
-      buildInlineKeyboardButton("RUS", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:l:rus`),
-      buildInlineKeyboardButton("ENG", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:l:eng`),
-    ],
-    [buildInlineKeyboardButton("Back", `${TOPIC_CONTROL_PANEL_CALLBACK_PREFIX}:n:${SCREEN_CODES.root}`)],
-  ];
+  return buildSharedLanguageKeyboard({
+    backScreenCode: SCREEN_CODES.root,
+    callbackPrefix: TOPIC_CONTROL_PANEL_CALLBACK_PREFIX,
+  });
 }
 
 function buildTopicControlPanelMarkup({
   availableModels,
-  omniEnabled = true,
+  runtimeModels = availableModels,
   pendingInput = null,
   profiles,
   screen = "root",
@@ -443,37 +382,24 @@ function buildTopicControlPanelMarkup({
   }
 
   if (screen === "bot_settings") {
-    return { inline_keyboard: buildBotSettingsKeyboard(omniEnabled) };
+    return { inline_keyboard: buildBotSettingsKeyboard() };
   }
 
   if (screen === "spike_model") {
     return { inline_keyboard: buildModelKeyboard("spike", availableModels) };
   }
 
-  if (screen === "omni_model" && omniEnabled) {
-    return { inline_keyboard: buildModelKeyboard("omni", availableModels) };
-  }
-
   if (screen === "spike_reasoning") {
     return {
       inline_keyboard: buildReasoningKeyboard(
         "spike",
-        getSupportedReasoningLevelsForModel(availableModels, profiles.spike.model),
-      ),
-    };
-  }
-
-  if (screen === "omni_reasoning" && omniEnabled) {
-    return {
-      inline_keyboard: buildReasoningKeyboard(
-        "omni",
-        getSupportedReasoningLevelsForModel(availableModels, profiles.omni.model),
+        getSupportedReasoningLevelsForModel(runtimeModels, profiles.spike.model),
       ),
     };
   }
 
   return {
-    inline_keyboard: buildRootKeyboard(omniEnabled, pendingInput),
+    inline_keyboard: buildRootKeyboard(pendingInput),
   };
 }
 
@@ -492,20 +418,14 @@ export async function loadTopicControlPanelView({
     screen === "root"
     || screen === "bot_settings"
     || screen === "spike_model"
-    || screen === "omni_model"
-    || screen === "spike_reasoning"
-    || screen === "omni_reasoning";
+    || screen === "spike_reasoning";
 
   let availableModels = [];
+  let runtimeModels = [];
   let globalPromptSuffix = null;
-  let globalSettings = null;
   let limitsSummary = null;
   let resolvedSession = session;
   let spikeProfile = {
-    model: null,
-    reasoningEffort: null,
-  };
-  let omniProfile = {
     model: null,
     reasoningEffort: null,
   };
@@ -524,23 +444,23 @@ export async function loadTopicControlPanelView({
   }
 
   if (needsRuntimeProfiles) {
-    availableModels = await loadAvailableCodexModels({
-      configPath: config.codexConfigPath,
-    });
-    globalSettings = await sessionService.getGlobalCodexSettings();
+    runtimeModels =
+      typeof sessionService.loadAvailableCodexModels === "function"
+        ? await sessionService.loadAvailableCodexModels(session)
+        : [];
+    availableModels =
+      typeof sessionService.loadVisibleCodexModels === "function"
+        ? await sessionService.loadVisibleCodexModels(session)
+        : await loadVisibleCodexModels({
+          configPath: config.codexConfigPath,
+        });
+    const globalSettings = await sessionService.getGlobalCodexSettings();
     spikeProfile = resolveCodexRuntimeProfile({
       session,
       globalSettings,
       config,
       target: "spike",
-      availableModels,
-    });
-    omniProfile = resolveCodexRuntimeProfile({
-      session,
-      globalSettings,
-      config,
-      target: "omni",
-      availableModels,
+      availableModels: runtimeModels,
     });
   }
 
@@ -556,12 +476,12 @@ export async function loadTopicControlPanelView({
 
   return {
     availableModels,
+    runtimeModels,
     globalPromptSuffix,
     limitsSummary,
     session: resolvedSession,
     profiles: {
       spike: spikeProfile,
-      omni: omniProfile,
     },
     statusText,
     waitState:
@@ -579,7 +499,7 @@ export async function loadTopicControlPanelView({
 
 export function buildTopicControlPanelPayload({
   language = DEFAULT_UI_LANGUAGE,
-  omniEnabled = true,
+  notice = null,
   pendingInput = null,
   screen = "root",
   session,
@@ -591,7 +511,7 @@ export function buildTopicControlPanelPayload({
       globalPromptSuffix: view.globalPromptSuffix,
       limitsSummary: view.limitsSummary,
       language,
-      omniEnabled,
+      notice,
       pendingInput,
       profiles: view.profiles,
       screen,
@@ -601,7 +521,7 @@ export function buildTopicControlPanelPayload({
     }),
     reply_markup: buildTopicControlPanelMarkup({
       availableModels: view.availableModels,
-      omniEnabled,
+      runtimeModels: view.runtimeModels,
       pendingInput,
       profiles: view.profiles,
       screen,
@@ -610,205 +530,110 @@ export function buildTopicControlPanelPayload({
 }
 
 export function buildTopicOnlyMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? [
-        "Use /menu inside a topic.",
-        "",
-        "This menu changes settings only for the current topic.",
-      ].join("\n")
-    : [
-        "Используй /menu внутри топика.",
-        "",
-        "Это menu меняет настройки только текущего топика.",
-      ].join("\n");
+  return buildSharedOnlyMessage({
+    command: "/menu inside a topic",
+    description: {
+      english: "This menu changes settings only for the current topic.",
+      russian: "Это menu меняет настройки только текущего топика.",
+    },
+    language,
+  });
 }
 
 export function buildPendingInputStartedMessage(kind, language = DEFAULT_UI_LANGUAGE) {
-  if (kind === "suffix_text") {
-    return isEnglish(language)
-      ? "Reply to the menu with the new topic suffix text."
-      : "Ответь на menu новым текстом topic suffix.";
-  }
-
-  return isEnglish(language)
-    ? "Reply to the menu with 45s, 2m, 600, or off."
-    : "Ответь на menu значением 45s, 2m, 600 или off.";
+  return buildSharedPendingInputStartedMessage({
+    kind,
+    language,
+    suffixText: {
+      english: "Send the next text message with the new topic suffix text.",
+      russian: "Отправь следующее текстовое сообщение новым текстом topic suffix.",
+    },
+    waitText: {
+      english: "Send 45s, 2m, 600, or off as the next text message.",
+      russian: "Отправь 45s, 2m, 600 или off следующим текстовым сообщением.",
+    },
+  });
 }
 
 export function buildPendingInputCanceledMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "Pending manual input cleared."
-    : "Ожидание ручного ввода очищено.";
-}
-
-export function buildPendingInputUnauthorizedMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "This pending input belongs to another operator."
-    : "Этот pending input принадлежит другому оператору.";
+  return buildSharedPendingInputCanceledMessage(language);
 }
 
 export function buildPendingInputNeedsTextMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "Reply with text to the menu message."
-    : "Ответь на сообщение-меню обычным текстом.";
+  return buildSharedPendingInputNeedsTextMessage(language);
 }
 
 export function buildInvalidCustomWaitMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "Invalid custom topic wait. Reply with 45s, 2m, 600, or off."
-    : "Некорректный Custom topic wait. Ответь 45s, 2m, 600 или off.";
+  return buildSharedInvalidCustomWaitMessage({
+    language,
+    scopeLabel: "topic",
+  });
 }
 
 export function buildInvalidSuffixMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "Topic suffix text is empty."
-    : "Текст topic suffix пустой.";
+  return buildSharedInvalidSuffixMessage({
+    language,
+    scopeLabel: "Topic",
+  });
 }
 
 export function buildTooLongSuffixMessage(language = DEFAULT_UI_LANGUAGE) {
-  return [
-    isEnglish(language)
-      ? "Topic suffix is too long."
-      : "Topic suffix слишком длинный.",
-    "",
-    `max_chars: ${PROMPT_SUFFIX_MAX_CHARS}`,
-  ].join("\n");
+  return buildSharedTooLongSuffixMessage({
+    language,
+    maxChars: PROMPT_SUFFIX_MAX_CHARS,
+    scopeLabel: "Topic",
+  });
 }
 
 export function buildLanguageUpdatedMessage(language = DEFAULT_UI_LANGUAGE) {
-  return [
-    isEnglish(language) ? "Interface language updated." : "Язык интерфейса обновлён.",
-    "",
-    `current: ${getLanguageLabel(language)}`,
-  ].join("\n");
+  return buildSharedLanguageUpdatedMessage({
+    currentLabel: getLanguageLabel(language),
+    language,
+  });
 }
 
 export function buildWaitUnavailableMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "Manual collection windows are unavailable right now."
-    : "Manual collection window сейчас недоступен.";
+  return buildSharedWaitUnavailableMessage(language);
 }
 
 export function buildMenuRefreshMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "Topic control panel is already current."
-    : "Topic control panel уже актуален.";
+  return buildSharedMenuRefreshMessage({
+    language,
+    scopeLabel: "Topic",
+  });
 }
 
 export function buildUnavailableModelMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "The selected model is unavailable."
-    : "Выбранный model недоступен.";
+  return buildSharedUnavailableModelMessage(language);
 }
 
 export function buildUnsupportedReasoningMessage(language = DEFAULT_UI_LANGUAGE) {
-  return isEnglish(language)
-    ? "The selected reasoning level is unsupported for the current model."
-    : "Выбранный reasoning level не поддерживается текущей model.";
+  return buildSharedUnsupportedReasoningMessage(language);
 }
 
 export function parseTopicControlCallbackData(data) {
-  const [prefix, group, ...rest] = String(data ?? "").split(":");
-  if (prefix !== TOPIC_CONTROL_PANEL_CALLBACK_PREFIX || !group) {
-    return null;
-  }
-
-  if (group === "n") {
-    return {
-      kind: "navigate",
-      screen: SCREEN_IDS[rest[0]] ?? "root",
-    };
-  }
-
-  if (group === "w") {
-    const value = rest[0] ?? "";
-    if (value === "input") {
-      return { kind: "wait_input" };
-    }
-    if (value === "off") {
-      return { kind: "wait_set", value: "off" };
-    }
-    const seconds = Number(value);
-    if (Number.isInteger(seconds) && seconds > 0) {
-      return { kind: "wait_set", value: String(seconds) };
-    }
-    return null;
-  }
-
-  if (group === "s") {
-    const value = rest[0] ?? "";
-    if (["on", "off", "clear"].includes(value)) {
-      return { kind: "suffix_set", value };
-    }
-    if (value === "input") {
-      return { kind: "suffix_input" };
-    }
-    return null;
-  }
-
-  if (group === "t") {
-    const value = rest[0] ?? "";
-    if (!["on", "off"].includes(value)) {
-      return null;
-    }
-    return { kind: "suffix_routing_set", value };
-  }
-
-  if (group === "l") {
-    const value = String(rest[0] ?? "").trim().toLowerCase();
-    if (!["rus", "eng"].includes(value)) {
-      return null;
-    }
-    return {
-      kind: "language_set",
-      value,
-    };
-  }
-
-  if (group === "m") {
-    const target = TARGET_IDS[rest[0]];
-    const value = rest[1] ?? null;
-    if (!target || !value) {
-      return null;
-    }
-    return {
-      kind: "model_set",
-      target,
-      value,
-    };
-  }
-
-  if (group === "r") {
-    const target = TARGET_IDS[rest[0]];
-    const value = rest[1] ?? null;
-    if (!target || !value) {
-      return null;
-    }
-    return {
-      kind: "reasoning_set",
-      target,
-      value,
-    };
-  }
-
-  if (group === "p" && rest[0] === "clear") {
-    return { kind: "pending_clear" };
-  }
-
-  if (group === "h" && rest[0] === "show") {
-    return { kind: "help_show" };
-  }
-
-  if (group === "cmd") {
-    const command = String(rest[0] ?? "").trim().toLowerCase();
-    if (!["compact", "purge", "interrupt"].includes(command)) {
-      return null;
-    }
-    return {
-      kind: "command_dispatch",
-      command,
-    };
-  }
-
-  return null;
+  return parseStandardControlCallbackData(data, {
+    prefix: TOPIC_CONTROL_PANEL_CALLBACK_PREFIX,
+    screenIds: SCREEN_IDS,
+    targetIds: TARGET_IDS,
+    extraGroups: {
+      t: (rest) => {
+        const value = rest[0] ?? "";
+        if (!["on", "off"].includes(value)) {
+          return null;
+        }
+        return { kind: "suffix_routing_set", value };
+      },
+      cmd: (rest) => {
+        const command = String(rest[0] ?? "").trim().toLowerCase();
+        if (!["compact", "purge", "interrupt"].includes(command)) {
+          return null;
+        }
+        return {
+          kind: "command_dispatch",
+          command,
+        };
+      },
+    },
+  });
 }

@@ -19,7 +19,7 @@ function includesId(list, value) {
     : false;
 }
 
-export function isAuthorizedForumMessageFromHuman(message, config) {
+function isAuthorizedForumMessageFromHuman(message, config) {
   if (!message?.from || message.from.is_bot) {
     return false;
   }
@@ -30,7 +30,7 @@ export function isAuthorizedForumMessageFromHuman(message, config) {
   ) && String(message.chat?.id) === config.telegramForumChatId;
 }
 
-export function isAuthorizedForumMessageFromBot(message, config) {
+function isAuthorizedForumMessageFromBot(message, config) {
   if (!message?.from || !message.from.is_bot) {
     return false;
   }
@@ -178,44 +178,82 @@ function parseLeadingQuotedValue(text) {
 }
 
 export function parseNewTopicCommandArgs(rawArgs) {
-  const trimmed = rawArgs.trim();
-  if (!trimmed) {
-    return {
-      bindingPath: null,
-      title: "",
-    };
+  let remainder = rawArgs.trim();
+  let bindingPath = null;
+  let executionHostId = null;
+
+  while (remainder) {
+    const prefixEntries = [
+      { field: "bindingPath", prefixes: ["cwd=", "path=", "--cwd=", "--path="] },
+      { field: "executionHostId", prefixes: ["host=", "--host="] },
+    ];
+    const matchedEntry = prefixEntries.find(({ prefixes }) =>
+      prefixes.some((prefix) => remainder.startsWith(prefix))
+    );
+    if (!matchedEntry) {
+      break;
+    }
+
+    const matchedPrefix = matchedEntry.prefixes.find((prefix) =>
+      remainder.startsWith(prefix)
+    );
+    const valueSource = remainder.slice(matchedPrefix.length).trimStart();
+    if (!valueSource) {
+      if (matchedEntry.field === "bindingPath") {
+        bindingPath = null;
+      } else {
+        executionHostId = null;
+      }
+      remainder = "";
+      break;
+    }
+
+    const quoted = parseLeadingQuotedValue(valueSource);
+    const value = quoted
+      ? quoted.value.trim() || null
+      : valueSource.split(/\s+/u)[0]?.trim() || null;
+    const rest = quoted
+      ? quoted.rest
+      : valueSource.slice(String(value ?? "").length).trimStart();
+
+    if (matchedEntry.field === "bindingPath" && bindingPath === null) {
+      bindingPath = value;
+    }
+    if (matchedEntry.field === "executionHostId" && executionHostId === null) {
+      executionHostId = value;
+    }
+    remainder = rest;
   }
 
-  const prefixes = ["cwd=", "path=", "--cwd=", "--path="];
-  const matchedPrefix = prefixes.find((prefix) => trimmed.startsWith(prefix));
-  if (!matchedPrefix) {
-    return {
-      bindingPath: null,
-      title: trimmed,
-    };
-  }
+  const quotedTitle = parseLeadingQuotedValue(remainder);
+  const title = quotedTitle && !quotedTitle.rest
+    ? quotedTitle.value.trim()
+    : remainder.trim();
 
-  const remainder = trimmed.slice(matchedPrefix.length).trimStart();
-  if (!remainder) {
-    return {
-      bindingPath: null,
-      title: "",
-    };
-  }
-
-  const quoted = parseLeadingQuotedValue(remainder);
-  if (quoted) {
-    return {
-      bindingPath: quoted.value.trim() || null,
-      title: quoted.rest,
-    };
-  }
-
-  const tokens = remainder.split(/\s+/u);
-  const bindingPath = tokens[0]?.trim() || null;
   return {
     bindingPath,
-    title: tokens.slice(1).join(" ").trim(),
+    executionHostId,
+    title,
+  };
+}
+
+export function parseHostCommandArgs(rawArgs) {
+  const trimmed = String(rawArgs ?? "").trim();
+  if (!trimmed) {
+    return {
+      hostId: null,
+    };
+  }
+
+  const quoted = parseLeadingQuotedValue(trimmed);
+  if (quoted) {
+    return {
+      hostId: quoted.value.trim() || null,
+    };
+  }
+
+  return {
+    hostId: trimmed.split(/\s+/u)[0]?.trim() || null,
   };
 }
 

@@ -10,7 +10,7 @@ import {
   waitFor,
 } from "../test-support/prompt-flow-fixtures.js";
 
-test("handleIncomingMessage appends configured prompt suffix before starting a run", async () => {
+test("handleIncomingMessage keeps suffix guidance out of the user prompt body", async () => {
   const result = await handleIncomingMessage({
     api: {
       async sendMessage() {
@@ -21,8 +21,8 @@ test("handleIncomingMessage appends configured prompt suffix before starting a r
     config,
     message: {
       text: "run a quick task",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -34,7 +34,7 @@ test("handleIncomingMessage appends configured prompt suffix before starting a r
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:77",
+          session_key: "-1001234567890:77",
           prompt_suffix_enabled: true,
           prompt_suffix_text:
             "P.S.\nKeep it short and never overcomplicate anything.",
@@ -45,7 +45,7 @@ test("handleIncomingMessage appends configured prompt suffix before starting a r
       async startPromptRun({ prompt }) {
         assert.equal(
           prompt,
-          "run a quick task\n\nP.S.\nKeep it short and never overcomplicate anything.",
+          "User Prompt:\nrun a quick task",
         );
         return { ok: true };
       },
@@ -55,19 +55,21 @@ test("handleIncomingMessage appends configured prompt suffix before starting a r
   assert.equal(result.reason, "prompt-started");
 });
 
-test("handleIncomingMessage lets topic prompt suffix override global prompt suffix", async () => {
+test("handleIncomingMessage reports a bound host as unavailable by name", async () => {
+  const sent = [];
+
   const result = await handleIncomingMessage({
     api: {
-      async sendMessage() {
-        throw new Error("should not send reply on successful prompt start");
+      async sendMessage(payload) {
+        sent.push(payload);
       },
     },
     botUsername: "gatewaybot",
     config,
     message: {
       text: "run a quick task",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -79,7 +81,105 @@ test("handleIncomingMessage lets topic prompt suffix override global prompt suff
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:77",
+          session_key: "-1001234567890:77",
+          execution_host_id: "worker-a",
+          execution_host_label: "worker-a",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        return {
+          ok: false,
+          reason: "host-unavailable",
+          hostId: "worker-a",
+          hostLabel: "worker-a",
+        };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "host-unavailable");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Хост worker-a сейчас недоступен/u);
+});
+
+test("handleIncomingMessage fails closed when a topic lost its saved host binding", async () => {
+  const sent = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "run a quick task",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 770,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureSessionForMessage() {
+        return {
+          session_key: "-1001234567890:770",
+          created_via: "topic/implicit-attach",
+          execution_host_id: null,
+          execution_host_label: null,
+          execution_host_last_failure: "binding-missing",
+          ui_language: "rus",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        throw new Error("should not start a run without a saved host binding");
+      },
+    },
+  });
+
+  assert.equal(result.reason, "missing-topic-binding");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /нет безопасно сохранённой привязки/u);
+});
+
+test("handleIncomingMessage keeps topic suffix overrides out of the user prompt body", async () => {
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage() {
+        throw new Error("should not send reply on successful prompt start");
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "run a quick task",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_thread_id: 77,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:77",
           prompt_suffix_enabled: true,
           prompt_suffix_text: "TOPIC\nKeep it short in this thread.",
         };
@@ -95,7 +195,7 @@ test("handleIncomingMessage lets topic prompt suffix override global prompt suff
       async startPromptRun({ prompt }) {
         assert.equal(
           prompt,
-          "run a quick task\n\nTOPIC\nKeep it short in this thread.",
+          "User Prompt:\nrun a quick task",
         );
         return { ok: true };
       },
@@ -116,8 +216,8 @@ test("handleIncomingMessage suppresses both topic and global suffixes when topic
     config,
     message: {
       text: "run a quick task",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 77,
     },
     serviceState: {
@@ -129,7 +229,7 @@ test("handleIncomingMessage suppresses both topic and global suffixes when topic
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:77",
+          session_key: "-1001234567890:77",
           prompt_suffix_topic_enabled: false,
           prompt_suffix_enabled: true,
           prompt_suffix_text: "TOPIC\nKeep it short in this thread.",
@@ -144,7 +244,7 @@ test("handleIncomingMessage suppresses both topic and global suffixes when topic
     },
     workerPool: {
       async startPromptRun({ prompt }) {
-        assert.equal(prompt, "run a quick task");
+        assert.equal(prompt, "User Prompt:\nrun a quick task");
         return { ok: true };
       },
     },
@@ -175,8 +275,8 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_id: 501,
       message_thread_id: 77,
     },
@@ -184,8 +284,8 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:77",
-          chat_id: "-1003577434463",
+          session_key: "-1001234567890:77",
+          chat_id: "-1001234567890",
           topic_id: "77",
           prompt_suffix_enabled: false,
           prompt_suffix_text: null,
@@ -203,8 +303,8 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
     },
     workerPool: {
       async startPromptRun({ prompt, session, attachments }) {
-        assert.equal(prompt, "Что на фото?");
-        assert.equal(session.session_key, "-1003577434463:77");
+        assert.equal(prompt, "User Prompt:\nЧто на фото?");
+        assert.equal(session.session_key, "-1001234567890:77");
         assert.equal(attachments.length, 1);
         assert.equal(attachments[0].file_path, "/tmp/incoming-photo.jpg");
         return { ok: true };
@@ -215,7 +315,7 @@ test("handleIncomingMessage starts codex run for captioned photo in a topic", as
   assert.equal(result.reason, "prompt-started");
 });
 
-test("handleIncomingMessage appends prompt suffix to captioned media prompts", async () => {
+test("handleIncomingMessage keeps suffix guidance out of captioned media prompts", async () => {
   const result = await handleIncomingMessage({
     api: {
       async sendMessage() {
@@ -230,8 +330,8 @@ test("handleIncomingMessage appends prompt suffix to captioned media prompts", a
         { file_id: "small-photo", file_unique_id: "small", file_size: 10 },
         { file_id: "large-photo", file_unique_id: "large", file_size: 20 },
       ],
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_id: 501,
       message_thread_id: 77,
     },
@@ -244,8 +344,8 @@ test("handleIncomingMessage appends prompt suffix to captioned media prompts", a
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:77",
-          chat_id: "-1003577434463",
+          session_key: "-1001234567890:77",
+          chat_id: "-1001234567890",
           topic_id: "77",
           prompt_suffix_enabled: true,
           prompt_suffix_text: "P.S.\nAnswer briefly.",
@@ -265,7 +365,7 @@ test("handleIncomingMessage appends prompt suffix to captioned media prompts", a
       async startPromptRun({ prompt, attachments }) {
         assert.equal(
           prompt,
-          "Что на фото?\n\nP.S.\nAnswer briefly.",
+          "User Prompt:\nЧто на фото?",
         );
         assert.equal(attachments.length, 1);
         return { ok: true };
@@ -284,24 +384,24 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
     longPromptThresholdChars: 3000,
   });
   const session = {
-    session_key: "-1003577434463:86",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:86",
+    chat_id: "-1001234567890",
     topic_id: "86",
     lifecycle_state: "active",
     prompt_suffix_enabled: false,
     prompt_suffix_text: null,
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   };
   const firstMessage = {
     caption: "Разбери оба файла вместе.",
     media_group_id: "docs-1",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 970,
     message_thread_id: 86,
     document: {
@@ -314,8 +414,8 @@ test("handleIncomingMessage auto-assembles Telegram media groups into one run", 
   };
   const secondMessage = {
     media_group_id: "docs-1",
-    from: { id: 5825672398, is_bot: false },
-    chat: { id: -1003577434463 },
+    from: { id: 123456789, is_bot: false },
+    chat: { id: -1001234567890 },
     message_id: 971,
     message_thread_id: 86,
     document: {
@@ -430,8 +530,8 @@ test("handleIncomingMessage queues a follow-up when live steer is temporarily un
     config,
     message: {
       text: "докинь это в текущий run",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_id: 780,
       message_thread_id: 91,
     },
@@ -444,8 +544,8 @@ test("handleIncomingMessage queues a follow-up when live steer is temporarily un
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:91",
-          chat_id: "-1003577434463",
+          session_key: "-1001234567890:91",
+          chat_id: "-1001234567890",
           topic_id: "91",
           ui_language: "rus",
           prompt_suffix_enabled: false,
@@ -462,7 +562,7 @@ test("handleIncomingMessage queues a follow-up when live steer is temporarily un
         return { ok: false, reason: "busy" };
       },
       async steerActiveRun() {
-        return { ok: false, reason: "transport-recovering" };
+        return { ok: false, reason: "steer-unavailable" };
       },
     },
   });
@@ -470,7 +570,7 @@ test("handleIncomingMessage queues a follow-up when live steer is temporarily un
   assert.equal(result.reason, "steer-deferred");
   assert.equal(queuedPayloads.length, 1);
   assert.equal(queuedPayloads[0].rawPrompt, "докинь это в текущий run");
-  assert.equal(queuedPayloads[0].prompt, "докинь это в текущий run");
+  assert.equal(queuedPayloads[0].prompt, "User Prompt:\nдокинь это в текущий run");
   assert.equal(queuedPayloads[0].replyToMessageId, 780);
   assert.match(sent[0].text, /live steer недоступен/u);
   assert.match(sent[0].text, /следующим prompt/u);
@@ -490,8 +590,8 @@ test("handleIncomingMessage queues a follow-up instead of sending the generic bu
     config,
     message: {
       text: "докинь несмотря на временный steer fail",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_id: 782,
       message_thread_id: 93,
     },
@@ -504,8 +604,8 @@ test("handleIncomingMessage queues a follow-up instead of sending the generic bu
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:93",
-          chat_id: "-1003577434463",
+          session_key: "-1001234567890:93",
+          chat_id: "-1001234567890",
           topic_id: "93",
           ui_language: "rus",
           prompt_suffix_enabled: false,
@@ -533,6 +633,63 @@ test("handleIncomingMessage queues a follow-up instead of sending the generic bu
   assert.match(sent[0].text, /live steer недоступен/u);
 });
 
+test("handleIncomingMessage queues a follow-up after steer-timeout instead of wedging the topic", async () => {
+  const sent = [];
+  const queuedPayloads = [];
+
+  const result = await handleIncomingMessage({
+    api: {
+      async sendMessage(payload) {
+        sent.push(payload);
+      },
+    },
+    botUsername: "gatewaybot",
+    config,
+    message: {
+      text: "докинь это после зависшего steer",
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
+      message_id: 783,
+      message_thread_id: 94,
+    },
+    serviceState: {
+      ignoredUpdates: 0,
+      handledCommands: 0,
+      lastCommandName: null,
+      lastCommandAt: null,
+    },
+    sessionService: {
+      async ensureRunnableSessionForMessage() {
+        return {
+          session_key: "-1001234567890:94",
+          chat_id: "-1001234567890",
+          topic_id: "94",
+          ui_language: "rus",
+          prompt_suffix_enabled: false,
+          prompt_suffix_text: null,
+        };
+      },
+      async enqueuePromptQueue(_session, payload) {
+        queuedPayloads.push(payload);
+        return { position: 1 };
+      },
+    },
+    workerPool: {
+      async startPromptRun() {
+        return { ok: false, reason: "busy" };
+      },
+      async steerActiveRun() {
+        return { ok: false, reason: "steer-timeout" };
+      },
+    },
+  });
+
+  assert.equal(result.reason, "steer-deferred");
+  assert.equal(queuedPayloads.length, 1);
+  assert.equal(queuedPayloads[0].rawPrompt, "докинь это после зависшего steer");
+  assert.match(sent[0].text, /live steer недоступен/u);
+});
+
 test("handleIncomingMessage immediately starts the queued follow-up when the busy run already cleared", async () => {
   const drainCalls = [];
 
@@ -546,8 +703,8 @@ test("handleIncomingMessage immediately starts the queued follow-up when the bus
     config,
     message: {
       text: "докинь это сразу после гонки",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_id: 781,
       message_thread_id: 92,
     },
@@ -560,8 +717,8 @@ test("handleIncomingMessage immediately starts the queued follow-up when the bus
     sessionService: {
       async ensureRunnableSessionForMessage() {
         return {
-          session_key: "-1003577434463:92",
-          chat_id: "-1003577434463",
+          session_key: "-1001234567890:92",
+          chat_id: "-1001234567890",
           topic_id: "92",
           ui_language: "rus",
           prompt_suffix_enabled: false,
@@ -596,5 +753,5 @@ test("handleIncomingMessage immediately starts the queued follow-up when the bus
 
   assert.equal(result.reason, "prompt-started");
   assert.equal(drainCalls.length, 1);
-  assert.equal(drainCalls[0].sessionKey, "-1003577434463:92");
+  assert.equal(drainCalls[0].sessionKey, "-1001234567890:92");
 });

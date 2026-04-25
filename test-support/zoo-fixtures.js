@@ -1,23 +1,19 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { mkdtempForTest } from "./tmp.js";
 
 export function buildConfig(stateRoot) {
   return {
     stateRoot,
-    atlasWorkspaceRoot: "/home/bloob/atlas",
+    workspaceRoot: "/srv/codex-workspace",
     codexBinPath: "codex",
-    telegramAllowedUserId: "5825672398",
-    telegramAllowedUserIds: ["5825672398"],
+    telegramAllowedUserId: "123456789",
+    telegramAllowedUserIds: ["123456789"],
     telegramAllowedBotIds: ["8603043042"],
-    telegramForumChatId: "-1003577434463",
+    telegramForumChatId: "-1001234567890",
   };
 }
 
-export async function createStateRoot() {
-  return fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-zoo-service-"),
-  );
+export async function createStateRoot(t = null) {
+  return mkdtempForTest(t, "codex-telegram-gateway-zoo-service-");
 }
 
 export function createApiStub() {

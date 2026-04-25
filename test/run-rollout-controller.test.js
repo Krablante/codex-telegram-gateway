@@ -32,7 +32,7 @@ test("requestRollout keeps a pending request until leadership is available", asy
     config: {},
     collectOwnedSessionKeysImpl() {
       calls.push("collect-owned");
-      return ["-1003577434463:2203"];
+      return ["-1001234567890:2203"];
     },
     createGenerationId() {
       return "gen-next";
@@ -100,7 +100,7 @@ test("requestRollout keeps a pending request until leadership is available", asy
       currentGenerationId: "gen-next",
       targetGenerationId: "gen-next",
       retiringGenerationId: "gen-current",
-      retainedSessionKeys: ["-1003577434463:2203"],
+      retainedSessionKeys: ["-1001234567890:2203"],
     }],
     "release-leadership",
   ]);

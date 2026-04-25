@@ -1,5 +1,4 @@
 import process from "node:process";
-import { EventEmitter } from "node:events";
 import readline from "node:readline";
 import readlinePromises from "node:readline/promises";
 
@@ -45,7 +44,7 @@ export async function promptPassword(
   }
 
   return new Promise((resolve, reject) => {
-    const emitterInput = /** @type {EventEmitter} */ (stdin);
+    const emitterInput = /** @type {import("node:events").EventEmitter} */ (stdin);
     const previousRawMode = Boolean(stdin.isRaw);
     let finished = false;
     let secret = "";

@@ -1,20 +1,20 @@
 # Telegram Surface
 
-## Topic Model
+## Topic model
 
 - one Telegram topic maps to one session
+- each topic session keeps an immutable `execution_host_id` binding
 - normal prompts go to `Spike`
 - operator private chat is a separate emergency lane
-- when `/auto` is active, `Omni` becomes the operator-facing supervisor for that topic
 
-## Command Surface
-
-Spike-only mode:
+## Command surface
 
 - `/help`
 - `/guide`
 - `/clear`
-- `/new`
+- `/new [host=<id>] [cwd=...|path=...] <title>`
+- `/hosts`
+- `/host`
 - `/zoo`
 - `/status`
 - `/limits`
@@ -31,77 +31,52 @@ Spike-only mode:
 - `/compact`
 - `/purge`
 
-`/help` sends the visual help card as two separate file attachments.
+## General / global surface
 
-`/diff` is git-backed on purpose. If the current binding points at a plain folder instead of a repo, the bot now returns a small inline unavailable reply instead of throwing the update.
+`General` is the lobby.
 
-If a prompt attachment is larger than the current direct bot-download ceiling, the bot now replies inline that the file is too large and acknowledges the update instead of poisoning the poll cycle with the same failing Telegram update forever. Truly large Telegram-native file intake remains future Local Bot API work.
+- `/global` opens one persistent global menu there
+- direct `/new host=<id> ...` binds the requested host explicitly; direct `/new ...` without `host=` binds the configured current/default host, normally `CURRENT_HOST_ID`
+- `New Topic` skips host choice only when the host registry has exactly one host; with multiple registered hosts it keeps the picker and offers only ready hosts, even if only one host is currently ready
+- `Hosts` shows the fleet overview
+- `Bot Settings` exposes global Spike model/reasoning plus the separate `/compact` summarizer profile
+- model menus there show only list-visible models from the current Codex catalog/cache
+- `Guide`, `Help`, `Zoo`, and `Clear` are available from the same menu
+- the selected global UI language also drives `General`-only replies such as `/guide`, `/help`, `/wait global ...`, and `/status`
+- menu text input is single-menu-first: after tapping Custom/Set text/New Topic, the next plain text message from the requesting operator is consumed; reply-to-menu still works as compatibility
+- pending-input prompts, validation errors, and confirmations are rendered inside the menu message instead of as separate bot messages when the menu can be edited
 
-`/guide` works in `General` only and sends the beginner PDF guidebook in the selected `General` language.
+`/clear` works in `General` only. It preserves the active global menu and removes tracked General clutter.
 
-`/clear` works in `General` only. It preserves the active global menu message and its current screen, then removes the tracked General clutter that the bot knows about. Successful cleanup stays silent; separate General messages are reserved for real cleanup errors.
+## Topic / menu surface
 
-`/zoo` ensures that one dedicated Zoo topic exists, opens or recreates the pinned Zoo menu there, syncs that topic to the caller UI language, and keeps that topic reserved for Zoo-only flows.
+`/menu` works only inside a topic.
 
-Zoo pets are stored against resolved project-root directories, not arbitrary file paths, and `Remove` is disabled while a pet refresh is in flight.
+Current topic panel coverage:
 
-Zoo is menu-only in the normal case: the pinned menu message carries the add-project flow, confirmation flow, pet card, refresh state, and root-list pagination. Separate topic messages are reserved for actual errors.
-
-Zoo cards are localized to the Zoo topic language, use explicit creature personality and stable temperament roles, render the gameplay stats in a monospaced block above the summary text with previous-vs-current trend arrows, keep findings out of the Telegram card itself, intentionally keep the inline buttons in English, assign new pets from a random unused-first identity pool so the stable does not fill in a predictable list order, normalize duplicate repo names to path-based labels with `[priv]` or `[pub]` when private/public twins exist, and place the lower narrative/detail section inside a collapsed-by-default expandable quote.
-
-Telegram bots do not have true arbitrary text animation for editable menu panels, so Zoo uses sparse ASCII frame swaps instead of high-frequency animation. While a pet detail screen stays open, the ASCII pose should keep moving slowly even when the pet is idle. During refresh, the first frame may use a simple generic status, but later refresh frames should fall into the pet's species-plus-temperament voice. The creature pool and temperament pool are intentionally broad so different repos can land on different pet styles, roles, and animation frames.
-
-`/limits` shows the current Codex limits snapshot. On capped accounts it reports the live `5h` and `7d` windows; on unlimited accounts it says so directly instead of showing an unavailable placeholder.
-
-`/global` works only in `General`. It opens one persistent inline-button control panel there.
-
-The panel keeps the menu message alive and sends separate status/error messages into `General` after each applied action.
-
-The root screen now starts with `Bot Settings` and `Language`, then puts `Guide` and `Help` directly beneath them before the lower `Wait` / `Suffix` and `Zoo` / `Clear` operator rows.
-
-The selected panel language also drives `General`-only replies for commands that do not have a topic session, such as `/help`, `/status`, `/wait global ...`, and other global-setting commands.
-
-The service also tracks incoming and outgoing `General` messages in a small ledger so `/clear` can remove them later while preserving the current menu message.
-
-Current panel coverage:
-
-- `/wait global ...`
-- `/suffix global ...`
-- `Bot Settings` submenu for Spike, Omni, and the global `/compact` summarizer model/reasoning screens
-- live limits summary on the root screen
-- interface language switch for the `General` control panel
-- `Zoo` button that opens or refreshes the dedicated Zoo topic/menu
-- `Clear` button that runs the same General cleanup as `/clear`
-- `Guide` button that sends the same `/guide` beginner PDF from `General`
-- `/help` card delivery from the same menu
-
-Stable values are handled directly by buttons. Free-form values such as the global suffix text or a custom global wait value are entered by replying to the pinned menu message.
-If a model change makes the previously saved reasoning level unsupported in the same scope, that stale reasoning value is cleared automatically.
-
-`/menu` works only inside a topic. It opens or recreates one persistent topic-local control panel there, repins it, and removes the replaced menu. Telegram-style command suggestions such as `/menu@YourBot` are accepted too. Telegram may still emit its own pin service notice, but the gateway no longer guesses and deletes the next message id just to hide it.
-
-New topics created via `/new` now get that local menu automatically right after the bootstrap message.
-Explicit `/new cwd=...` bindings also accept quoted paths, so Windows paths with spaces work too, for example `/new cwd="C:/Users/Example User/Source Repos" Audit topic`.
-
-Current local panel coverage:
-
-- inline `Status` screen with the same status text as `/status`, rendered inside the menu itself
-- `/wait ...` for the current topic
-- `/suffix ...` for the current topic
-- `/suffix topic on|off`
-- `Bot Settings` submenu for topic-local Spike and Omni model/reasoning screens
-- compact effective bot summaries on the root screen, rendered like `spike: gpt-5.4 (xhigh)`
-- topic command buttons for `/compact`, `/interrupt`, and `/purge`
+- `Status`
+- topic-local `Wait`
+- topic-local `Suffix`
+- `suffix topic on|off`
+- `Bot Settings` for topic-local Spike model/reasoning
+- host-bound topic model menus resolve against that bound host's Codex catalog when the host publishes its own `codex_config_path`; on `controller`, remote-host catalogs ride through mirrored `models_cache.json` snapshots under `codex-space/hosts/<host-id>/rendered/`
+- command buttons for `Compact`, `Interrupt`, and `Purge`
 - live limits summary on the root screen
 
-Spike + Omni mode adds:
+Explicit `/menu` always respawns a fresh visible menu near the current tail, repins it, and removes the replaced one.
 
-- `/auto`
-- `/omni`
-- `/omni_model`
-- `/omni_reasoning`
+After `/purge`, old topic-menu callbacks are treated as expired. The same topic remains usable: the next real plain prompt or flushed non-empty `/q` runnable prompt reactivates a fresh session with cleared run continuity and preserved host/workspace/UI binding. Blank `/q` help, buffered fragments, and attachment-only collection do not pre-create a runnable session.
 
-## Prompt Buffering
+## Prompt ingress
+
+- plain text inside a topic starts a run
+- the default `exec-json` backend live-steers a busy plain follow-up by accepting it, interrupting the active exec process, then resuming the same logical run with the merged prompt; an interrupted child exit from that requested steer is not shown as a user-visible incomplete-stream failure unless Codex emitted an explicit fatal JSONL event
+- if live steer cannot be accepted or recovered, the gateway falls back to the next prompt queue instead of wedging the topic
+- if `codex exec` hits context-window exhaustion, the worker compacts once using the state-contract source selector, then retries once as a fresh exec-json thread before surfacing failure
+- attachment-first prompts are buffered until the next text arrives
+- long Telegram-split prompts and media groups are assembled before start
+
+## Wait windows
 
 Local one-shot mode:
 
@@ -109,8 +84,6 @@ Local one-shot mode:
 - `/wait 1m`
 - applies only to the next prompt in the current topic
 - resets automatically after that prompt is sent
-
-`/new` inherits the current interface language from the source topic, or from the `General` control panel when it is launched there.
 
 Global persistent mode:
 
@@ -125,22 +98,16 @@ Rules:
 - each new fragment resets the timer
 - `Все`, `Всё`, or `All` flushes the active buffered prompt immediately
 
-## Prompt Queue
+## Prompt queue
 
-- `/q <text>` — put a Spike prompt into the topic queue
-- `/q status` — show queued items with short previews
-- `/q delete <position>` — remove one queued item by 1-based position
-- plain follow-up text during an active Spike run is live-steered into that same run; if live steer hits a short transient failure, the gateway retries briefly, and only then queues the follow-up as the next prompt instead of dropping it behind a generic busy reply
-- queued prompts may include the same Telegram attachments as normal prompts
-- attachment-only `/q` files stay reserved for the next `/q ...` text and are not consumed by a plain direct Spike prompt
-- long `/q ...` messages and media groups use the same fragment buffering path before they are queued
-- if nothing is running in the topic and the queue was empty, `/q` is enqueued and then drained immediately, so it starts a new run right away
-- if a run is still in the short finalizing window, `/q` stays queued and starts on the next drain after teardown
-- otherwise queued prompts start in FIFO order right after the current run finishes
-- `/q` is Spike-only and stays unavailable while `/auto` owns the topic
-- blocked human Spike commands during active `/auto` now reply explicitly instead of disappearing silently
+- `/q <text>` — request explicit next-turn work; if the topic is idle it may start immediately, otherwise it waits FIFO
+- `/q status` — show queued items with previews
+- `/q delete <position>` — remove one queued item
+- queued prompts may include attachments
+- attachment-only `/q` files are reserved for the next `/q ...` text and are not consumed by a plain direct prompt
+- the queue drains in FIFO order after the active run finishes
 
-## Prompt Suffixes
+## Prompt suffixes and prompt contract
 
 - `/suffix <text>` — topic-local suffix
 - `/suffix global <text>` — persistent global suffix
@@ -149,40 +116,58 @@ Rules:
 
 Topic suffix overrides global suffix.
 
-Recommended persistent global suffix:
+This is the canonical prompt contract:
 
-- keep the existing concise operator style guidance
-- explicitly allow tools, MCP, and GPT-5.4 subagents
-- point Codex at `pitlane` for code navigation, `tavily` for fresh web research, `context7` for library docs, and `requests` for direct HTTP/API fetches
-- for container-backed MCP tools like `pitlane` and `large_file`, teach Codex the workspace mirror when the deploy uses one, for example a host path mapping into `/workspace/...`
+- stable routing/file-delivery/shared-memory guidance is rendered as a host-aware `Context:` block for each run
+- exec-json prepends that block to stdin before the rendered `User Prompt:`
+- fallback app-server sends the same block as thread-level `baseInstructions`
+- the effective saved `Work Style` rides in the same block too
+- the user-turn body stays minimal and only carries `User Prompt:`
 
-## Runtime Controls
+The `Context:` block is behavioral, not an inventory dump. It tells the agent:
+
+- which Telegram topic is the default delivery target
+- which bound host and cwd to use
+- to report host unavailability instead of silently rebinding
+- the `/workspace/workspace` mirror root plus current mirrored cwd for container-backed MCPs
+- how to send files back through Telegram
+- where to find shared and bound-host operator memory when needed
+- when to lazily read the per-topic context file for extra routing/detail
+
+When thread-level context lists `telegram-file` send roots, that line constrains only `telegram-file` delivery sources. It is not a general filesystem sandbox.
+
+## Runtime controls
 
 Spike:
 
-- `/model [show|list|clear|<slug>]`
-- `/model global [show|list|clear|<slug>]`
-- `/reasoning [show|list|clear|<level>]`
-- `/reasoning global [show|list|clear|<level>]`
+- `/model [list|clear|<slug>]`
+- `/model global [list|clear|<slug>]`
+- `/reasoning [list|clear|<level>]`
+- `/reasoning global [list|clear|<level>]`
 
-Omni:
+Rules:
 
-- `/omni_model [show|list|clear|<slug>]`
-- `/omni_model global [show|list|clear|<slug>]`
-- `/omni_reasoning [show|list|clear|<level>]`
-- `/omni_reasoning global [show|list|clear|<level>]`
+- model menus and `/model list` show only list-visible models from the current Codex catalog/cache
+- hidden/internal models stay out of the operator surface
+- stale saved model overrides fall back to an available default
+- reasoning choices are limited to levels supported by the currently resolved model
 
-`/compact` uses a separate global model/reasoning pair from `General -> /global -> Bot Settings`. That profile is menu-only today and affects only the temporary summarizer that rebuilds `active-brief.md`, including still-active user-specific rules and delivery instructions when they are present in the exchange log.
+`/compact` uses a separate global model/reasoning pair from `General -> /global -> Bot Settings`. This is a gateway compaction command; the worker does not rely on sending `/compact` into noninteractive `codex exec --json resume`.
 
-`/status` shows the effective profile after topic/global/default merge and includes the same live limits summary that the root menus use.
+`/interrupt` is a stop request. The immediate reply only confirms the request was accepted; the later topic reply or `interrupted` status confirms the run actually settled.
 
-`/status` now separates configured limits from live rollout limits when they differ:
+`/status` shows the active backend, effective model/reasoning after topic/global/default merge, the live limits summary, and configured context-pressure knobs such as the auto-compact threshold. Live Spike runs pass those knobs through to Codex; gateway `/compact` uses its own summarizer profile and raises native auto-compact above the context window so bounded-source fallback remains visible to the gateway.
 
-- `context window` and `auto-compact` come from the current Codex config file
-- `effective context window` appears only when the active session snapshot is running under an older or different live window
-- token usage lines still reflect the live run snapshot
+When the Codex profile sets:
 
-## Rendering And Delivery
+```toml
+model_context_window = 258000
+model_auto_compact_token_limit = 240000
+```
+
+the status view surfaces the configured window and threshold so operators can confirm the live context-pressure policy without opening the host config by hand. If an already-running old fallback rollout reports a smaller actual window, `/status` keeps the configured window in the top summary and shows the rollout-reported value separately as `effective context window`.
+
+## Rendering and delivery
 
 Visible replies are normalized into Telegram-safe HTML.
 
@@ -198,14 +183,31 @@ Preserved well:
 
 Transport-specific rules:
 
-- local file refs collapse to short labels instead of leaking full host paths
+- local file refs collapse to short labels instead of leaking long host paths
 - topic replies prefer replying to the triggering message, but fall back to a plain topic send if that reply target disappeared
+- default exec-json visible progress comes from main-run Codex natural-language `agent_message` progress notes and `reasoning` summaries
+- fallback app-server progress can use protocol commentary agent messages while debugging that backend
+- final replies come from the primary run final answer
+- plan/todo, file-change, tool, web-search, command, and subagent events are internal activity and must not be rendered as thoughts
+- if a run emits no visible natural-language progress, the progress bubble stays on a neutral localized status; liveness belongs in `/status` and runtime events, not synthetic thought text or internal recovery labels
 - fenced `telegram-file` blocks with `action: send` trigger file delivery into the current topic
-- delivery roots are limited to the current worktree, the session state dir, and the system temp dir
+- local delivery roots are limited to the current worktree and the per-session state dir; remote delivery roots are limited to the translated bound-host worktree/cwd roots; system temp delivery is debug-only via `CODEX_ALLOW_SYSTEM_TEMP_DELIVERY=1`
+- on host-bound topics, `telegram-file path:` must be an absolute path on the bound host
 
-## UI Language
+## UI language
 
 - `/language rus`
 - `/language eng`
 
-This affects help, status, progress/failure text, and other operator-facing replies.
+General uses the global menu language. Work topics use the topic's stored language.
+
+The selected language covers the visible operator surface:
+
+- `/help` card assets
+- `/guide` PDF source and generated file name
+- menus and pending-input prompts
+- `/status`, `/limits`, `/wait`, `/suffix`, `/model`, `/reasoning`, `/hosts`, and `/host` replies
+- progress/failure text from worker runs
+- Telegram command catalog entries, with English as the default catalog and Russian under Telegram `language_code=ru`
+
+Known protocol aliases such as `All`, `Все`, and `Всё` may be shown in both languages because all three forms are valid flush commands.

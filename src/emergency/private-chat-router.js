@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import { splitTelegramReply } from "../transport/telegram-reply-normalizer.js";
@@ -171,6 +172,19 @@ function mergeAttachments(existing = [], incoming = []) {
   return merged;
 }
 
+async function removeAttachmentFiles(attachments = []) {
+  const filePaths = new Set(
+    (Array.isArray(attachments) ? attachments : [])
+      .map((attachment) => String(attachment?.file_path || "").trim())
+      .filter(Boolean),
+  );
+  for (const filePath of filePaths) {
+    await fs.rm(filePath, { force: true }).catch((error) => {
+      console.warn(`emergency pending attachment cleanup failed for ${filePath}: ${error.message}`);
+    });
+  }
+}
+
 function formatAttachmentForPrompt(attachment) {
   const detailParts = [];
   if (attachment.mime_type) {
@@ -258,12 +272,13 @@ export class EmergencyPrivateChatRouter {
     return Boolean(this.normalRunState?.hasActiveRuns?.());
   }
 
-  clearExpiredPendingAttachments() {
+  async clearExpiredPendingAttachments() {
     if (
       this.pendingAttachments.length > 0 &&
       this.pendingAttachmentsExpireAt > 0 &&
       this.pendingAttachmentsExpireAt <= this.now()
     ) {
+      await removeAttachmentFiles(this.pendingAttachments);
       this.pendingAttachments = [];
       this.pendingAttachmentsExpireAt = 0;
     }
@@ -293,7 +308,8 @@ export class EmergencyPrivateChatRouter {
     }
   }
 
-  clearPendingAttachments() {
+  async clearPendingAttachments() {
+    await removeAttachmentFiles(this.pendingAttachments);
     this.pendingAttachments = [];
     this.pendingAttachmentsExpireAt = 0;
   }
@@ -303,7 +319,7 @@ export class EmergencyPrivateChatRouter {
     clearPending = true,
   } = {}) {
     if (clearPending) {
-      this.clearPendingAttachments();
+      await this.clearPendingAttachments();
     }
 
     if (this.activeRun) {
@@ -349,11 +365,11 @@ export class EmergencyPrivateChatRouter {
       return { handled: false, reason: "not-emergency-private-chat" };
     }
 
-    this.clearExpiredPendingAttachments();
+    await this.clearExpiredPendingAttachments();
     try {
       const command = extractBotCommand(message, this.botUsername);
       if (command) {
-        this.clearPendingAttachments();
+        await this.clearPendingAttachments();
 
         if (command.name === "help") {
           await this.safeReply(message, buildEmergencyHelpMessage());
@@ -432,7 +448,7 @@ export class EmergencyPrivateChatRouter {
         imagePaths,
       });
 
-      this.clearPendingAttachments();
+      await this.clearPendingAttachments();
       const typingTimer = setInterval(() => {
         void this.api.sendChatAction({
           chat_id: message.chat.id,
@@ -508,7 +524,7 @@ export class EmergencyPrivateChatRouter {
   }
 
   async shutdown() {
-    this.clearPendingAttachments();
+    await this.clearPendingAttachments();
     const activeRun = this.activeRun;
     if (!activeRun) {
       return;

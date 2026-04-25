@@ -11,7 +11,6 @@ import {
 } from "../live-user/client.js";
 import { summarizeForumTopic } from "../live-user/forum-topics.js";
 import { retryFilesystemOperation } from "../runtime/fs-retry.js";
-import { buildSleepCommand } from "../runtime/live-command-prompts.js";
 import { ensureStateLayout } from "../state/layout.js";
 import { SessionStore } from "../session-manager/session-store.js";
 import { SessionService } from "../session-manager/session-service.js";
@@ -19,7 +18,6 @@ import { TelegramBotApiClient } from "../telegram/bot-api-client.js";
 
 const WAIT_POLL_MS = 2000;
 const DEFAULT_TIMEOUT_MS = 180000;
-const AUTO_INTERRUPT_RESUME_TIMEOUT_MS = 600000;
 const CLEANUP_ACTIVE_RUN_GRACE_MS = 180000;
 const STRESS_TOPIC_COUNT = 3;
 
@@ -261,29 +259,6 @@ async function waitForRunCompletion(sessionStore, session, {
   }, timeoutMs, `run completion for ${session.session_key}`);
 }
 
-async function waitForAutoPhase(sessionStore, session, phase, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  return waitFor(async () => {
-    const current = await sessionStore.load(session.chat_id, session.topic_id);
-    if (current?.auto_mode?.phase === phase) {
-      return current;
-    }
-    return null;
-  }, timeoutMs, `auto phase ${phase} for ${session.session_key}`);
-}
-
-async function waitForRunStart(sessionStore, session, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  return waitFor(async () => {
-    const current = await sessionStore.load(session.chat_id, session.topic_id);
-    if (
-      current?.last_run_started_at &&
-      !["completed", "failed", "interrupted"].includes(current.last_run_status)
-    ) {
-      return current;
-    }
-    return null;
-  }, timeoutMs, `run start for ${session.session_key}`);
-}
-
 async function createDirectTopic(sessionService, api, chatId, title) {
   const { forumTopic, session } = await sessionService.createTopicSession({
     api,
@@ -315,7 +290,10 @@ async function runNewTopicScenario({
   const createdTopic = await waitFor(async () => {
     const topics = await listForumTopics(userClient, chatId);
     return topics.find((topic) =>
-      topic.title === title && !beforeIds.has(topic.forumTopicId));
+      (
+        topic.title === title
+        || String(topic.title || "").startsWith(`${title} (`)
+      ) && !beforeIds.has(topic.forumTopicId));
   }, DEFAULT_TIMEOUT_MS, `/new topic ${title}`);
   const session = await waitForSession(sessionStore, chatId, createdTopic.topicId);
   registerCreatedTopic(createdTopics, {
@@ -362,149 +340,6 @@ async function runPlainPromptScenario({
     topicId: topic.topicId,
     lastAgentReply: completed.last_agent_reply,
     threadReplyId: threadReply.id,
-  };
-}
-
-async function runAutoHappyPathScenario({
-  userClient,
-  sessionStore,
-  chatId,
-  topic,
-  stamp,
-}) {
-  const token = `LIVE_AUTO_DONE_${stamp}`;
-
-  await sendTopicMessage(userClient, chatId, topic.topicId, "/auto", {
-    commandName: "auto",
-  });
-  await waitForAutoPhase(sessionStore, topic.session, "await_goal");
-
-  await sendTopicMessage(
-    userClient,
-    chatId,
-    topic.topicId,
-    `Goal: finish only when the worker reply contains exactly ${token}.`,
-  );
-  await waitForAutoPhase(sessionStore, topic.session, "await_initial_prompt");
-
-  await sendTopicMessage(
-    userClient,
-    chatId,
-    topic.topicId,
-    `Reply with exactly ${token}. Do not add extra text.`,
-  );
-  const spikeThreadReply = await waitForThreadReplyContaining(
-    userClient,
-    chatId,
-    topic.topicId,
-    token,
-  );
-  const done = await waitForAutoPhase(
-    sessionStore,
-    topic.session,
-    "done",
-    DEFAULT_TIMEOUT_MS,
-  );
-
-  return {
-    scenario: "auto-happy-path",
-    ok: done.auto_mode.phase === "done",
-    topicId: topic.topicId,
-    lastResultSummary: done.auto_mode.last_result_summary,
-    lastAgentReply: done.last_agent_reply,
-    spikeThreadReplyId: spikeThreadReply.id,
-  };
-}
-
-async function runAutoInterruptResumeScenario({
-  userClient,
-  sessionStore,
-  chatId,
-  topic,
-  stamp,
-}) {
-  const token = `LIVE_AUTO_RESUME_${stamp}`;
-
-  await sendTopicMessage(userClient, chatId, topic.topicId, "/auto", {
-    commandName: "auto",
-  });
-  await waitForAutoPhase(sessionStore, topic.session, "await_goal");
-
-  await sendTopicMessage(
-    userClient,
-    chatId,
-    topic.topicId,
-    `Goal: finish only when the worker reply contains exactly ${token}.`,
-  );
-  await waitForAutoPhase(sessionStore, topic.session, "await_initial_prompt");
-
-  await sendTopicMessage(
-    userClient,
-    chatId,
-    topic.topicId,
-    [
-      `First run exactly this shell command: ${buildSleepCommand(20)}.`,
-      `Target token: ${token}.`,
-      "After the sleep, reply with exactly the target token and nothing else.",
-      "Do not do any other work.",
-    ].join("\n"),
-  );
-  await waitForRunStart(sessionStore, topic.session);
-
-  await sleep(2000);
-  await sendTopicMessage(userClient, chatId, topic.topicId, "/interrupt", {
-    commandName: "interrupt",
-  });
-
-  const blocked = await waitForAutoPhase(
-    sessionStore,
-    topic.session,
-    "blocked",
-    DEFAULT_TIMEOUT_MS,
-  );
-  if (blocked.auto_mode.blocked_reason !== "Interrupted by operator") {
-    throw new Error(
-      `Unexpected blocked reason for ${topic.session.session_key}: ${blocked.auto_mode.blocked_reason ?? "none"}`,
-    );
-  }
-
-  await sendTopicMessage(
-    userClient,
-    chatId,
-    topic.topicId,
-    [
-      "Resume now.",
-      `Reply with exactly ${token}.`,
-      "Do not use shell.",
-      "Do not use tools.",
-      "Do not inspect files.",
-      "Do not add any extra text.",
-    ].join(" "),
-  );
-
-  const done = await waitForAutoPhase(
-    sessionStore,
-    topic.session,
-    "done",
-    AUTO_INTERRUPT_RESUME_TIMEOUT_MS,
-  );
-  const spikeThreadReply = await waitForThreadReplyContaining(
-    userClient,
-    chatId,
-    topic.topicId,
-    token,
-  );
-
-  return {
-    scenario: "auto-interrupt-resume",
-    ok:
-      done.auto_mode.phase === "done" &&
-      done.last_agent_reply?.includes(token),
-    topicId: topic.topicId,
-    blockedReason: blocked.auto_mode.blocked_reason,
-    lastResultSummary: done.auto_mode.last_result_summary,
-    lastAgentReply: done.last_agent_reply,
-    spikeThreadReplyId: spikeThreadReply.id,
   };
 }
 
@@ -658,44 +493,6 @@ async function main() {
         sessionStore,
         chatId,
         topic: plainPromptTopic,
-        stamp,
-      }),
-      null,
-      2,
-    ));
-
-    const autoTopic = await createDirectTopic(
-      sessionService,
-      api,
-      chatId,
-      `Live Auto Happy ${stamp}`,
-    );
-    registerCreatedTopic(createdTopics, autoTopic);
-    console.log(JSON.stringify(
-      await runAutoHappyPathScenario({
-        userClient,
-        sessionStore,
-        chatId,
-        topic: autoTopic,
-        stamp,
-      }),
-      null,
-      2,
-    ));
-
-    const autoResumeTopic = await createDirectTopic(
-      sessionService,
-      api,
-      chatId,
-      `Live Auto Resume ${stamp}`,
-    );
-    registerCreatedTopic(createdTopics, autoResumeTopic);
-    console.log(JSON.stringify(
-      await runAutoInterruptResumeScenario({
-        userClient,
-        sessionStore,
-        chatId,
-        topic: autoResumeTopic,
         stamp,
       }),
       null,

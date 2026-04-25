@@ -233,11 +233,15 @@ export async function finalizeProgress(run) {
 }
 
 export async function sendTypingAction(pool, run) {
-  if (typeof pool.api.sendChatAction !== "function") {
+  if (!["starting", "running", "rebuilding"].includes(run.state.status)) {
     return;
   }
 
-  if (!["starting", "running", "rebuilding"].includes(run.state.status)) {
+  run.state.progress?.queueUpdate(
+    buildProgressText(run.state, getSessionUiLanguage(run.session)),
+  );
+
+  if (typeof pool.api.sendChatAction !== "function") {
     return;
   }
 

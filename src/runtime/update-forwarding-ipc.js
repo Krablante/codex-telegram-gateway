@@ -64,6 +64,7 @@ export async function probeForwardingEndpoint({
     timeoutMs,
     payload: {
       type: "generation-probe",
+      instance_token: instanceToken,
     },
   });
   if (!response?.ok) {
@@ -74,18 +75,29 @@ export async function probeForwardingEndpoint({
   if (result?.generation_id !== String(generationId ?? "")) {
     return false;
   }
-
-  if (instanceToken && result?.instance_token !== String(instanceToken)) {
+  if (
+    instanceToken
+    && typeof result?.instance_token === "string"
+    && result.instance_token
+    && result.instance_token !== instanceToken
+  ) {
     return false;
   }
 
   return true;
 }
 
-export async function forwardUpdate({ endpoint, payload }) {
+export async function forwardUpdate({ endpoint, payload, authToken = null }) {
+  const forwardedPayload =
+    payload?.type === "spike-update"
+      ? {
+          ...payload,
+          auth_token: authToken,
+        }
+      : payload;
   const response = await postLoopbackJson({
     endpoint,
-    payload,
+    payload: forwardedPayload,
   });
   if (!response?.ok) {
     throw new Error(response?.error || "IPC forward failed");

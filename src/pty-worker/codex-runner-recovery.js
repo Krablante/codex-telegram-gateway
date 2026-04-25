@@ -303,7 +303,7 @@ export async function watchRolloutForTaskComplete({
       }
     }
 
-    let delta = null;
+    let delta;
     try {
       delta = await readRolloutDelta({
         filePath: resolvedRolloutPath,
@@ -447,7 +447,7 @@ export async function followRolloutAfterDisconnect({
   while (!getSettled()) {
     const previousOffset = offset;
     const recoveryChildExit = getRecoveryChildExit?.();
-    let delta = null;
+    let delta;
     try {
       delta = await readRolloutDelta({
         filePath: resolvedRolloutPath,

@@ -1,8 +1,9 @@
 export const config = {
-  telegramAllowedUserId: "5825672398",
-  telegramAllowedUserIds: ["5825672398"],
+  telegramAllowedUserId: "123456789",
+  telegramAllowedUserIds: ["123456789"],
   telegramAllowedBotIds: ["8603043042"],
-  telegramForumChatId: "-1003577434463",
+  telegramForumChatId: "-1001234567890",
+  currentHostId: "controller",
   maxParallelSessions: 4,
   codexModel: "gpt-5.4",
   codexReasoningEffort: "medium",
@@ -63,13 +64,40 @@ export function createGlobalControlSessionService(overrides = {}) {
   const globalCodexSettings = {
     spike_model: null,
     spike_reasoning_effort: null,
-    omni_model: null,
-    omni_reasoning_effort: null,
     compact_model: null,
     compact_reasoning_effort: null,
   };
 
   return {
+    async listTopicCreationHosts() {
+      return [
+        {
+          ok: true,
+          hostId: "controller",
+          hostLabel: "controller",
+          lastReadyAt: "2026-04-21T19:00:00.000Z",
+          failureReason: null,
+        },
+        {
+          ok: true,
+          hostId: "worker-a",
+          hostLabel: "worker-a",
+          lastReadyAt: "2026-04-21T19:01:00.000Z",
+          failureReason: null,
+        },
+        {
+          ok: false,
+          hostId: "worker-b",
+          hostLabel: "worker-b",
+          lastReadyAt: null,
+          failureReason: "codex-auth",
+        },
+      ];
+    },
+    async resolveTopicCreationHost(hostId = null) {
+      const hosts = await this.listTopicCreationHosts();
+      return hosts.find((host) => host.hostId === (hostId || "controller")) || hosts[0];
+    },
     async getGlobalCodexSettings() {
       return { ...globalCodexSettings };
     },
@@ -176,23 +204,26 @@ export function createServiceState(overrides = {}) {
 
 export function createTopicSession(overrides = {}) {
   return {
-    session_key: "-1003577434463:55",
-    chat_id: "-1003577434463",
+    session_key: "-1001234567890:55",
+    chat_id: "-1001234567890",
     topic_id: "55",
     topic_name: "Slice 4 test",
     ui_language: "rus",
     prompt_suffix_topic_enabled: true,
     prompt_suffix_text: null,
     prompt_suffix_enabled: false,
+    execution_host_id: "worker-a",
+    execution_host_label: "worker-a",
+    execution_host_bound_at: "2026-04-21T19:05:00.000Z",
+    execution_host_last_ready_at: "2026-04-21T19:01:00.000Z",
+    execution_host_last_failure: null,
     spike_model_override: null,
     spike_reasoning_effort_override: null,
-    omni_model_override: null,
-    omni_reasoning_effort_override: null,
     workspace_binding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
     ...overrides,
   };
@@ -205,12 +236,43 @@ export function createTopicSessionService(session, overrides = {}) {
     async ensureSessionForMessage() {
       return currentSession;
     },
+    async listTopicCreationHosts() {
+      return [
+        {
+          ok: true,
+          hostId: "controller",
+          hostLabel: "controller",
+          lastReadyAt: "2026-04-21T19:00:00.000Z",
+          failureReason: null,
+        },
+        {
+          ok: true,
+          hostId: "worker-a",
+          hostLabel: "worker-a",
+          lastReadyAt: "2026-04-21T19:01:00.000Z",
+          failureReason: null,
+        },
+      ];
+    },
+    async resolveTopicCreationHost(hostId = null) {
+      const hosts = await this.listTopicCreationHosts();
+      return hosts.find((host) => host.hostId === (hostId || "controller")) || hosts[0];
+    },
+    async resolveSessionExecution() {
+      return {
+        ok: !currentSession.execution_host_last_failure,
+        hostId: currentSession.execution_host_id,
+        hostLabel: currentSession.execution_host_label,
+        lastReadyAt: currentSession.execution_host_last_ready_at,
+        failureReason: currentSession.execution_host_last_failure,
+      };
+    },
     async getGlobalCodexSettings() {
       return {
         spike_model: null,
         spike_reasoning_effort: null,
-        omni_model: null,
-        omni_reasoning_effort: null,
+        compact_model: null,
+        compact_reasoning_effort: null,
       };
     },
     async getGlobalPromptSuffix() {
@@ -273,6 +335,13 @@ export function createTopicSessionService(session, overrides = {}) {
         ui_language: patch.language,
       };
       return currentSession;
+    },
+    async compactSession() {
+      return {
+        session: currentSession,
+        activeBriefPath: "/tmp/active-brief.md",
+        reason: "manual",
+      };
     },
     async recordHandledSession() {},
     getCurrentSession() {

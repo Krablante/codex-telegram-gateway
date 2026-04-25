@@ -1,4 +1,4 @@
-export const TELEGRAM_FILE_DIRECTIVE_FENCE = "telegram-file";
+const TELEGRAM_FILE_DIRECTIVE_FENCE = "telegram-file";
 const EXAMPLE_FILE_PATH = "<absolute-host-path-to-file>";
 
 function normalizeDirectiveValue(value) {

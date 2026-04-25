@@ -52,3 +52,37 @@ test("signalChildProcessTree uses taskkill on Windows before falling back", () =
   assert.deepEqual(spawned[0].args, ["/pid", "4821", "/t", "/f"]);
   assert.equal(spawned[0].options.windowsHide, true);
 });
+
+test("signalChildProcessTree maps Windows soft signals to non-forced taskkill", () => {
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    const spawned = [];
+    const result = signalChildProcessTree(
+      {
+        pid: 4821,
+        kill() {
+          throw new Error("child.kill fallback should not be used");
+        },
+      },
+      signal,
+      {
+        platform: "win32",
+        processImpl: {
+          kill() {
+            throw new Error("process.kill fallback should not be used");
+          },
+        },
+        spawnImpl(command, args, options) {
+          spawned.push({ command, args, options });
+          return {
+            on() {},
+            unref() {},
+          };
+        },
+      },
+    );
+
+    assert.equal(result, true);
+    assert.equal(spawned[0].command, "taskkill");
+    assert.deepEqual(spawned[0].args, ["/pid", "4821", "/t"]);
+  }
+});

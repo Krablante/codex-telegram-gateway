@@ -6,12 +6,14 @@ import path from "node:path";
 
 import { CodexWorkerPool } from "../src/pty-worker/worker-pool.js";
 import { SessionStore } from "../src/session-manager/session-store.js";
-import { SpikeFinalEventStore } from "../src/session-manager/spike-final-event-store.js";
+import { withSuppressedConsole } from "../test-support/console-fixtures.js";
 import {
   createDeferred,
   sleep,
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
+
+const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
 
 test("CodexWorkerPool preserves continuity metadata when native resume stays unavailable after retry", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -19,15 +21,15 @@ test("CodexWorkerPool preserves continuity metadata when native resume stays una
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 144,
     topicName: "Resume fallback test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   const resumedSession = await sessionStore.patch(session, {
@@ -53,8 +55,8 @@ test("CodexWorkerPool preserves continuity metadata when native resume stays una
   const editedMessages = [];
   const deletedMessages = [];
   const runCalls = [];
-  const runTask = ({ prompt, sessionThreadId, onEvent }) => {
-    runCalls.push({ prompt, sessionThreadId });
+  const runTask = ({ prompt, baseInstructions, sessionThreadId }) => {
+    runCalls.push({ prompt, baseInstructions, sessionThreadId });
     const child = {
       kill() {},
     };
@@ -129,8 +131,12 @@ test("CodexWorkerPool preserves continuity metadata when native resume stays una
   assert.equal(runCalls.length, 2);
   assert.equal(runCalls[0].sessionThreadId, "stale-thread");
   assert.equal(runCalls[1].sessionThreadId, "replacement-thread");
-  assert.match(runCalls[1].prompt, /Telegram topic routing context:/u);
-  assert.match(runCalls[1].prompt, /topic_id: 144/u);
+  assert.doesNotMatch(runCalls[1].prompt, /Context:/u);
+  assert.match(runCalls[1].baseInstructions, /Context:/u);
+  assert.match(
+    runCalls[1].baseInstructions,
+    /Telegram topic 144 \(-1001234567890:144\)/u,
+  );
   assert.match(runCalls[1].prompt, /What sentinel did we agree on\?/u);
 
   const meta = await sessionStore.load(resumedSession.chat_id, resumedSession.topic_id);
@@ -145,7 +151,7 @@ test("CodexWorkerPool preserves continuity metadata when native resume stays una
   assert.match(exchangeLog.at(-1).assistant_reply, /continuity metadata was preserved/u);
 
   assert.equal(sentMessages.length, 2);
-  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
   assert.match(sentMessages.at(-1).text, /Could not finish the run|Не смог закончить run/u);
   assert.match(sentMessages.at(-1).text, /continuity metadata was preserved/u);
   assert.equal(sentMessages.at(-1).reply_to_message_id, 99);
@@ -158,15 +164,15 @@ test("CodexWorkerPool passes the stored rollout path into runTask for continuity
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 145,
     topicName: "Known rollout path",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   const resumedSession = await sessionStore.patch(session, {
@@ -190,6 +196,8 @@ test("CodexWorkerPool passes the stored rollout path into runTask for continuity
     },
     config: {
       codexBinPath: "codex",
+      codexGatewayBackend: "app-server",
+      codexEnableLegacyAppServer: true,
       maxParallelSessions: 1,
     },
     sessionStore,
@@ -248,15 +256,15 @@ test("CodexWorkerPool clears stale provider session metadata when a fresh thread
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 146,
     topicName: "Fresh thread without provider session",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
   const resumedSession = await sessionStore.patch(session, {
@@ -270,6 +278,7 @@ test("CodexWorkerPool clears stale provider session metadata when a fresh thread
     },
   });
 
+  const runCalls = [];
   const workerPool = new CodexWorkerPool({
     api: {
       async sendMessage(payload) {
@@ -292,35 +301,38 @@ test("CodexWorkerPool clears stale provider session metadata when a fresh thread
       lastPromptAt: null,
       activeRunCount: 0,
     },
-    runTask: ({ onRuntimeState, onEvent }) => ({
-      child: { kill() {} },
-      finished: (async () => {
-        await onRuntimeState({
-          threadId: "fresh-thread",
-        });
-        await onEvent(
-          {
-            kind: "agent_message",
-            eventType: "item.completed",
-            text: "Fresh thread finished.",
-            messagePhase: "final_answer",
-          },
-          {
-            type: "item.completed",
-            item: {
-              type: "agent_message",
+    runTask: ({ knownRolloutPath, providerSessionId, onRuntimeState, onEvent }) => {
+      runCalls.push({ knownRolloutPath, providerSessionId });
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onRuntimeState({
+            threadId: "fresh-thread",
+          });
+          await onEvent(
+            {
+              kind: "agent_message",
+              eventType: "item.completed",
               text: "Fresh thread finished.",
+              messagePhase: "final_answer",
             },
-          },
-        );
-        return {
-          exitCode: 0,
-          signal: null,
-          threadId: "fresh-thread",
-          warnings: [],
-        };
-      })(),
-    }),
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Fresh thread finished.",
+              },
+            },
+          );
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "fresh-thread",
+            warnings: [],
+          };
+        })(),
+      };
+    },
   });
 
   await workerPool.startPromptRun({
@@ -335,10 +347,216 @@ test("CodexWorkerPool clears stale provider session metadata when a fresh thread
   await waitFor(() => workerPool.getActiveRun(resumedSession.session_key) === null);
 
   const reloaded = await sessionStore.load(resumedSession.chat_id, resumedSession.topic_id);
+  assert.deepEqual(runCalls, [
+    {
+      knownRolloutPath: null,
+      providerSessionId: null,
+    },
+  ]);
   assert.equal(reloaded.codex_thread_id, "fresh-thread");
   assert.equal(reloaded.provider_session_id, null);
   assert.equal(reloaded.codex_rollout_path, null);
   assert.equal(reloaded.last_context_snapshot, null);
+});
+
+test("CodexWorkerPool clears legacy app-server metadata when exec-json runTask throws", async (t) => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-exec-json-throw-cleanup-"),
+  );
+  t.after(async () => {
+    await fs.rm(sessionsRoot, { recursive: true, force: true });
+  });
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 246,
+    topicName: "Exec-json thrown cleanup",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+  const staleSession = await sessionStore.patch(session, {
+    codex_backend: "exec-json",
+    last_run_backend: "exec-json",
+    codex_thread_id: "stale-thread",
+    codex_thread_model: "gpt-5.4",
+    codex_thread_reasoning_effort: "medium",
+    provider_session_id: "stale-provider-session",
+    codex_rollout_path: "/tmp/stale-rollout.jsonl",
+    last_context_snapshot: {
+      thread_id: "stale-thread",
+      session_id: "stale-provider-session",
+      rollout_path: "/tmp/stale-rollout.jsonl",
+    },
+  });
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage() {
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask() {
+      throw new Error("spawn exploded before exec-json emitted state");
+    },
+  });
+
+  await withSuppressedConsole("error", async () => {
+    const started = await workerPool.startPromptRun({
+      session: staleSession,
+      prompt: "Trigger thrown exec-json failure.",
+      message: {
+        message_id: 246,
+        message_thread_id: 246,
+      },
+    });
+    assert.equal(started.ok, true);
+    await waitFor(() => workerPool.getActiveRun(staleSession.session_key) === null);
+  });
+
+  const reloaded = await sessionStore.load(staleSession.chat_id, staleSession.topic_id);
+  assert.equal(reloaded.last_run_status, "failed");
+  assert.equal(reloaded.codex_backend, "exec-json");
+  assert.equal(reloaded.last_run_backend, "exec-json");
+  assert.equal(reloaded.codex_thread_id, null);
+  assert.equal(reloaded.codex_thread_model, null);
+  assert.equal(reloaded.codex_thread_reasoning_effort, null);
+  assert.equal(reloaded.provider_session_id, null);
+  assert.equal(reloaded.codex_rollout_path, null);
+  assert.equal(reloaded.last_context_snapshot, null);
+});
+
+test("CodexWorkerPool suppresses stale final replies after a newer owner takes over", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-stale-final-suppression-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 147,
+    topicName: "Stale final suppression",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const sentMessages = [];
+  const deletedMessages = [];
+  const deferred = createDeferred();
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: 1 };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage(payload) {
+        deletedMessages.push(payload);
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    serviceGenerationId: "gen-old",
+    runTask: ({ onEvent }) => ({
+      child: { kill() {} },
+      finished: (async () => {
+        await onEvent(
+          {
+            kind: "agent_message",
+            text: "Stale final should stay hidden.",
+            messagePhase: "final_answer",
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              text: "Stale final should stay hidden.",
+            },
+          },
+        );
+        await deferred.promise;
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "old-thread",
+          warnings: [],
+        };
+      })(),
+    }),
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Old prompt",
+    message: {
+      message_id: 1200,
+      message_thread_id: 147,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key) !== null);
+  const activeRun = workerPool.getActiveRun(session.session_key);
+  await sessionStore.patch(activeRun.session, {
+    session_owner_generation_id: "gen-new",
+    session_owner_mode: "active",
+    last_run_status: "running",
+    last_run_started_at: new Date(Date.parse(activeRun.startedAt) + 1000).toISOString(),
+    last_user_prompt: "Newer prompt",
+    last_agent_reply: "Newer reply",
+  });
+
+  await withSuppressedConsole("warn", async () => {
+    deferred.resolve();
+    await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+  });
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.session_owner_generation_id, "gen-new");
+  assert.equal(reloaded.spike_run_owner_generation_id, "gen-new");
+  assert.equal(reloaded.last_run_status, "running");
+  assert.equal(reloaded.last_user_prompt, "Newer prompt");
+  assert.equal(reloaded.last_agent_reply, "Newer reply");
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
+  assert.equal(deletedMessages.length, 1);
+
+  const exchangeLog = await sessionStore.loadExchangeLog(session);
+  assert.equal(exchangeLog.length, 0);
 });
 
 
@@ -349,15 +567,15 @@ test("CodexWorkerPool keeps commentary progress visible even after later command
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 189,
     topicName: "Progress rewrite test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -482,7 +700,7 @@ test("CodexWorkerPool keeps commentary progress visible even after later command
   deferred.resolve();
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
-  assert.equal(sentMessages[0].text, "...");
+  assert.equal(sentMessages[0].text, INITIAL_PROGRESS_TEXT);
   assert.equal(
     editedMessages.some(
       (payload) =>
@@ -507,15 +725,15 @@ test("CodexWorkerPool steers an active run through the live controller without s
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 202,
     topicName: "Steer queue",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -546,8 +764,8 @@ test("CodexWorkerPool steers an active run through the live controller without s
       lastPromptAt: null,
       activeRunCount: 0,
     },
-    runTask: ({ prompt, sessionThreadId, onEvent }) => {
-      runCalls.push({ prompt, sessionThreadId });
+    runTask: ({ prompt, baseInstructions, sessionThreadId, onEvent }) => {
+      runCalls.push({ prompt, baseInstructions, sessionThreadId });
       return {
         child: { kill() {} },
         steer({ input }) {
@@ -663,19 +881,361 @@ test("CodexWorkerPool steers an active run through the live controller without s
   assert.equal(steerCalls[0][0].type, "text");
   assert.match(steerCalls[0][0].text, /И ещё учти этот follow-up\./u);
   assert.match(steerCalls[0][0].text, /К сообщению приложены вложения из Telegram/u);
-  assert.doesNotMatch(steerCalls[0][0].text, /Telegram topic routing context:/u);
+  assert.doesNotMatch(steerCalls[0][0].text, /Context:/u);
 
   finishGate.resolve();
 
   await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
 
-  assert.match(runCalls[0].prompt, /Telegram topic routing context:/u);
+  assert.doesNotMatch(runCalls[0].prompt, /Context:/u);
+  assert.match(runCalls[0].baseInstructions, /Context:/u);
   assert.match(runCalls[0].prompt, /Сделай основную задачу\./u);
   assert.equal(sentMessages.at(-1).text, "Учёл live steer.");
   assert.equal(sentMessages.at(-1).reply_to_message_id, 501);
 });
 
+test("CodexWorkerPool recovers exec-json live steer after the interrupted child exits with code 1", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 203,
+    topicName: "Exec steer recovery",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
 
+  const firstAttemptFinished = createDeferred();
+  const runCalls = [];
+  const steerCalls = [];
+  const sentMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ prompt, baseInstructions, sessionThreadId, onEvent }) => {
+      runCalls.push({ prompt, baseInstructions, sessionThreadId });
+      const attempt = runCalls.length;
+      const child = { kill() {} };
+      if (attempt === 1) {
+        return {
+          child,
+          steer({ input }) {
+            steerCalls.push(input);
+            firstAttemptFinished.resolve();
+            return Promise.resolve({ ok: true, reason: "steered" });
+          },
+          finished: (async () => {
+            await onEvent(
+              {
+                kind: "thread",
+                eventType: "thread.started",
+                text: "Codex thread started: steer-thread",
+                threadId: "steer-thread",
+              },
+              {
+                type: "thread.started",
+                thread_id: "steer-thread",
+              },
+            );
+            await onEvent(
+              {
+                kind: "turn",
+                eventType: "turn.started",
+                text: "Codex turn started",
+                threadId: "steer-thread",
+                turnId: "turn-live",
+              },
+              {
+                type: "turn.started",
+                turn_id: "turn-live",
+              },
+            );
+            await firstAttemptFinished.promise;
+            return {
+              backend: "exec-json",
+              ok: false,
+              exitCode: 1,
+              signal: null,
+              interrupted: true,
+              interruptReason: "upstream",
+              preserveContinuity: true,
+              threadId: "steer-thread",
+              warnings: [],
+              resumeReplacement: null,
+              abortReason: "interrupted",
+            };
+          })(),
+        };
+      }
+
+      if (attempt === 2) {
+        return {
+          child,
+          finished: (async () => {
+            await onEvent(
+              {
+                kind: "agent_message",
+                text: "Готово с учётом live steer.",
+              },
+              {
+                type: "item.completed",
+                item: {
+                  type: "agent_message",
+                  text: "Готово с учётом live steer.",
+                },
+              },
+            );
+            await onEvent(
+              {
+                kind: "turn",
+                eventType: "turn.completed",
+                text: "Codex turn completed",
+                threadId: "steer-thread",
+                turnId: "turn-live-2",
+              },
+              {
+                type: "turn.completed",
+                turn_id: "turn-live-2",
+              },
+            );
+
+            return {
+              backend: "exec-json",
+              ok: true,
+              exitCode: 0,
+              signal: null,
+              threadId: "steer-thread",
+              warnings: [],
+              resumeReplacement: null,
+              abortReason: null,
+            };
+          })(),
+        };
+      }
+
+      throw new Error(`unexpected extra run attempt #${attempt}`);
+    },
+  });
+
+  const started = await workerPool.startPromptRun({
+    session,
+    prompt: "Сделай основную задачу.",
+    message: {
+      message_id: 600,
+      message_thread_id: 203,
+    },
+  });
+
+  assert.equal(started.ok, true);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) !== null);
+  await waitFor(
+    () => workerPool.getActiveRun(session.session_key)?.state.activeTurnId === "turn-live",
+  );
+
+  const steered = await workerPool.steerActiveRun({
+    session,
+    rawPrompt: "Ещё проверь удалённые хосты.",
+    message: {
+      message_id: 601,
+      message_thread_id: 203,
+    },
+  });
+
+  assert.equal(steered.ok, true);
+  assert.equal(steered.reason, "steered");
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+  assert.equal(steerCalls.length, 1);
+  assert.equal(runCalls.length, 2);
+  assert.equal(runCalls[0].sessionThreadId, null);
+  assert.equal(runCalls[1].sessionThreadId, "steer-thread");
+  assert.match(runCalls[1].prompt, /Сделай основную задачу\./u);
+  assert.match(runCalls[1].prompt, /Ещё проверь удалённые хосты\./u);
+  assert.equal(sentMessages.at(-1).text, "Готово с учётом live steer.");
+  assert.equal(sentMessages.at(-1).reply_to_message_id, 601);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.codex_thread_id, "steer-thread");
+  assert.doesNotMatch(reloaded.last_agent_reply, /stream ended before turn\.completed/u);
+});
+
+
+
+test("CodexWorkerPool restarts exec-json live steer even if the old child exits cleanly", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-clean-steer-restart-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 205,
+    topicName: "Exec clean steer restart",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const steerAccepted = createDeferred();
+  const runCalls = [];
+  const steerCalls = [];
+  const sentMessages = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ prompt, sessionThreadId, onEvent }) => {
+      runCalls.push({ prompt, sessionThreadId });
+      const attempt = runCalls.length;
+      const child = { kill() {} };
+      if (attempt === 1) {
+        return {
+          child,
+          steer({ input }) {
+            steerCalls.push(input);
+            steerAccepted.resolve();
+            return Promise.resolve({ ok: true, reason: "steered" });
+          },
+          finished: (async () => {
+            await onEvent({
+              kind: "thread",
+              eventType: "thread.started",
+              text: "Codex thread started: clean-steer-thread",
+              threadId: "clean-steer-thread",
+            });
+            await steerAccepted.promise;
+            await onEvent({
+              kind: "agent_message",
+              eventType: "turn.completed",
+              text: "Stale answer before steer was applied.",
+              messagePhase: "final_answer",
+            });
+            return {
+              backend: "exec-json",
+              ok: true,
+              exitCode: 0,
+              signal: null,
+              threadId: "clean-steer-thread",
+              warnings: [],
+              resumeReplacement: null,
+              abortReason: null,
+            };
+          })(),
+        };
+      }
+
+      return {
+        child,
+        finished: (async () => {
+          await onEvent({
+            kind: "agent_message",
+            eventType: "turn.completed",
+            text: "Fresh answer after live steer.",
+            messagePhase: "final_answer",
+          });
+          return {
+            backend: "exec-json",
+            ok: true,
+            exitCode: 0,
+            signal: null,
+            threadId: "clean-steer-thread",
+            warnings: [],
+            resumeReplacement: null,
+            abortReason: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  const started = await workerPool.startPromptRun({
+    session,
+    prompt: "Original task.",
+    message: {
+      message_id: 800,
+      message_thread_id: 205,
+    },
+  });
+
+  assert.equal(started.ok, true);
+  await waitFor(() => workerPool.getActiveRun(session.session_key)?.controller);
+
+  const steered = await workerPool.steerActiveRun({
+    session,
+    rawPrompt: "Apply this follow-up before final.",
+    message: {
+      message_id: 801,
+      message_thread_id: 205,
+    },
+  });
+
+  assert.equal(steered.ok, true);
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null);
+
+  assert.equal(steerCalls.length, 1);
+  assert.equal(runCalls.length, 2);
+  assert.equal(runCalls[1].sessionThreadId, "clean-steer-thread");
+  assert.match(runCalls[1].prompt, /Original task\./u);
+  assert.match(runCalls[1].prompt, /Apply this follow-up before final\./u);
+  assert.equal(sentMessages.at(-1).text, "Fresh answer after live steer.");
+  assert.equal(sentMessages.at(-1).reply_to_message_id, 801);
+
+  const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
+  assert.equal(reloaded.last_run_status, "completed");
+  assert.equal(reloaded.last_agent_reply, "Fresh answer after live steer.");
+});
 
 test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -683,15 +1243,15 @@ test("CodexWorkerPool shutdown waits for interrupted runs to finish teardown", a
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 204,
     topicName: "Shutdown test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -776,15 +1336,15 @@ test("CodexWorkerPool interrupt falls back to SIGINT immediately when native int
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 2041,
     topicName: "Interrupt fallback test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -859,15 +1419,15 @@ test("CodexWorkerPool shutdown can drain an active run before sending interrupts
   );
   const sessionStore = new SessionStore(sessionsRoot);
   const session = await sessionStore.ensure({
-    chatId: -1003577434463,
+    chatId: -1001234567890,
     topicId: 205,
     topicName: "Shutdown drain test",
     createdVia: "command/new",
     workspaceBinding: {
-      repo_root: "/home/bloob/atlas",
-      cwd: "/home/bloob/atlas",
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
       branch: "main",
-      worktree_path: "/home/bloob/atlas",
+      worktree_path: "/srv/codex-workspace",
     },
   });
 
@@ -896,13 +1456,36 @@ test("CodexWorkerPool shutdown can drain an active run before sending interrupts
     },
     sessionStore,
     serviceState,
-    runTask: () => ({
+    runTask: ({ onEvent }) => ({
       child: {
         kill(signal) {
           killSignals.push(signal);
         },
       },
-      finished: deferred.promise,
+      finished: (async () => {
+        await deferred.promise;
+        await onEvent(
+          {
+            kind: "agent_message",
+            text: "Drained cleanly.",
+          },
+          {
+            type: "item.completed",
+            item: {
+              type: "agent_message",
+              text: "Drained cleanly.",
+            },
+          },
+        );
+
+        return {
+          exitCode: 0,
+          signal: null,
+          threadId: "drained-thread",
+          warnings: [],
+          resumeReplacement: null,
+        };
+      })(),
     }),
   });
 
@@ -929,19 +1512,14 @@ test("CodexWorkerPool shutdown can drain an active run before sending interrupts
   assert.equal(settled, false);
   assert.deepEqual(killSignals, []);
 
-  deferred.resolve({
-    exitCode: 0,
-    signal: null,
-    threadId: "drained-thread",
-    warnings: [],
-    resumeReplacement: null,
-  });
+  deferred.resolve();
 
   await shutdownPromise;
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);
   assert.equal(reloaded.last_run_status, "completed");
   assert.equal(reloaded.codex_thread_id, "drained-thread");
+  assert.equal(reloaded.last_agent_reply, "Drained cleanly.");
   assert.deepEqual(killSignals, []);
 });
 
@@ -979,7 +1557,7 @@ test("CodexWorkerPool hard shutdown stays bounded even if a lifecycle promise ne
   });
 
   const lifecycle = createDeferred();
-  const sessionKey = "-1003577434463:2051";
+  const sessionKey = "-1001234567890:2051";
   workerPool.activeRuns.set(sessionKey, {
     sessionKey,
     session: {

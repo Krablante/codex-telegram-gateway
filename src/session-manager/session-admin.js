@@ -64,7 +64,7 @@ export class SessionAdmin {
     return session;
   }
 
-  async setRetentionPin(chatId, topicId, pinned, reason) {
+  async setRetentionPin(chatId, topicId, pinned) {
     const session = await this.getSession(chatId, topicId);
     const nextPinned = Boolean(pinned);
     const patch = {

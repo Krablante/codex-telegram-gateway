@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
+  appendTextFile,
   cloneJson,
   quarantineCorruptFile,
   writeTextAtomic,
@@ -41,9 +42,26 @@ export async function loadSessionMeta(store, chatId, topicId) {
 }
 
 export async function listSessions(store) {
+  return listSessionsMatching(store);
+}
+
+export async function listSessionsWithFile(store, relativePath) {
+  const normalizedRelativePath = typeof relativePath === "string"
+    ? relativePath.trim()
+    : "";
+  if (!normalizedRelativePath) {
+    return [];
+  }
+
+  return listSessionsMatching(store, {
+    requiredRelativePath: normalizedRelativePath,
+  });
+}
+
+async function listSessionsMatching(store, { requiredRelativePath = null } = {}) {
   const sessions = [];
 
-  let chatEntries = [];
+  let chatEntries;
   try {
     chatEntries = await fs.readdir(store.sessionsRoot, { withFileTypes: true });
   } catch (error) {
@@ -67,6 +85,23 @@ export async function listSessions(store) {
       }
 
       const topicDir = path.join(chatDir, topicEntry.name);
+      if (requiredRelativePath) {
+        try {
+          const requiredStat = await fs.stat(
+            path.join(topicDir, requiredRelativePath),
+          );
+          if (!requiredStat.isFile()) {
+            continue;
+          }
+        } catch (error) {
+          if (error?.code === "ENOENT") {
+            continue;
+          }
+
+          throw error;
+        }
+      }
+
       const metaPath = path.join(topicDir, "meta.json");
       let session = null;
       try {
@@ -92,6 +127,7 @@ export async function loadCompactState(store, meta) {
   return {
     activeBrief: await store.loadActiveBrief(current),
     exchangeLog: await store.loadExchangeLog(current),
+    progressNotes: await store.loadProgressNotes(current),
   };
 }
 
@@ -183,8 +219,7 @@ export async function appendExchangeLogEntry(store, meta, entry) {
       ? current.exchange_log_entries
       : (await store.loadExchangeLog(current)).length;
     const filePath = store.getExchangeLogPath(current.chat_id, current.topic_id);
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.appendFile(filePath, `${JSON.stringify(normalizedEntry)}\n`, "utf8");
+    await appendTextFile(filePath, `${JSON.stringify(normalizedEntry)}\n`);
     const updated = {
       ...stripLegacyMetaFields(current),
       exchange_log_entries: currentCount + 1,
@@ -233,11 +268,10 @@ export async function writeArtifact(
   const current =
     (await store.load(meta.chat_id, meta.topic_id)) || meta;
   const artifactsDir = store.getArtifactsDir(current.chat_id, current.topic_id);
-  await fs.mkdir(artifactsDir, { recursive: true });
 
   const fileName = buildArtifactFileName(kind, extension);
   const filePath = path.join(artifactsDir, fileName);
-  await fs.writeFile(filePath, content, "utf8");
+  await writeTextAtomic(filePath, content);
   const stats = await fs.stat(filePath);
   const artifact = {
     kind,

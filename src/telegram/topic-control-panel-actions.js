@@ -1,6 +1,6 @@
 import {
   getSupportedReasoningLevelsForModel,
-  loadAvailableCodexModels,
+  loadVisibleCodexModels,
   normalizeModelOverride,
   normalizeReasoningEffort,
   resolveCodexRuntimeProfile,
@@ -99,9 +99,12 @@ export async function applyTopicControlActionDirect({
       };
     }
 
-    const availableModels = await loadAvailableCodexModels({
-      configPath: config.codexConfigPath,
-    });
+    const availableModels =
+      typeof sessionService.loadVisibleCodexModels === "function"
+        ? await sessionService.loadVisibleCodexModels(session)
+        : await loadVisibleCodexModels({
+          configPath: config.codexConfigPath,
+        });
     const normalizedModel = normalizeModelOverride(action.value, availableModels);
     if (!normalizedModel) {
       return {
@@ -134,19 +137,20 @@ export async function applyTopicControlActionDirect({
     }
 
     const normalizedReasoning = normalizeReasoningEffort(action.value);
-    const availableModels = await loadAvailableCodexModels({
-      configPath: config.codexConfigPath,
-    });
+    const runtimeModels =
+      typeof sessionService.loadAvailableCodexModels === "function"
+        ? await sessionService.loadAvailableCodexModels(session)
+        : [];
     const globalSettings = await sessionService.getGlobalCodexSettings();
     const runtimeProfile = resolveCodexRuntimeProfile({
       session,
       globalSettings,
       config,
       target: action.target,
-      availableModels,
+      availableModels: runtimeModels,
     });
     const supportedLevels = getSupportedReasoningLevelsForModel(
-      availableModels,
+      runtimeModels,
       runtimeProfile.model,
     ).map((entry) => entry.value);
 

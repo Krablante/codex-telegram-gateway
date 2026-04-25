@@ -1,13 +1,17 @@
 # Deployment
 
-## First Install Minimum
+## First-install minimum
 
 Required runtime settings:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
 - `TELEGRAM_FORUM_CHAT_ID`
+
+Recommended on multi-host installs:
+
 - `WORKSPACE_ROOT`
+- `CURRENT_HOST_ID` (treat as required on Linux service)
 
 Optional but commonly useful:
 
@@ -15,146 +19,154 @@ Optional but commonly useful:
 - `TELEGRAM_EXPECTED_TOPICS`
 - `TELEGRAM_ALLOWED_BOT_IDS`
 - `STATE_ROOT`
+- `CODEX_GATEWAY_ALLOW_REPO_ENV`
+- `HOST_REGISTRY_PATH`
 - `CODEX_BIN_PATH`
+- `CODEX_GATEWAY_BACKEND`
+- `CODEX_ENABLE_LEGACY_APP_SERVER`
 - `CODEX_CONFIG_PATH`
+- `CODEX_SESSIONS_ROOT`
 - `CODEX_LIMITS_SESSIONS_ROOT`
 - `CODEX_LIMITS_COMMAND`
+- `HOST_SYNC_INTERVAL_MINUTES`
+- `HOST_SSH_CONNECT_TIMEOUT_SECS`
 - `MAX_PARALLEL_SESSIONS`
 
-Telegram-side baseline:
+## Telegram-side baseline
 
 - use a forum-enabled supergroup
-- disable privacy mode for the Spike bot
+- disable privacy mode for the bot
 - make the bot an admin in that forum chat
-- topic creation and cleanup flows work best when the bot can post, edit, delete, pin, and manage topics
+- topic creation and cleanup work best when the bot can post, edit, delete, pin, and manage topics
 
-Large-file note:
-
-- the default cloud Bot API path is still the normal deployment shape
-- oversized prompt attachments are now rejected cleanly with an inline reply instead of poisoning the poll loop
-- if you later want true Telegram-native huge-file ingestion with per-topic disk storage, plan on a Local Bot API server; that is a future extension, not a requirement for the current deploy
-
-## Supported Shapes
-
-### Spike-only
-
-- omit `OMNI_BOT_TOKEN` and `OMNI_BOT_ID`
-- or set `OMNI_ENABLED=false`
-
-Result:
-
-- only `Spike` is operator-facing
-- Omni-only commands disappear from the surface
-- stale `auto_mode` state becomes inert instead of blocking prompts
-
-### Spike + Omni
-
-- set `OMNI_BOT_TOKEN`
-- set `OMNI_BOT_ID`
-- leave `OMNI_ENABLED` unset or set it to `true`
-
-Result:
-
-- run both pollers
-- `/auto` becomes available
-
-## Canonical Runtime Env
+## Canonical runtime env
 
 `${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
 
-Linux/operator path keeps that canonical runtime env path.
-
-On native Windows, the practical default is repo-local `.env`. If `ENV_FILE` is unset, the runtime now prefers:
-
-1. the canonical runtime env file when it already exists
-2. repo-local `.env`
-3. the platform default runtime env path under the local state root
-
-Core settings:
-
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_FORUM_CHAT_ID`
-- `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
-- `TELEGRAM_ALLOWED_BOT_IDS`
-
-Optional Omni settings:
-
-- `OMNI_ENABLED`
-- `OMNI_BOT_TOKEN`
-- `OMNI_BOT_ID`
-
-Workspace settings:
-
-- `WORKSPACE_ROOT` — preferred workspace root for new installs
-- a legacy compatibility alias for `WORKSPACE_ROOT` is still accepted for older installs
-- `DEFAULT_SESSION_BINDING_PATH` — optional default landing path for plain `/new` without `cwd=...`
-- `CODEX_CONFIG_PATH` — optional explicit path to the local Codex config; recommended when you want the runtime and user service pinned to a known MCP/tooling profile
-
-Codex limits settings:
-
-- `CODEX_LIMITS_SESSIONS_ROOT` — optional override for where `/limits` scans Codex `.jsonl` session snapshots
-- `CODEX_LIMITS_COMMAND` — optional external command spec that prints one JSON object with `source`, `captured_at`, and `snapshot`
-- `CODEX_LIMITS_CACHE_TTL_SECS` — cache TTL for `/limits`, `/status`, and menu refreshes; default `30`
-- `CODEX_LIMITS_COMMAND_TIMEOUT_SECS` — timeout for the external limits command; default `15`
-
-Practical workspace examples:
-
-- with `WORKSPACE_ROOT=/home/you/work` and `DEFAULT_SESSION_BINDING_PATH=/home/you/work`, plain `/new Backend API` starts in `/home/you/work`
-- `/new cwd=homelab/infra Automation` still resolves relative to `WORKSPACE_ROOT`, so it starts in `/home/you/work/homelab/infra`
-- quoted explicit binding paths are supported too, so Windows paths with spaces work cleanly, for example `/new cwd="C:/Users/Example User/Source Repos" Audit topic`
-- if `DEFAULT_SESSION_BINDING_PATH` is unset, ordinary `/new` falls back to `WORKSPACE_ROOT`
-
-## Codex Limits Source
-
-By default, the gateway reads the newest Codex rate-limit snapshot from `CODEX_SESSIONS_ROOT`.
-
-If limits should come from another machine, set `CODEX_LIMITS_COMMAND` instead. The gateway runs it without an implicit shell.
-
-Preferred format in `.env`:
+Practical Linux service bootstrap:
 
 ```bash
-CODEX_LIMITS_COMMAND='["python3","/opt/read-limits.py"]'
+cd /path/to/codex-telegram-gateway
+npm ci
+install -d -m700 ${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway
+install -m600 .env.example ${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env
+$EDITOR ${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make doctor
 ```
 
-Simple argv-only strings like `python3 /opt/read-limits.py` still work for compatibility on Linux, but shell features such as pipes, redirection, and inline env assignments do not. On native Windows, use the JSON argv form only; the runtime intentionally does not try to reinterpret POSIX-style command strings there. Use a wrapper script or make the shell explicit in argv when you really need that.
+On native Windows, the practical default is repo-local `.env`, and it is preferred even if a config `runtime.env` also exists. Explicit `ENV_FILE` still wins. On Linux service, repo-local `.env` fallback is disabled unless `CODEX_GATEWAY_ALLOW_REPO_ENV=1`; use the canonical config `runtime.env`.
 
-The command should print exactly one JSON object like this:
+## Workspace and host settings
 
-```json
-{
-  "source": "windows_rtx",
-  "captured_at": "2026-04-04T13:10:00.000Z",
-  "snapshot": {
-    "limit_id": "codex",
-    "primary": { "used_percent": 11, "window_minutes": 300, "resets_at": 1775277000 },
-    "secondary": { "used_percent": 33, "window_minutes": 10080, "resets_at": 1775881800 }
-  }
-}
+- `WORKSPACE_ROOT` — preferred workspace root
+- `CURRENT_HOST_ID` — canonical host id such as `controller`, `worker-a`, `worker-b`, or `worker-c`
+- `CODEX_GATEWAY_ALLOW_REPO_ENV` — Linux service pre-load escape hatch; set in the shell only when you intentionally want repo-local `.env` fallback
+- `CODEX_ALLOW_SYSTEM_TEMP_DELIVERY` — runtime debug-only; set `1` only if `telegram-file` delivery must accept broad system temp roots
+- `DEFAULT_SESSION_BINDING_PATH` — optional default landing path for plain `/new`
+- `HOST_SYNC_INTERVAL_MINUTES` — host-sync timer interval on `controller`; default `15`
+- `HOST_SSH_CONNECT_TIMEOUT_SECS` — SSH timeout for sync and doctor; default `8`
+- `HOST_REGISTRY_PATH` — optional override for the host registry JSON; defaults under `STATE_ROOT/hosts/registry.json`
+
+## Codex runtime and limits settings
+
+- `CODEX_GATEWAY_BACKEND` — `exec-json` by default; set `app-server` only as a temporary fallback/debug switch
+- `CODEX_ENABLE_LEGACY_APP_SERVER` — must be `1` before `CODEX_GATEWAY_BACKEND=app-server` is accepted; leave unset for normal exec-json operation
+- `CODEX_BIN_PATH` — optional Codex executable path; defaults to `codex` on Linux/POSIX and `codex.cmd` on native Windows. On Windows, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
+- `CODEX_CONFIG_PATH` — explicit path to the Codex config when you want the runtime pinned to a known profile
+- `CODEX_SESSIONS_ROOT` — optional raw Codex sessions root for snapshot/context resolution on the gateway host; defaults to host-local `~/.codex/sessions`. Remote Codex processes keep their own host-local sessions roots; the gateway does not share one raw `.codex/sessions` tree across hosts.
+- `CODEX_MODEL` — optional runtime override for the live Spike model
+- `CODEX_REASONING_EFFORT` — optional runtime override for reasoning effort
+- `CODEX_CONTEXT_WINDOW` — optional runtime override for the configured context window shown in `/status` and passed to Codex
+- `CODEX_AUTO_COMPACT_TOKEN_LIMIT` — optional runtime override for the auto-compact threshold shown in `/status` and passed to Codex
+- `CODEX_LIMITS_SESSIONS_ROOT` — highest-priority snapshot scan root for `/limits`; defaults to `CODEX_SESSIONS_ROOT` when unset
+- `CODEX_LIMITS_COMMAND` — optional external command that prints one JSON limits object
+- `CODEX_LIMITS_CACHE_TTL_SECS` — limits cache TTL; default `30`
+- `CODEX_LIMITS_COMMAND_TIMEOUT_SECS` — limits command timeout; default `15`
+
+If these env overrides are unset, the gateway falls back to the values from `CODEX_CONFIG_PATH` and `/status` shows the effective live settings from that runtime config snapshot. Spike launches pass the resolved model, reasoning, context window, and auto-compact values to Codex as runtime `-c` overrides. Compaction launches use the separate compact model/reasoning profile, pass the context window, and raise native auto-compact just above that window so gateway bounded-source fallback remains deterministic.
+
+The default Spike backend runs one `codex exec --json` process per turn. The child process receives an allowlisted runtime environment for OS basics, Codex/OpenAI auth/config, proxy, cert, and temp settings; gateway secrets such as Telegram tokens, `ENV_FILE`, `STATE_ROOT`, and host-registry paths are not inherited.
+
+```bash
+printf '%s' "$prompt" | codex exec --json --dangerously-bypass-approvals-and-sandbox -C "$cwd" -
+printf '%s' "$prompt" | codex exec --json --dangerously-bypass-approvals-and-sandbox -C "$cwd" resume "$thread_id" -
 ```
 
-`source` is optional, but recommended. It is the short label shown in Telegram. If you omit it, the gateway uses the generic `command` label and never echoes the raw shell command back into chat.
+Remote topics use the same command through direct `ssh -T`; the SSH connection stays open for that turn. The gateway resolves the bound host cwd/bin path first, stages remote images under a per-run `<worker_runtime_root>/remote-inputs/...` directory, removes that staging directory after the child exits, and still passes runtime `-c` overrides. Mid-turn spool/detach is intentionally not part of the current deployment.
 
-Unlimited accounts are valid too. If the snapshot carries `credits.unlimited=true` or `unlimited=true`, the bot renders `limits: unlimited` instead of pretending the data is missing.
+If `codex exec` reports context-window exhaustion, the worker makes one recovery attempt: compact the topic into `active-brief.md` using the source selector in `docs/state-contract.md`, clear stale thread/provider continuity, and retry once as a fresh exec-json thread. If that also fails, the original failure plus recovery warning remain visible in runtime diagnostics. The worker does not depend on sending `/compact` into noninteractive `codex exec --json resume`.
 
-This is the practical path when the Linux gateway host is effectively unlimited but the real capped Codex account lives on another machine, such as a Windows workstation.
+Use `CODEX_GATEWAY_BACKEND=app-server` only when intentionally debugging the old WebSocket transport, and set `CODEX_ENABLE_LEGACY_APP_SERVER=1` for that debug run.
+
+
+## Multi-host on `controller`
+
+The shipped multi-host slice is intentionally narrow but practical:
+
+- `controller` owns the canonical host registry and rendered `codex-space`
+- `controller` can sync rendered host outputs to workers over SSH
+- `controller` can bootstrap a helper-capable remote runtime on `worker-a` / `worker-b` / `worker-c`
+- ordinary Spike prompt dispatch can run on a bound remote host while `controller` stays the Telegram/session control plane
+- remote image staging, file delivery, `/diff`, queued `/q` prompts, and busy follow-up live steer stay on that same bound host path
+- remote exec-json live steer is recovery-based: the control plane interrupts the active remote exec process, tolerates the controlled interrupted-child exit when no fatal JSONL event arrived, and resumes the bound Codex thread with the merged prompt
+- local-MCP hosts are `ready` only when Docker is actually available there
+
+Practical operator sequence on `controller`:
+
+```bash
+cd /path/to/codex-telegram-gateway
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-bootstrap
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-bootstrap-runtime ARGS='--host worker-a'
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-doctor
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-remote-smoke ARGS='--host worker-a'
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync-install
+ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync-status
+```
+
+Host registry `ssh_target` values are intentionally constrained to safe SSH aliases or `user@host` names. Values with whitespace, leading `-`, shell metacharacters, or `:` are rejected before SSH/rsync calls. Rsync calls use protected-args mode so valid remote paths with spaces stay single operands after the SSH hop.
+
+Remote runtime bootstrap will not install an unpinned Codex package. Provide a copied `CODEX_BIN_PATH`/`sourceBinPath` or an explicit pinned package spec such as `@openai/codex@0.124.0`.
 
 ## Services
 
-Main:
+Main Linux user service:
 
 - `codex-telegram-gateway.service`
 
-Optional Omni:
+These flows are Linux-only because they target `systemd --user`.
 
-- `codex-telegram-gateway-omni.service`
+Generated user units set `UMask=0077`; runtime state writers also create private files/directories by default. If old state predates this hardening, run the chmod repair noted in the runbook or reinstall/restart through the normal service entrypoints.
 
-These user-service flows are Linux-only because they target `systemd --user`.
-`make service-install` now resolves `CODEX_BIN_PATH` without a shell and pins `CODEX_CONFIG_PATH` into the generated user unit. Absolute paths, repo-relative paths such as `./vendor/bin/codex`, and ordinary PATH-visible names such as `codex` are supported. If resolution still fails, set an absolute `CODEX_BIN_PATH`. On native Windows, the practical default is to leave `CODEX_BIN_PATH` empty so the runtime falls back to `codex.cmd`; if you override it, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
+Useful entrypoints:
 
-On native Windows, run the gateway directly with:
+```bash
+make service-install
+make service-status
+make service-logs
+make service-rollout
+make service-restart
+make service-restart-live
+```
+
+`make service-rollout` / `make service-restart` are the safe soft-rollout path.
+`make service-restart-live` is the usual live-bot restart entrypoint.
+Before repeating a restart, run `make admin ARGS='status'`; if rollout is already `requested` or `in_progress`, wait instead of chaining another soft rollout.
+
+Last resort only:
+
+```bash
+make service-hard-restart
+```
+
+`make service-hard-restart` is the blind restart path and can cut active runs. Do not use raw `systemctl restart codex-telegram-gateway.service` for ordinary updates.
+
+If you intentionally pin a local Codex fork, prefer an absolute binary path outside the repo build tree and keep `CODEX_CONFIG_PATH` pointed at the intended config.
+
+## Native Windows
 
 ```powershell
-cd C:\path\to\codex-telegram-gateway
+cd O:\workspace\codex-telegram-gateway
 copy .env.example .env
 scripts\windows\install.cmd
 scripts\windows\install-codex.cmd
@@ -163,45 +175,4 @@ scripts\windows\admin.cmd status
 scripts\windows\run.cmd
 ```
 
-That bootstrap now matches the repo as-is because `.env.example` is committed, intended for the first native Windows copy-to-`.env` flow, and leaves `CODEX_BIN_PATH` unset so native Windows can fall through to `codex.cmd`.
-
-With Omni:
-
-```powershell
-scripts\windows\run-omni.cmd
-```
-
-If you prefer manual commands, use `npm.cmd`, not bare `npm`, inside PowerShell.
-For repo-local admin recovery on Windows, use `scripts\windows\admin.cmd status` and the same subcommands you would normally pass through `make admin ARGS='...'`.
-
-## Repo Entry Points
-
-```bash
-make service-install
-make service-status
-make service-logs
-make service-rollout
-make service-restart
-make service-hard-restart
-```
-
-With Omni:
-
-```bash
-make service-install-omni
-make service-status-omni
-make service-logs-omni
-make service-restart-omni
-```
-
-## Practical Rule
-
-- if Omni is disabled, the Omni unit may stay stopped
-- if the Omni unit is installed but `OMNI_ENABLED=false`, it may idle safely after clearing stale Omni slash commands
-- for Spike on Linux, `make service-rollout` and `make service-restart` use the repo-local session-aware rollout command and return only after the replacement generation has taken leader traffic; `make service-hard-restart` is the explicit blind restart path
-- Spike `service-install` requires `systemd >= 250` because the user unit depends on `ExitType=cgroup`
-- `make admin ARGS='status'` now shows heartbeat freshness, pid liveness, the configured and resolved `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and parsed MCP server names, which is the fastest operator check before treating missing `pitlane` or `tavily` access as a runtime bug
-- container-backed MCP tools such as `pitlane` and `large_file` may see the workspace through a `/workspace/...` mirror instead of host paths; teach Codex that mapping or translate paths manually when those tools are in play
-- on native Windows, do not use WSL just to get the bot online unless you already know your WSL networking and file-path setup is healthy
-- on native Windows, the practical install path is `scripts\windows\install.cmd`, which keeps dependency install reproducible and skips non-essential transitive package scripts
-- on native Windows, interrupt/shutdown flows now use a process-tree-aware `taskkill` fallback so nested Codex child processes are less likely to survive a stop
+If you prefer manual commands in PowerShell, use `npm.cmd`, not bare `npm`.

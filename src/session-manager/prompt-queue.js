@@ -2,8 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { quarantineCorruptFile } from "../state/file-utils.js";
-import { isAutoModeHumanInputLocked } from "./auto-mode.js";
+import {
+  extractRenderedUserPrompt,
+  renderUserPrompt,
+} from "./prompt-suffix.js";
 import { shouldForwardSessionToOwner } from "../rollout/session-ownership.js";
+import {
+  clearSessionOwnershipPatch,
+  isOwnedSessionForwardTargetLive,
+} from "../rollout/session-ownership.js";
 
 const SPIKE_PROMPT_QUEUE_FILE_NAME = "spike-prompt-queue.json";
 
@@ -111,6 +118,20 @@ function buildQueuedPromptMessage(session, entry) {
   }
 
   return message;
+}
+
+function normalizeQueuedPromptEntry(entry) {
+  const rawPrompt = normalizeText(
+    extractRenderedUserPrompt(entry?.raw_prompt ?? entry?.prompt ?? "") || entry?.raw_prompt || entry?.prompt,
+  );
+  if (!rawPrompt) {
+    return null;
+  }
+
+  return {
+    rawPrompt,
+    prompt: renderUserPrompt(rawPrompt),
+  };
 }
 
 export function summarizeQueuedPrompt(rawPrompt, maxWords = 5) {
@@ -254,13 +275,14 @@ export async function drainPendingSpikePromptQueue({
   workerPool,
   promptQueueStore,
   currentGenerationId = null,
+  generationStore = null,
 }) {
   const sessions = session
     ? [((await sessionStore.load(session.chat_id, session.topic_id)) || session)]
-    : await sessionStore.listSessions();
+    : await sessionStore.listSessionsWithFile(SPIKE_PROMPT_QUEUE_FILE_NAME);
   const results = [];
 
-  for (const currentSession of sessions) {
+  for (let currentSession of sessions) {
     const queuedItems = await promptQueueStore.load(currentSession);
     if (queuedItems.length === 0) {
       continue;
@@ -271,10 +293,7 @@ export async function drainPendingSpikePromptQueue({
       continue;
     }
 
-    if (
-      currentSession.lifecycle_state !== "active"
-      || isAutoModeHumanInputLocked(currentSession)
-    ) {
+    if (currentSession.lifecycle_state !== "active") {
       continue;
     }
 
@@ -282,14 +301,34 @@ export async function drainPendingSpikePromptQueue({
       currentGenerationId
       && shouldForwardSessionToOwner(currentSession, currentGenerationId)
     ) {
-      continue;
+      if (!generationStore) {
+        continue;
+      }
+
+      const ownerIsLive = await isOwnedSessionForwardTargetLive(
+        currentSession,
+        generationStore,
+      );
+      if (ownerIsLive) {
+        continue;
+      }
+
+      currentSession = await sessionStore.patch(currentSession, {
+        ...clearSessionOwnershipPatch(),
+        spike_run_owner_generation_id: null,
+      });
     }
 
     const head = queuedItems[0];
+    const normalizedHead = normalizeQueuedPromptEntry(head);
+    if (!normalizedHead) {
+      await promptQueueStore.shift(currentSession);
+      continue;
+    }
     const result = await workerPool.startPromptRun({
       session: currentSession,
-      prompt: head.prompt,
-      rawPrompt: head.raw_prompt,
+      prompt: normalizedHead.prompt,
+      rawPrompt: normalizedHead.rawPrompt,
       message: buildQueuedPromptMessage(currentSession, head),
       attachments: normalizeAttachments(head.attachments),
     });

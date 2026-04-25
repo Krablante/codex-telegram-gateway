@@ -1,16 +1,12 @@
 import { getTopicIdFromMessage } from "../session-manager/session-key.js";
-import { shouldForwardSessionToOwner } from "../rollout/session-ownership.js";
+import {
+  clearSessionOwnershipPatch,
+  isOwnedSessionForwardTargetLive,
+  shouldForwardSessionToOwner,
+} from "../rollout/session-ownership.js";
 
 function getUpdateMessage(update) {
   return update?.callback_query?.message || update?.message || null;
-}
-
-async function isGenerationRecordUsable(generationStore, record) {
-  if (typeof generationStore?.isGenerationRecordVerifiablyLive === "function") {
-    return generationStore.isGenerationRecordVerifiablyLive(record);
-  }
-
-  return generationStore?.isGenerationRecordLive?.(record) ?? false;
 }
 
 export function extractUpdateSessionSelector(update) {
@@ -51,14 +47,23 @@ export async function resolveSpikeUpdateRoute({
     session?.session_owner_generation_id
     ?? session?.spike_run_owner_generation_id
     ?? null;
-  const ownerGeneration = await generationStore.loadGeneration(ownerGenerationId);
-  if (
-    !await isGenerationRecordUsable(generationStore, ownerGeneration)
-    || !ownerGeneration?.ipc_endpoint
-  ) {
+  const ownerGenerationIsLive = await isOwnedSessionForwardTargetLive(
+    session,
+    generationStore,
+  );
+  const ownerGeneration = ownerGenerationIsLive
+    ? await generationStore.loadGeneration(ownerGenerationId)
+    : null;
+  if (!ownerGenerationIsLive || !ownerGeneration?.ipc_endpoint) {
+    const clearedSession = typeof sessionStore.patch === "function"
+      ? await sessionStore.patch(session, {
+          ...clearSessionOwnershipPatch(),
+          spike_run_owner_generation_id: null,
+        })
+      : session;
     return {
       type: "local",
-      session,
+      session: clearedSession,
       staleOwnerGenerationId: ownerGenerationId,
     };
   }

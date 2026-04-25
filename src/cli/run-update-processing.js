@@ -1,12 +1,37 @@
+import process from "node:process";
+
 import { markBootstrapDrop, markUpdateSeen } from "../runtime/service-state.js";
+import { isProcessAlive } from "../runtime/service-generation-store.js";
 import { forwardUpdate } from "../runtime/update-forwarding-ipc.js";
+import {
+  clearSessionOwnershipPatch,
+  resolveSessionOwnerGenerationId,
+} from "../rollout/session-ownership.js";
 import { ackBatchCallbackQueriesBestEffort } from "../telegram/callback-batch-ack.js";
 import { isGlobalControlCallbackQuery } from "../telegram/global-control-panel.js";
+import { parseGlobalControlCallbackData } from "../telegram/global-control-panel-view.js";
 import { handleSpikeUpdate } from "../telegram/spike-update-dispatch.js";
 import { resolveSpikeUpdateRoute } from "../telegram/spike-update-routing.js";
 import { isTopicControlCallbackQuery } from "../telegram/topic-control-panel.js";
+import { parseTopicControlCallbackData } from "../telegram/topic-control-panel-view.js";
 
 const MESSAGE_UPDATES_ONLY = ["message"];
+const RETIRING_OWNER_TERM_GRACE_MS = 1500;
+const RETIRING_OWNER_TERM_POLL_MS = 50;
+const SAFE_GLOBAL_RECOVERY_CALLBACK_KINDS = new Set([
+  "guide_show",
+  "help_show",
+  "navigate",
+  "zoo_show",
+]);
+const SAFE_TOPIC_RECOVERY_CALLBACK_KINDS = new Set([
+  "help_show",
+  "navigate",
+]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function shouldDeferCallbackAck(update) {
   const callbackQuery = update?.callback_query;
@@ -58,14 +83,239 @@ export async function noteOffsetSafe(runtimeObserver, nextOffset) {
   }
 }
 
-export async function dispatchSpikeUpdateLocally({
+function isRecoverableForwardingError(error) {
+  const message = String(error?.message ?? "").toLowerCase();
+  return (
+    message.includes("ipc request timed out")
+    || message.includes("econnrefused")
+    || message.includes("socket hang up")
+    || message.includes("fetch failed")
+  );
+}
+
+function extractCommandName(update) {
+  const message = update?.message;
+  const text = typeof message?.text === "string" ? message.text : null;
+  const entity = Array.isArray(message?.entities)
+    ? message.entities.find((candidate) =>
+      candidate?.type === "bot_command" && Number(candidate?.offset) === 0)
+    : null;
+  if (!text || !entity || !Number.isInteger(entity.length) || entity.length <= 1) {
+    return null;
+  }
+
+  const rawCommand = text.slice(1, entity.length).trim();
+  if (!rawCommand) {
+    return null;
+  }
+
+  return rawCommand.split("@", 1)[0].toLowerCase();
+}
+
+function isSafeLocalRecoveryUpdate(update) {
+  const callbackQuery = update?.callback_query;
+  if (callbackQuery) {
+    if (isGlobalControlCallbackQuery(callbackQuery)) {
+      const parsed = parseGlobalControlCallbackData(callbackQuery.data);
+      return SAFE_GLOBAL_RECOVERY_CALLBACK_KINDS.has(parsed?.kind);
+    }
+
+    if (isTopicControlCallbackQuery(callbackQuery)) {
+      const parsed = parseTopicControlCallbackData(callbackQuery.data);
+      return SAFE_TOPIC_RECOVERY_CALLBACK_KINDS.has(parsed?.kind);
+    }
+
+    return false;
+  }
+
+  const commandName = extractCommandName(update);
+  return commandName === "menu" || commandName === "status";
+}
+
+async function terminateRetiringOwnerGeneration(
+  ownerGeneration,
+  {
+    processImpl = process,
+    processAliveImpl = isProcessAlive,
+    graceMs = RETIRING_OWNER_TERM_GRACE_MS,
+    pollMs = RETIRING_OWNER_TERM_POLL_MS,
+  } = {},
+) {
+  const pid = Number.isInteger(ownerGeneration?.pid) && ownerGeneration.pid > 0
+    ? ownerGeneration.pid
+    : null;
+  if (!pid) {
+    return false;
+  }
+
+  const waitForExit = async () => {
+    const deadline = Date.now() + graceMs;
+    while (Date.now() < deadline) {
+      if (!processAliveImpl(pid)) {
+        return true;
+      }
+      await sleep(pollMs);
+    }
+    return !processAliveImpl(pid);
+  };
+
+  try {
+    processImpl.kill(pid, "SIGTERM");
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      return true;
+    }
+  }
+  if (await waitForExit()) {
+    return true;
+  }
+
+  try {
+    processImpl.kill(pid, "SIGKILL");
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      return true;
+    }
+  }
+
+  return waitForExit();
+}
+
+async function recoverForwardedUpdateLocally({
   api,
   botUsername,
   config,
   emergencyRouter,
   lifecycleManager,
   promptFragmentAssembler,
-  promptHandoffStore = null,
+  queuePromptAssembler,
+  runtimeObserver,
+  sessionService,
+  globalControlPanelStore,
+  generalMessageLedgerStore,
+  topicControlPanelStore,
+  zooService,
+  workerPool,
+  serviceState,
+  update,
+  handleSpikeUpdateImpl,
+  dispatchSpikeUpdateLocallyImpl,
+  sessionStore,
+  route,
+  error,
+  terminateRetiringOwnerImpl = terminateRetiringOwnerGeneration,
+}) {
+  const session = route?.session ?? null;
+  const ownerMode = String(session?.session_owner_mode ?? "").trim().toLowerCase();
+  if (
+    ownerMode !== "retiring"
+    || !session
+    || !isRecoverableForwardingError(error)
+  ) {
+    throw error;
+  }
+
+  console.warn(
+    [
+      `forwarding update ${update?.update_id ?? "unknown"} to retiring owner`,
+      `${session.session_owner_generation_id || "unknown-owner"} failed: ${error.message}`,
+      "recovering locally",
+    ].join(" "),
+  );
+
+  const runStillMarkedRunning =
+    String(session?.last_run_status ?? "").trim().toLowerCase() === "running";
+  if (runStillMarkedRunning) {
+    const ownerTerminated = await terminateRetiringOwnerImpl(route?.ownerGeneration);
+    if (!ownerTerminated) {
+      if (!isSafeLocalRecoveryUpdate(update)) {
+        throw new Error(
+          "Retiring owner stalled and could not be terminated safely before local takeover",
+        );
+      }
+
+      await dispatchSpikeUpdateLocallyImpl({
+        api,
+        botUsername,
+        config,
+        emergencyRouter,
+        lifecycleManager,
+        promptFragmentAssembler,
+        queuePromptAssembler,
+        runtimeObserver,
+        sessionService,
+        globalControlPanelStore,
+        generalMessageLedgerStore,
+        topicControlPanelStore,
+        zooService,
+        workerPool,
+        serviceState,
+        update,
+        handleSpikeUpdateImpl,
+      });
+      return;
+    }
+  }
+
+  await clearRetiringOwnerIfCurrent(sessionStore, session, route?.ownerGeneration);
+
+  await dispatchSpikeUpdateLocallyImpl({
+    api,
+    botUsername,
+    config,
+    emergencyRouter,
+    lifecycleManager,
+    promptFragmentAssembler,
+    queuePromptAssembler,
+    runtimeObserver,
+    sessionService,
+    globalControlPanelStore,
+    generalMessageLedgerStore,
+    topicControlPanelStore,
+    zooService,
+    workerPool,
+    serviceState,
+    update,
+    handleSpikeUpdateImpl,
+  });
+}
+
+async function clearRetiringOwnerIfCurrent(sessionStore, session, ownerGeneration = null) {
+  if (!sessionStore || !session) {
+    return;
+  }
+
+  const expectedOwnerId =
+    String(ownerGeneration?.generation_id || "").trim()
+    || resolveSessionOwnerGenerationId(session);
+  const clearPatch = {
+    ...clearSessionOwnershipPatch(),
+    spike_run_owner_generation_id: null,
+  };
+
+  if (typeof sessionStore.patchWithCurrent === "function") {
+    await sessionStore.patchWithCurrent(session, (current) => {
+      const currentOwnerId = resolveSessionOwnerGenerationId(current);
+      if (expectedOwnerId && currentOwnerId && currentOwnerId !== expectedOwnerId) {
+        return {};
+      }
+      return clearPatch;
+    });
+    return;
+  }
+
+  if (typeof sessionStore.patch === "function") {
+    await sessionStore.patch(session, clearPatch);
+  }
+}
+
+async function dispatchSpikeUpdateLocally({
+  api,
+  botUsername,
+  config,
+  emergencyRouter,
+  lifecycleManager,
+  promptFragmentAssembler,
   queuePromptAssembler,
   runtimeObserver,
   sessionService,
@@ -85,7 +335,6 @@ export async function dispatchSpikeUpdateLocally({
     emergencyRouter,
     lifecycleManager,
     promptFragmentAssembler,
-    promptHandoffStore,
     queuePromptAssembler,
     runtimeObserver,
     sessionService,
@@ -106,7 +355,6 @@ export function createForwardingRequestHandler({
   emergencyRouter,
   lifecycleManager,
   promptFragmentAssembler,
-  promptHandoffStore = null,
   queuePromptAssembler,
   runtimeObserver,
   sessionService,
@@ -122,14 +370,29 @@ export function createForwardingRequestHandler({
 }) {
   return async (payload) => {
     if (payload?.type === "generation-probe") {
+      const providedInstanceToken =
+        typeof payload?.instance_token === "string"
+        && payload.instance_token.trim()
+          ? payload.instance_token.trim()
+          : null;
+      if (
+        instanceToken
+        && providedInstanceToken
+        && providedInstanceToken !== instanceToken
+      ) {
+        throw new Error("Unauthorized forwarded spike probe");
+      }
       return {
         generation_id: generationId,
-        instance_token: instanceToken,
+        instance_token: instanceToken || null,
       };
     }
 
     if (payload?.type !== "spike-update" || !payload?.update) {
       throw new Error("Unsupported forwarded spike request");
+    }
+    if (instanceToken && payload?.auth_token !== instanceToken) {
+      throw new Error("Unauthorized forwarded spike request");
     }
 
     await dispatchSpikeUpdateLocallyImpl({
@@ -139,7 +402,6 @@ export function createForwardingRequestHandler({
       emergencyRouter,
       lifecycleManager,
       promptFragmentAssembler,
-      promptHandoffStore,
       queuePromptAssembler,
       runtimeObserver,
       sessionService,
@@ -167,7 +429,6 @@ export async function processUpdates({
   handleSpikeUpdateImpl = handleSpikeUpdate,
   lifecycleManager,
   promptFragmentAssembler,
-  promptHandoffStore = null,
   queuePromptAssembler,
   resolveSpikeUpdateRouteImpl = resolveSpikeUpdateRoute,
   runtimeObserver,
@@ -183,6 +444,7 @@ export async function processUpdates({
   generationId,
   generationStore,
   updates,
+  terminateRetiringOwnerImpl = terminateRetiringOwnerGeneration,
 }) {
   let nextOffset = null;
   await ackBatchCallbackQueriesImpl(
@@ -203,13 +465,41 @@ export async function processUpdates({
     });
 
     if (route.type === "forward") {
-      await forwardUpdateImpl({
-        endpoint: route.ownerGeneration.ipc_endpoint,
-        payload: {
-          type: "spike-update",
+      try {
+        await forwardUpdateImpl({
+          endpoint: route.ownerGeneration.ipc_endpoint,
+          authToken: route.ownerGeneration.instance_token,
+          payload: {
+            type: "spike-update",
+            update,
+          },
+        });
+      } catch (error) {
+        await recoverForwardedUpdateLocally({
+          api,
+          botUsername,
+          config,
+          emergencyRouter,
+          lifecycleManager,
+          promptFragmentAssembler,
+          queuePromptAssembler,
+          runtimeObserver,
+          sessionService,
+          globalControlPanelStore,
+          generalMessageLedgerStore,
+          topicControlPanelStore,
+          zooService,
+          workerPool,
+          serviceState,
           update,
-        },
-      });
+          handleSpikeUpdateImpl,
+          dispatchSpikeUpdateLocallyImpl,
+          sessionStore,
+          route,
+          error,
+          terminateRetiringOwnerImpl,
+        });
+      }
     } else {
       await dispatchSpikeUpdateLocallyImpl({
         api,
@@ -218,7 +508,6 @@ export async function processUpdates({
         emergencyRouter,
         lifecycleManager,
         promptFragmentAssembler,
-        promptHandoffStore,
         queuePromptAssembler,
         runtimeObserver,
         sessionService,

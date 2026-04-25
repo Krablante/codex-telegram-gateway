@@ -10,8 +10,8 @@ import {
   getZooCreatureVoicePrompt,
 } from "./creatures.js";
 
-export const ZOO_ANALYSIS_MODEL = "gpt-5.4-mini";
-export const ZOO_ANALYSIS_REASONING = "high";
+const ZOO_ANALYSIS_MODEL = "gpt-5.4-mini";
+const ZOO_ANALYSIS_REASONING = "high";
 const REQUIRED_STAT_KEYS = [
   "security",
   "shitcode",

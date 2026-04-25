@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 
 import { getSessionKey, normalizeSessionIds } from "./session-key.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import {
   cloneJson,
+  ensurePrivateDirectory,
+  PRIVATE_DIRECTORY_MODE,
   writeTextAtomic,
+  writeTextAtomicIfChanged,
 } from "../state/file-utils.js";
 import { buildTopicContextFileText } from "./topic-context.js";
 import {
@@ -36,15 +40,105 @@ async function loadCurrentMetaOrFallback(store, meta) {
   return (await readMetaJson(metaPath)) || meta;
 }
 
+function normalizeOptionalText(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+}
+
+function preservePendingAttachmentFields(existing) {
+  return {
+    pending_prompt_attachments: Array.isArray(existing?.pending_prompt_attachments)
+      ? cloneJson(existing.pending_prompt_attachments)
+      : [],
+    pending_prompt_attachments_expires_at:
+      normalizeOptionalText(existing?.pending_prompt_attachments_expires_at),
+    pending_queue_attachments: Array.isArray(existing?.pending_queue_attachments)
+      ? cloneJson(existing.pending_queue_attachments)
+      : [],
+    pending_queue_attachments_expires_at:
+      normalizeOptionalText(existing?.pending_queue_attachments_expires_at),
+  };
+}
+
+const META_LOCK_OWNER_FILE = "owner.json";
+const META_LOCK_HEARTBEAT_MS = Math.max(
+  1000,
+  Math.min(10_000, Math.floor(META_LOCK_STALE_MS / 3)),
+);
+
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+async function writeMetaLockOwner(lockPath) {
+  await writeTextAtomic(
+    path.join(lockPath, META_LOCK_OWNER_FILE),
+    `${JSON.stringify({
+      pid: process.pid,
+      created_at: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+}
+
+async function readMetaLockOwner(lockPath) {
+  try {
+    return JSON.parse(
+      await fs.readFile(path.join(lockPath, META_LOCK_OWNER_FILE), "utf8"),
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function isMetaLockReapable(lockPath) {
+  const stats = await fs.stat(lockPath);
+  if (Date.now() - stats.mtimeMs < META_LOCK_STALE_MS) {
+    return false;
+  }
+
+  const owner = await readMetaLockOwner(lockPath);
+  if (isProcessAlive(Number(owner?.pid))) {
+    return false;
+  }
+
+  return true;
+}
+
+function startMetaLockHeartbeat(lockPath) {
+  const heartbeat = setInterval(() => {
+    const now = new Date();
+    void fs.utimes(lockPath, now, now).catch(() => {});
+  }, META_LOCK_HEARTBEAT_MS);
+  heartbeat.unref?.();
+  return heartbeat;
+}
+
 export async function withMetaLock(store, chatId, topicId, fn) {
   const sessionDir = store.getSessionDir(chatId, topicId);
   const lockPath = store.getMetaLockPath(chatId, topicId);
-  await fs.mkdir(sessionDir, { recursive: true });
+  await ensurePrivateDirectory(sessionDir);
   const startedAt = Date.now();
+  let heartbeat;
 
   while (true) {
     try {
-      await fs.mkdir(lockPath);
+      await fs.mkdir(lockPath, { mode: PRIVATE_DIRECTORY_MODE });
+      try {
+        await writeMetaLockOwner(lockPath);
+        heartbeat = startMetaLockHeartbeat(lockPath);
+      } catch (ownerError) {
+        await fs.rm(lockPath, { recursive: true, force: true }).catch(() => {});
+        throw ownerError;
+      }
       break;
     } catch (error) {
       if (error?.code !== "EEXIST") {
@@ -53,19 +147,20 @@ export async function withMetaLock(store, chatId, topicId, fn) {
 
       if (Date.now() - startedAt >= META_LOCK_TIMEOUT_MS) {
         try {
-          const stats = await fs.stat(lockPath);
-          if (Date.now() - stats.mtimeMs >= META_LOCK_STALE_MS) {
+          if (await isMetaLockReapable(lockPath)) {
             await fs.rm(lockPath, { recursive: true, force: true });
             continue;
           }
         } catch (statError) {
-          if (statError?.code !== "ENOENT") {
-            throw statError;
+          if (statError?.code === "ENOENT") {
+            continue;
           }
+          throw statError;
         }
 
         throw new Error(
           `Timed out acquiring session meta lock for ${getSessionKey(chatId, topicId)}`,
+          { cause: error },
         );
       }
 
@@ -76,6 +171,9 @@ export async function withMetaLock(store, chatId, topicId, fn) {
   try {
     return await fn();
   } finally {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+    }
     await fs.rm(lockPath, { recursive: true, force: true }).catch(() => {});
   }
 }
@@ -83,12 +181,12 @@ export async function withMetaLock(store, chatId, topicId, fn) {
 export async function saveUnlocked(store, meta) {
   const sessionDir = store.getSessionDir(meta.chat_id, meta.topic_id);
   const normalizedMeta = normalizeStoredSessionMeta(meta);
-  await fs.mkdir(sessionDir, { recursive: true });
+  await ensurePrivateDirectory(sessionDir);
   await writeTextAtomic(
     path.join(sessionDir, "meta.json"),
     `${JSON.stringify(stripLegacyMetaFields(normalizedMeta), null, 2)}\n`,
   );
-  await writeTextAtomic(
+  await writeTextAtomicIfChanged(
     store.getTopicContextPath(normalizedMeta.chat_id, normalizedMeta.topic_id),
     buildTopicContextFileText(normalizedMeta, {
       topicContextPath: store.getTopicContextPath(
@@ -115,6 +213,11 @@ export async function ensureSession(
     workspaceBinding,
     createdVia,
     inheritedFromSessionKey = null,
+    executionHostId = null,
+    executionHostLabel = null,
+    executionHostBoundAt = null,
+    executionHostLastReadyAt = null,
+    executionHostLastFailure = null,
     reactivate = false,
   },
 ) {
@@ -132,6 +235,45 @@ export async function ensureSession(
         updated_at: now,
       };
 
+      if (reactivate && existing.lifecycle_state === "purged") {
+        updated = {
+          schema_version: existing.schema_version ?? 1,
+          session_key: getSessionKey(ids.chatId, ids.topicId),
+          chat_id: ids.chatId,
+          topic_id: ids.topicId,
+          topic_name: topicName || existing.topic_name || null,
+          lifecycle_state: "active",
+          created_at: now,
+          updated_at: now,
+          created_via: createdVia,
+          inherited_from_session_key: existing.inherited_from_session_key ?? null,
+          workspace_binding: cloneJson(
+            existing.workspace_binding || workspaceBinding,
+          ),
+          ...buildRuntimeStateFields(),
+          ...preservePendingAttachmentFields(existing),
+          execution_host_id: executionHostId ?? existing.execution_host_id ?? null,
+          execution_host_label:
+            executionHostLabel
+            ?? existing.execution_host_label
+            ?? executionHostId
+            ?? null,
+          execution_host_bound_at:
+            executionHostBoundAt
+            ?? existing.execution_host_bound_at
+            ?? now,
+          execution_host_last_ready_at:
+            executionHostLastReadyAt ?? existing.execution_host_last_ready_at ?? null,
+          execution_host_last_failure:
+            executionHostLastFailure ?? existing.execution_host_last_failure ?? null,
+          ui_language: normalizeUiLanguage(existing.ui_language ?? uiLanguage),
+          reactivated_at: now,
+          lifecycle_reactivated_reason: createdVia,
+        };
+        await saveUnlocked(store, updated);
+        return updated;
+      }
+
       if (reactivate && existing.lifecycle_state === "parked") {
         updated = {
           ...updated,
@@ -142,6 +284,46 @@ export async function ensureSession(
           ),
           reactivated_at: now,
           lifecycle_reactivated_reason: createdVia,
+        };
+      }
+
+      const hasExecutionHostId = Boolean(normalizeOptionalText(existing.execution_host_id));
+      const hasExecutionHostLabel = Boolean(normalizeOptionalText(existing.execution_host_label));
+      const hasExecutionHostBoundAt = Boolean(normalizeOptionalText(existing.execution_host_bound_at));
+      const hasExecutionHostLastReadyAt = Boolean(
+        normalizeOptionalText(existing.execution_host_last_ready_at),
+      );
+      const hasExecutionHostLastFailure = Boolean(
+        normalizeOptionalText(existing.execution_host_last_failure),
+      );
+
+      if (
+        executionHostId
+        && (
+          !hasExecutionHostId
+          || !hasExecutionHostLabel
+          || !hasExecutionHostBoundAt
+          || (!hasExecutionHostLastReadyAt && executionHostLastReadyAt)
+          || (!hasExecutionHostLastFailure && executionHostLastFailure)
+        )
+      ) {
+        updated = {
+          ...updated,
+          execution_host_id: hasExecutionHostId
+            ? updated.execution_host_id
+            : executionHostId,
+          execution_host_label: hasExecutionHostLabel
+            ? updated.execution_host_label
+            : executionHostLabel ?? executionHostId,
+          execution_host_bound_at: hasExecutionHostBoundAt
+            ? updated.execution_host_bound_at
+            : executionHostBoundAt ?? now,
+          execution_host_last_ready_at: hasExecutionHostLastReadyAt
+            ? updated.execution_host_last_ready_at
+            : executionHostLastReadyAt,
+          execution_host_last_failure: hasExecutionHostLastFailure
+            ? updated.execution_host_last_failure
+            : executionHostLastFailure,
         };
       }
 
@@ -162,6 +344,11 @@ export async function ensureSession(
       inherited_from_session_key: inheritedFromSessionKey,
       workspace_binding: cloneJson(workspaceBinding),
       ...buildRuntimeStateFields(),
+      execution_host_id: executionHostId,
+      execution_host_label: executionHostLabel,
+      execution_host_bound_at: executionHostBoundAt ?? now,
+      execution_host_last_ready_at: executionHostLastReadyAt,
+      execution_host_last_failure: executionHostLastFailure,
       ui_language: normalizeUiLanguage(uiLanguage),
     };
 

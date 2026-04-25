@@ -14,14 +14,18 @@ const SCREEN_IDS = new Set([
   "wait",
   "suffix",
   "language",
+  "hosts",
+  "new_topic",
+  "bot_settings",
   "spike_model",
   "spike_reasoning",
-  "omni_model",
-  "omni_reasoning",
+  "compact_model",
+  "compact_reasoning",
 ]);
 const PENDING_INPUT_KINDS = new Set([
   "suffix_text",
   "wait_custom",
+  "new_topic_title",
 ]);
 
 function normalizeInteger(value) {
@@ -31,6 +35,11 @@ function normalizeInteger(value) {
 function normalizeScreenId(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return SCREEN_IDS.has(normalized) ? normalized : "root";
+}
+
+function normalizeStatusText(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
 }
 
 function normalizePendingInput(payload) {
@@ -45,6 +54,9 @@ function normalizePendingInput(payload) {
     requested_by_user_id: String(payload?.requested_by_user_id ?? "").trim() || null,
     menu_message_id: normalizeInteger(payload?.menu_message_id),
     screen: normalizeScreenId(payload?.screen),
+    requested_host_id: String(payload?.requested_host_id ?? "").trim().toLowerCase() || null,
+    requested_host_label: String(payload?.requested_host_label ?? "").trim() || null,
+    status_message: normalizeStatusText(payload?.status_message),
   };
 }
 
@@ -56,6 +68,7 @@ function buildEmptyGlobalControlPanelState() {
     active_screen: "root",
     ui_language: "rus",
     pending_input: null,
+    notice: null,
   };
 }
 
@@ -67,6 +80,7 @@ function normalizeGlobalControlPanelState(payload) {
     active_screen: normalizeScreenId(payload?.active_screen),
     ui_language: normalizeUiLanguage(payload?.ui_language),
     pending_input: normalizePendingInput(payload?.pending_input),
+    notice: normalizeStatusText(payload?.notice),
   };
 }
 

@@ -27,6 +27,8 @@ const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_LONG_SLEEP_SECS = 20;
 const DEFAULT_RESUME_INTERRUPT_DELAY_MS = 2000;
 const DEFAULT_RUN_STABILIZE_WAIT_MS = 4000;
+const ROLLOUT_SETTLING_ERROR_RE =
+  /previous rollout request is still settling/u;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -187,14 +189,6 @@ async function waitForThreadReplyContaining(
   }, timeoutMs, `thread reply containing ${needle} in ${chatId}:${topicId}`);
 }
 
-async function waitForSession(sessionStore, chatId, topicId, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  return waitFor(
-    () => sessionStore.load(String(chatId), String(topicId)),
-    timeoutMs,
-    `session ${chatId}:${topicId}`,
-  );
-}
-
 async function waitForRunStart(sessionStore, session, timeoutMs = DEFAULT_TIMEOUT_MS) {
   return waitFor(async () => {
     const current = await sessionStore.load(session.chat_id, session.topic_id);
@@ -239,10 +233,11 @@ async function waitForRunStatus(
   }, timeoutMs, `run status ${[...allowedStatuses].join(",")} for ${session.session_key}`);
 }
 
-async function waitForSessionOwner(
+async function waitForSessionOwnerOrCompleted(
   sessionStore,
   session,
   {
+    expectedToken = null,
     generationId,
     mode,
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -253,14 +248,26 @@ async function waitForSessionOwner(
     if (!current) {
       return null;
     }
-    if (generationId && current.session_owner_generation_id !== generationId) {
-      return null;
+    if (
+      (!generationId || current.session_owner_generation_id === generationId)
+      && (!mode || current.session_owner_mode === mode)
+    ) {
+      return {
+        completedBeforeOwnerObservation: false,
+        session: current,
+      };
     }
-    if (mode && current.session_owner_mode !== mode) {
-      return null;
+    if (
+      current.last_run_status === "completed"
+      && (!expectedToken || current.last_agent_reply?.includes(expectedToken))
+    ) {
+      return {
+        completedBeforeOwnerObservation: true,
+        session: current,
+      };
     }
-    return current;
-  }, timeoutMs, `session owner ${generationId || "any"} for ${session.session_key}`);
+    return null;
+  }, timeoutMs, `session owner ${generationId || "any"} or completion for ${session.session_key}`);
 }
 
 async function waitForCompactionReset(
@@ -334,23 +341,46 @@ function parseKeyValueOutput(text) {
   return result;
 }
 
-async function runServiceRollout(config) {
-  const { stdout, stderr } = await execFileAsync(
-    process.execPath,
-    ["src/cli/service-rollout.js"],
-    {
-      cwd: config.repoRoot,
-      env: {
-        ...process.env,
-        ENV_FILE: config.envFilePath,
-      },
-    },
-  );
-  const parsed = parseKeyValueOutput(stdout);
-  if (stderr?.trim()) {
-    parsed.stderr = stderr.trim();
+async function runServiceRollout(config, {
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+} = {}) {
+  const startedAt = Date.now();
+  let lastSettlingError = null;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        process.execPath,
+        ["src/cli/service-rollout.js"],
+        {
+          cwd: config.repoRoot,
+          env: {
+            ...process.env,
+            ENV_FILE: config.envFilePath,
+          },
+        },
+      );
+      const parsed = parseKeyValueOutput(stdout);
+      if (stderr?.trim()) {
+        parsed.stderr = stderr.trim();
+      }
+      return parsed;
+    } catch (error) {
+      const text = [
+        error?.message,
+        error?.stdout,
+        error?.stderr,
+      ].filter(Boolean).join("\n");
+      if (!ROLLOUT_SETTLING_ERROR_RE.test(text)) {
+        throw error;
+      }
+
+      lastSettlingError = error;
+      await sleep(WAIT_POLL_MS);
+    }
   }
-  return parsed;
+
+  throw lastSettlingError || new Error("Timed out waiting for service rollout settling");
 }
 
 async function runSpikeInterruptResumeScenario({
@@ -361,6 +391,7 @@ async function runSpikeInterruptResumeScenario({
   sessionStore,
   sleepSecs,
   stamp,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
   userClient,
 }) {
   const topic = registerCreatedTopic(
@@ -385,7 +416,7 @@ async function runSpikeInterruptResumeScenario({
       platform: process.platform,
     }),
   );
-  await waitForRunStart(sessionStore, topic.session);
+  await waitForRunStart(sessionStore, topic.session, timeoutMs);
   await sleep(DEFAULT_RESUME_INTERRUPT_DELAY_MS);
   await sendTopicMessage(userClient, chatId, topic.topicId, "/interrupt", {
     commandName: "interrupt",
@@ -394,6 +425,7 @@ async function runSpikeInterruptResumeScenario({
     sessionStore,
     topic.session,
     "interrupted",
+    { timeoutMs },
   );
 
   await sendTopicMessage(
@@ -406,13 +438,14 @@ async function runSpikeInterruptResumeScenario({
     sessionStore,
     topic.session,
     "completed",
-    { expectedToken: token },
+    { expectedToken: token, timeoutMs },
   );
   const threadReply = await waitForThreadReplyContaining(
     userClient,
     chatId,
     topic.topicId,
     token,
+    timeoutMs,
   );
 
   return {
@@ -434,6 +467,7 @@ async function runRetainedRolloutChainScenario({
   sessionStore,
   sleepSecs,
   stamp,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
   userClient,
 }) {
   if (process.platform !== "linux") {
@@ -464,22 +498,25 @@ async function runRetainedRolloutChainScenario({
       platform: process.platform,
     }),
   );
-  await waitForRunStart(sessionStore, longTopicA.session);
+  await waitForRunStart(sessionStore, longTopicA.session, timeoutMs);
 
-  const firstRollout = await runServiceRollout(config);
+  const firstRollout = await runServiceRollout(config, { timeoutMs });
   if (firstRollout.mode !== "soft-rollout") {
     throw new Error(
       `Unexpected first rollout mode: ${firstRollout.mode || "unknown"}`,
     );
   }
-  const retainedA = await waitForSessionOwner(
+  const retainedAResult = await waitForSessionOwnerOrCompleted(
     sessionStore,
     longTopicA.session,
     {
+      expectedToken: tokenA,
       generationId: firstRollout.previous_generation,
       mode: "retiring",
+      timeoutMs,
     },
   );
+  const retainedA = retainedAResult.session;
 
   const longTopicB = registerCreatedTopic(
     createdTopics,
@@ -502,22 +539,25 @@ async function runRetainedRolloutChainScenario({
       platform: process.platform,
     }),
   );
-  await waitForRunStart(sessionStore, longTopicB.session);
+  await waitForRunStart(sessionStore, longTopicB.session, timeoutMs);
 
-  const secondRollout = await runServiceRollout(config);
+  const secondRollout = await runServiceRollout(config, { timeoutMs });
   if (secondRollout.mode !== "soft-rollout") {
     throw new Error(
       `Unexpected second rollout mode: ${secondRollout.mode || "unknown"}`,
     );
   }
-  const retainedB = await waitForSessionOwner(
+  const retainedBResult = await waitForSessionOwnerOrCompleted(
     sessionStore,
     longTopicB.session,
     {
+      expectedToken: tokenB,
       generationId: secondRollout.previous_generation,
       mode: "retiring",
+      timeoutMs,
     },
   );
+  const retainedB = retainedBResult.session;
   const retainedAAfterSecond = await sessionStore.load(
     longTopicA.session.chat_id,
     longTopicA.session.topic_id,
@@ -543,26 +583,27 @@ async function runRetainedRolloutChainScenario({
     sessionStore,
     quickTopic.session,
     "completed",
-    { expectedToken: quickToken },
+    { expectedToken: quickToken, timeoutMs },
   );
   const quickThreadReply = await waitForThreadReplyContaining(
     userClient,
     chatId,
     quickTopic.topicId,
     quickToken,
+    timeoutMs,
   );
 
   const completedA = await waitForRunStatus(
     sessionStore,
     longTopicA.session,
     "completed",
-    { expectedToken: tokenA },
+    { expectedToken: tokenA, timeoutMs },
   );
   const completedB = await waitForRunStatus(
     sessionStore,
     longTopicB.session,
     "completed",
-    { expectedToken: tokenB },
+    { expectedToken: tokenB, timeoutMs },
   );
 
   return {
@@ -574,9 +615,13 @@ async function runRetainedRolloutChainScenario({
     firstRollout,
     secondRollout,
     retainedAOwner: retainedA.session_owner_generation_id,
+    retainedACompletedBeforeOwnerObservation:
+      retainedAResult.completedBeforeOwnerObservation,
     retainedAOwnerAfterSecond:
       retainedAAfterSecond?.session_owner_generation_id ?? null,
     retainedBOwner: retainedB.session_owner_generation_id,
+    retainedBCompletedBeforeOwnerObservation:
+      retainedBResult.completedBeforeOwnerObservation,
     freshLeaderTopicId: quickTopic.topicId,
     freshLeaderReplyId: quickThreadReply.id,
   };
@@ -590,6 +635,7 @@ async function runCompactScenarios({
   sessionStore,
   sleepSecs,
   stamp,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
   userClient,
 }) {
   const activeTopic = registerCreatedTopic(
@@ -613,7 +659,7 @@ async function runCompactScenarios({
       platform: process.platform,
     }),
   );
-  const activeStarted = await waitForRunStart(sessionStore, activeTopic.session);
+  await waitForRunStart(sessionStore, activeTopic.session, timeoutMs);
   await sendTopicMessage(userClient, chatId, activeTopic.topicId, "/compact", {
     commandName: "compact",
   });
@@ -631,7 +677,7 @@ async function runCompactScenarios({
     sessionStore,
     activeTopic.session,
     "completed",
-    { expectedToken: activeToken },
+    { expectedToken: activeToken, timeoutMs },
   );
 
   const freshTopic = registerCreatedTopic(
@@ -654,7 +700,7 @@ async function runCompactScenarios({
     sessionStore,
     freshTopic.session,
     "completed",
-    { expectedToken: beforeToken },
+    { expectedToken: beforeToken, timeoutMs },
   );
   const oldThreadId = beforeCompact.codex_thread_id;
   const previousCompactedAt = beforeCompact.last_compacted_at;
@@ -666,6 +712,7 @@ async function runCompactScenarios({
     sessionStore,
     freshTopic.session,
     previousCompactedAt,
+    timeoutMs,
   );
 
   const afterToken = `SPIKE_COMPACT_AFTER_${stamp}`;
@@ -679,13 +726,14 @@ async function runCompactScenarios({
     sessionStore,
     freshTopic.session,
     "completed",
-    { expectedToken: afterToken },
+    { expectedToken: afterToken, timeoutMs },
   );
   const afterThreadReply = await waitForThreadReplyContaining(
     userClient,
     chatId,
     freshTopic.topicId,
     afterToken,
+    timeoutMs,
   );
 
   if (!afterCompact.codex_thread_id || afterCompact.codex_thread_id === oldThreadId) {
@@ -714,6 +762,7 @@ async function runAttachmentIngressScenario({
   sessionService,
   sessionStore,
   stamp,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
   userClient,
 }) {
   const topic = registerCreatedTopic(
@@ -751,13 +800,14 @@ async function runAttachmentIngressScenario({
       sessionStore,
       topic.session,
       "completed",
-      { expectedToken: token },
+      { expectedToken: token, timeoutMs },
     );
     const threadReply = await waitForThreadReplyContaining(
       userClient,
       chatId,
       topic.topicId,
       token,
+      timeoutMs,
     );
     return {
       scenario: "spike-attachment-ingress",
@@ -864,6 +914,7 @@ async function main() {
         sessionStore,
         sleepSecs,
         stamp,
+        timeoutMs,
         userClient,
       }),
       await runRetainedRolloutChainScenario({
@@ -875,6 +926,7 @@ async function main() {
         sessionStore,
         sleepSecs,
         stamp,
+        timeoutMs,
         userClient,
       }),
       await runCompactScenarios({
@@ -885,6 +937,7 @@ async function main() {
         sessionStore,
         sleepSecs,
         stamp,
+        timeoutMs,
         userClient,
       }),
       await runAttachmentIngressScenario({
@@ -894,6 +947,7 @@ async function main() {
         sessionService,
         sessionStore,
         stamp,
+        timeoutMs,
         userClient,
       }),
     ];

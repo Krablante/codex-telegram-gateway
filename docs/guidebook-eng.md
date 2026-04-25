@@ -1,70 +1,65 @@
-# Spike + Omni: newcomer guidebook
+# Spike: newcomer guidebook
 
-This is a short practical guide to the bot. It is not a full flag reference. It is a starting map: where to work, when to use menus, what you do not need to memorize, and which commands are actually worth remembering.
-
-The main idea is simple: for daily work, prefer menus over memory. Commands still expose the full surface, but menus and buttons already cover most common settings.
+This is a short practical guide to the bot. It is not a full flag reference. Think of it as the map you need before the detailed docs.
 
 ## Quick start
 
-`General` is the lobby. You usually do three things there: open the global menu, run shared operator shortcuts from it, and create new work topics.
+`General` is the lobby. You usually do three things there:
+
+- open the global menu with `/global`
+- create new work topics with `/new [host=<id>] [cwd=...|path=...] <title>`; no `host=` uses the configured current/default host, normally `CURRENT_HOST_ID`, and the global `New Topic` button skips host choice only when the registry has exactly one host
+- use shared operator shortcuts such as `/help`, `/guide`, `/hosts`, or `/zoo`
 
 The normal start looks like this:
 
 ```text
 /new Backend Cleanup
+/new host=worker-a cwd=homelab/infra/automation/codex-telegram-gateway Gateway Audit
 ```
 
-Then enter the new topic and send the task as plain text. That is the normal happy path. Do not use `General` as a regular work session, and do not pile several unrelated tasks into one topic.
+Then enter the new topic and send the task as plain text.
 
 ## Who does what
 
-`Spike` is the main worker. It reads code, edits files, runs commands, and answers the task.
+`Spike` is the worker. It reads code, edits files, runs commands, and answers the task.
 
-`Omni` exists only for `/auto`. It is a supervisor, not a second heavy worker. It watches completed `Spike` cycles and decides whether the task should continue.
-
-If you are new, `Spike` alone is almost always enough. `/auto` becomes useful later, when you truly want a longer autonomous task and understand the token cost.
+There is no second supervisor bot anymore. The normal path is direct topic work with one worker and one topic-local session.
 
 ## Why menus should be your default
 
-The bot is no longer a “memorize twenty commands” interface. The basic path is:
+The easiest path is:
 
-- use `/global` in `General` for chat-wide settings;
-- use `/menu` inside a work topic for topic-local settings;
-- use the pinned menu and inline buttons in `Zoo`.
+- use `/global` in `General` for chat-wide settings
+- use `/menu` inside a work topic for topic-local settings
+- use the pinned menu in `Zoo`
 
-Menus are the easier and safer path for things that change regularly but are not the task itself:
+Menus are the safer and faster path for stable settings:
 
-- viewing `Status` inside a topic;
-- changing the UI language through the global menu in `General`;
-- turning `wait` on or off;
-- opening `Bot Settings` and changing `Spike`/`Omni` model and reasoning there, plus the separate global model/reasoning used by the temporary `/compact` summarizer;
-- running topic ops through `Compact`, `Interrupt`, and `Purge` buttons;
-- turning suffixes on or off;
-- opening `Zoo` or running `Clear` straight from the global menu in `General`;
-- opening `Guide` or `Help` straight from the global menu in `General`;
-- refreshing the current screen.
+- checking `Status`
+- changing UI language
+- turning `wait` on or off
+- changing Spike model/reasoning
+- changing the separate `/compact` summarizer profile
+- running `Compact`, `Interrupt`, and `Purge`
+- changing suffixes
 
-The practical rule is simple: if you need to change a stable setting, start with a menu. It is faster, cleaner, and usually does not require remembering syntax. A few layout details are worth knowing: the global menu now starts with `Bot Settings` and `Language` on the top row, keeps `Guide` and `Help` immediately below them, leaves `Wait` / `Suffix` and `Zoo` / `Clear` lower on the root screen, and still keeps bot-specific runtime controls behind a dedicated `Bot Settings` screen instead of spreading them directly across the root menu. The effective bot summary also stays intentionally compact, for example `spike: gpt-5.4 (xhigh)`. If you switch a model and the previously saved reasoning level is no longer supported there, the gateway drops that stale reasoning value for the same scope instead of keeping a broken override around.
+Practical rule: if you want to change a stable setting, start with a menu.
 
 ## What menus do not replace
 
-Menus do not replace the work itself. Some things still belong to plain text or direct commands:
+Menus do not replace the work itself. These still belong to normal text or direct commands:
 
-- the normal prompt inside a work topic;
-- `/new`, because topic creation is command-driven;
-- `/guide`, `/zoo`, and `/clear` still work from `General` if you prefer direct commands;
-- `Zoo`, `Clear`, `Guide`, and `Help` are available as buttons in the global menu, but the direct commands still work too;
-- `/q`, when you want to explicitly queue the next prompt;
-- `/diff`, to inspect git-backed changes; plain folders return a small unavailable reply instead of crashing the bot;
-- `/auto` and questions for `Omni`.
+- the normal prompt inside a work topic
+- `/new ...` topic creation
+- `/q` when you explicitly mean “run this next”
+- `/diff` to inspect git-backed changes
+- `/guide`, `/help`, `/zoo`, and `/clear` if you prefer direct commands
 
-One more practical detail matters: some values start from a menu but are not chosen by button. Custom wait values or free-form suffix text are usually entered as a reply to the menu message after the bot asks for input.
-
-Short version: menus are great for toggles, presets, screen navigation, and the common `General` shortcuts. Free-form text and the real work still live outside them.
+Some values still start from a menu but are entered as the next plain text message, such as a custom wait time or free-form suffix text.
 
 ## How work usually flows in a topic
 
-Inside a work topic, plain text is treated as a normal prompt. If the run is free, it starts immediately. If the run is still active, a follow-up can be folded into that same stream. If live steer hits a short transient failure, the bot now retries briefly first, and only then keeps that follow-up as the next prompt instead of bouncing it with a generic busy reply. If the upstream turn is aborted after already accepting that follow-up, the gateway rebuilds the same top-level run on a fresh thread instead of treating it as a terminal interruption.
+Inside a work topic, plain text is treated as a normal prompt. If the run is free, it starts immediately. With the default `exec-json` backend, a follow-up during an active run is accepted as live steer for the same logical run. Use `/q` when you explicitly want the text to run after the current turn settles.
 
 `/q` is not for “one more thought.” It is for an explicit “do this next.”
 
@@ -72,17 +67,17 @@ Inside a work topic, plain text is treated as a normal prompt. If the run is fre
 /q After the current check finishes, prepare a README patch.
 ```
 
-If nothing is running, that prompt usually starts right away. If the current run is still closing out, `/q` simply waits its turn. During `/auto`, this queue path is unavailable because `Omni` already owns routing.
+If nothing is running, that prompt usually starts right away. If the current run is still closing out, `/q` simply waits its turn.
 
 ## When /wait matters
 
-`/wait` is for collecting one larger prompt out of several smaller messages. For example: first send context, then a log chunk, then one more clarification, and only then flush everything as one clean request to `Spike`.
+`/wait` is for collecting one larger prompt out of several smaller messages.
 
 ```text
 /wait 60
 ```
 
-After that, send a few messages and then flush them with a separate message. Any of these work:
+After that, send a few messages and flush them with a separate message:
 
 ```text
 All
@@ -94,65 +89,50 @@ For daily work, local `/wait` is usually enough. If you want the same collection
 
 ## Why /suffix exists
 
-`/suffix` is not for one-off instructions. It is for stable reply habits such as:
+`/suffix` is for stable reply habits such as:
 
-- stay concise;
-- always say what you verified;
-- keep commands and code untranslated;
-- mention whether tests were run before the final answer.
+- stay concise
+- say what you verified
+- keep commands and code untranslated
+- mention whether tests were run
 
-If the rule belongs to one topic, use a topic suffix. If it is your default habit across the whole chat, use a global suffix. For one-time instructions, a normal prompt is usually simpler than a suffix.
+If the rule belongs to one topic, use a topic suffix. If it is your default habit across the whole chat, use a global suffix. For one-off instructions, a normal prompt is usually simpler.
 
 ## Zoo without the bloat
 
-`/zoo` is not a normal `Spike` work topic. It is a separate operator board for projects. Its job is to show which repo looks healthy, which one slipped, and where attention probably makes sense next.
+`/zoo` is not a normal work topic. It is a separate operator board for projects.
 
-The normal Zoo flow is almost entirely menu-only:
+The normal flow is mostly menu-only:
 
 1. Open `/zoo`.
 2. Tap `Add project`.
-3. Describe the project in normal words.
-4. The bot suggests the matching root.
-5. Reply `Yes` or `No`.
+3. Describe the project.
+4. Confirm the suggested root.
 
-After that, the topic mostly holds one pinned panel with pet cards and buttons such as `Back`, `Refresh`, `Remove`, and `Respawn menu`. In Zoo, the buttons intentionally stay English even when the card text is localized.
-
-What matters in practice:
-
-- Zoo is not for normal prompts or coding sessions;
-- `Refresh` updates the project card without extra topic spam;
-- `Remove` deletes the pet from Zoo, not the repo itself;
-- if you track many projects, the list becomes paginated.
-
-That is enough to use it well. Do not think of Zoo as a second command surface; it is closer to a compact repo status board.
-
-## When /auto is actually worth it
-
-`/auto` is for a longer autonomous task, not for normal back-and-forth chat. You set the goal, give the starting prompt, and then `Omni` watches completed `Spike` cycles and decides what should happen next.
-
-If you just want normal interaction with the bot, `/auto` is almost certainly unnecessary. Learn the standard `Spike` topic flow with `/menu`, `/diff`, and `/compact` first, then bring in `Omni` only when it has a practical payoff.
+After that the topic mostly holds one pinned panel with pet cards and buttons such as `Back`, `Refresh`, `Remove`, and `Respawn menu`.
 
 ## What is worth remembering
 
-If you do not want to keep many commands in your head, these are enough to start:
+If you do not want to memorize many commands, these are enough:
 
-- `/new` for a new work topic;
-- `/global` for the global menu in `General`;
-- `/menu` for the local topic menu;
-- `/status` for a quick topic check;
-- `/q` to queue the next prompt;
-- `/diff` to see what already changed in a git-backed workspace;
-- `/compact` to compress a long topic into a brief;
-- `/guide` to receive the PDF guidebook;
-- `/zoo` to open the project board;
-- `/interrupt` to stop a run when that is really necessary.
-
-Everything else can be picked up as needed through help and menus.
+- `/new` — create a new work topic
+- `/global` — open the global menu in `General`
+- `/menu` — open the topic-local menu
+- `/status` — quick topic check
+- `/q` — queue the next prompt
+- `/diff` — see what already changed in a git-backed workspace
+- `/compact` — compress a long topic into a brief
+- `/guide` — receive this guidebook as PDF
+- `/zoo` — open the project board
+- `/interrupt` — stop a run when really necessary
 
 ## Good habits
 
-Work with the rule “one topic = one stream of work.” Do not use `General` as a normal work session. For settings, look at menus first. For the actual task, use plain messages. For an explicit “do this after the current work,” use `/q`. If the topic gets too long, do not wait too long before `/compact`.
+- one topic = one stream of work
+- do not use `General` as a normal work session
+- use menus for stable settings
+- use plain messages for the real task
+- use `/q` only for explicit next-step work
+- do not wait too long before `/compact` when a topic gets large
 
-One more practical note: if the operator rolls the service forward while your topic already has an active run, that run should normally finish instead of being cut off in the middle.
-
-That is already enough to use the bot confidently without diving into the internals.
+That is already enough to use the bot confidently without diving into internals.

@@ -61,7 +61,7 @@ test("buildExecutableCandidatePaths expands PATHEXT variants on win32", () => {
   const candidates = buildExecutableCandidatePaths("codex", {
     cwd: "C:\\workspace",
     platform: "win32",
-    preferredDirectories: ["C:\\Users\\bloob\\AppData\\Roaming\\npm"],
+    preferredDirectories: ["C:\\Users\\operator\\AppData\\Roaming\\npm"],
     pathValue: "C:\\Windows\\System32",
     env: {
       PATHEXT: ".EXE;.CMD",
@@ -69,9 +69,9 @@ test("buildExecutableCandidatePaths expands PATHEXT variants on win32", () => {
   });
 
   assert.deepEqual(candidates, [
-    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex",
-    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.EXE",
-    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.CMD",
+    "C:\\Users\\operator\\AppData\\Roaming\\npm\\codex",
+    "C:\\Users\\operator\\AppData\\Roaming\\npm\\codex.EXE",
+    "C:\\Users\\operator\\AppData\\Roaming\\npm\\codex.CMD",
     "C:\\Windows\\System32\\codex",
     "C:\\Windows\\System32\\codex.EXE",
     "C:\\Windows\\System32\\codex.CMD",
@@ -82,7 +82,7 @@ test("buildExecutableCandidatePaths treats Windows PATHEXT keys case-insensitive
   const candidates = buildExecutableCandidatePaths("codex", {
     cwd: "C:\\workspace",
     platform: "win32",
-    preferredDirectories: ["C:\\Users\\bloob\\AppData\\Roaming\\npm"],
+    preferredDirectories: ["C:\\Users\\operator\\AppData\\Roaming\\npm"],
     pathValue: "",
     env: {
       pathext: ".EXE;.CMD",
@@ -90,9 +90,9 @@ test("buildExecutableCandidatePaths treats Windows PATHEXT keys case-insensitive
   });
 
   assert.deepEqual(candidates, [
-    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex",
-    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.EXE",
-    "C:\\Users\\bloob\\AppData\\Roaming\\npm\\codex.CMD",
+    "C:\\Users\\operator\\AppData\\Roaming\\npm\\codex",
+    "C:\\Users\\operator\\AppData\\Roaming\\npm\\codex.EXE",
+    "C:\\Users\\operator\\AppData\\Roaming\\npm\\codex.CMD",
   ]);
 });
 
@@ -100,12 +100,30 @@ test("getExecutableSearchPathValue treats Windows Path keys case-insensitively",
   assert.equal(
     getExecutableSearchPathValue(
       {
-        Path: "C:\\Users\\bloob\\AppData\\Roaming\\npm",
+        Path: "C:\\Users\\operator\\AppData\\Roaming\\npm",
       },
       "win32",
     ),
-    "C:\\Users\\bloob\\AppData\\Roaming\\npm",
+    "C:\\Users\\operator\\AppData\\Roaming\\npm",
   );
+});
+
+test("buildExecutableCandidatePaths uses the injected Windows env when pathValue is omitted", () => {
+  const candidates = buildExecutableCandidatePaths("codex", {
+    cwd: "C:\\workspace",
+    platform: "win32",
+    env: {
+      Path: "C:\\Tools;D:\\Apps",
+      PATHEXT: ".CMD",
+    },
+  });
+
+  assert.deepEqual(candidates, [
+    "C:\\Tools\\codex",
+    "C:\\Tools\\codex.CMD",
+    "D:\\Apps\\codex",
+    "D:\\Apps\\codex.CMD",
+  ]);
 });
 
 test("resolveExecutablePath prefers the node-adjacent directory before PATH", async () => {

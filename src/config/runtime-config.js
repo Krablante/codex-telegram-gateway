@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import process from "node:process";
 
 import { DEFAULT_ENV_FILE, loadEnvFile } from "./env-file.js";
@@ -16,6 +18,9 @@ const DEFAULT_TELEGRAM_POLL_TIMEOUT_SECS = 30;
 const DEFAULT_MAX_PARALLEL_SESSIONS = 10;
 const DEFAULT_PARKED_SESSION_RETENTION_HOURS = 168;
 const DEFAULT_RETENTION_SWEEP_INTERVAL_SECS = 60;
+const DEFAULT_HOST_SYNC_INTERVAL_MINUTES = 15;
+const DEFAULT_HOST_SSH_CONNECT_TIMEOUT_SECS = 8;
+const DEFAULT_CODEX_GATEWAY_BACKEND = "exec-json";
 const DEFAULT_CODEX_CONFIG_PATH = getDefaultCodexConfigPath();
 
 function readRequired(rawEnv, key) {
@@ -79,20 +84,41 @@ function parsePositiveInteger(value, key, fallback) {
   return parsed;
 }
 
-function parseOptionalBoolean(value, key) {
-  if (value === undefined || value === null || value === "") {
-    return null;
+function parseBooleanFlag(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(normalized);
+}
+
+function parseCodexGatewayBackend(value, { legacyAppServerEnabled = false } = {}) {
+  const normalized = String(value || DEFAULT_CODEX_GATEWAY_BACKEND)
+    .trim()
+    .toLowerCase();
+  if (normalized === "exec") {
+    return "exec-json";
+  }
+  if (normalized === "appserver") {
+    if (legacyAppServerEnabled) {
+      return "app-server";
+    }
+    throw new Error(
+      "CODEX_GATEWAY_BACKEND=app-server requires CODEX_ENABLE_LEGACY_APP_SERVER=1.",
+    );
+  }
+  if (normalized === "app-server") {
+    if (legacyAppServerEnabled) {
+      return normalized;
+    }
+    throw new Error(
+      "CODEX_GATEWAY_BACKEND=app-server requires CODEX_ENABLE_LEGACY_APP_SERVER=1.",
+    );
+  }
+  if (normalized === "exec-json") {
+    return normalized;
   }
 
-  const normalized = String(value).trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-
-  throw new Error(`Expected ${key} to be a boolean-like value, got: ${value}`);
+  throw new Error(
+    `Invalid CODEX_GATEWAY_BACKEND: ${value}. Use exec-json, or app-server with CODEX_ENABLE_LEGACY_APP_SERVER=1.`,
+  );
 }
 
 function parseTomlScalar(rawValue) {
@@ -115,20 +141,38 @@ function parseTomlScalar(rawValue) {
   return trimmed;
 }
 
+function getTopLevelTomlText(text) {
+  const lines = [];
+  for (const line of String(text || "").split("\n")) {
+    if (/^\s*\[/u.test(line)) {
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function parseTomlKeyName(rawKey) {
+  const parsed = parseTomlScalar(rawKey);
+  return typeof parsed === "string" ? parsed.trim() : null;
+}
+
 function parseMcpServerNames(text) {
   return [
     ...new Set(
       Array.from(
         String(text || "").matchAll(/^\s*\[mcp_servers\.([^\]]+)\]\s*$/gmu),
-        (match) => String(match[1] || "").trim(),
+        (match) => parseTomlKeyName(match[1]),
       ).filter(Boolean),
     ),
   ];
 }
 
 export function parseCodexConfigProfile(text, configPath = DEFAULT_CODEX_CONFIG_PATH) {
+  const topLevelText = getTopLevelTomlText(text);
   const readKey = (key) => {
-    const match = text.match(new RegExp(`^${key}\\s*=\\s*(.+)$`, "mu"));
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const match = topLevelText.match(new RegExp(`^\\s*${escapedKey}\\s*=\\s*(.+)$`, "mu"));
     if (!match) {
       return null;
     }
@@ -150,7 +194,7 @@ export function getDefaultCodexBinPath(platform = process.platform) {
   return platform === "win32" ? "codex.cmd" : "codex";
 }
 
-export async function loadCodexConfigProfile(configPath) {
+async function loadCodexConfigProfile(configPath) {
   try {
     const text = await fs.readFile(configPath, "utf8");
     return parseCodexConfigProfile(text, configPath);
@@ -173,15 +217,18 @@ export async function loadCodexConfigProfile(configPath) {
 export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
   const repoRoot = rawEnv.REPO_ROOT?.trim() || getDefaultRepoRoot();
   const stateRoot = rawEnv.STATE_ROOT?.trim() || getDefaultStateRoot();
+  const currentHostId =
+    rawEnv.CURRENT_HOST_ID?.trim().toLowerCase() || os.hostname().trim().toLowerCase();
+  const hostRegistryPath =
+    rawEnv.HOST_REGISTRY_PATH?.trim() || path.join(stateRoot, "hosts", "registry.json");
   const envFilePath = rawEnv.ENV_FILE?.trim() || DEFAULT_ENV_FILE;
-  const atlasWorkspaceRoot =
+  const workspaceRoot =
     rawEnv.WORKSPACE_ROOT?.trim()
-    || rawEnv.ATLAS_WORKSPACE_ROOT?.trim()
     || getDefaultWorkspaceRoot({ repoRoot });
   const telegramApiBaseUrl =
     rawEnv.TELEGRAM_API_BASE_URL?.trim() || DEFAULT_TELEGRAM_API_BASE_URL;
   const defaultSessionBindingPath =
-    rawEnv.DEFAULT_SESSION_BINDING_PATH?.trim() || atlasWorkspaceRoot;
+    rawEnv.DEFAULT_SESSION_BINDING_PATH?.trim() || workspaceRoot;
   const codexBinPath =
     rawEnv.CODEX_BIN_PATH?.trim() || getDefaultCodexBinPath();
   const codexConfigPath =
@@ -206,6 +253,22 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     rawEnv.CODEX_LIMITS_COMMAND_TIMEOUT_SECS,
     "CODEX_LIMITS_COMMAND_TIMEOUT_SECS",
     15,
+  );
+  const codexEnableLegacyAppServer = parseBooleanFlag(
+    rawEnv.CODEX_ENABLE_LEGACY_APP_SERVER,
+  );
+  const allowSystemTempDelivery = parseBooleanFlag(
+    rawEnv.CODEX_ALLOW_SYSTEM_TEMP_DELIVERY,
+  );
+  const hostSyncIntervalMinutes = parsePositiveInteger(
+    rawEnv.HOST_SYNC_INTERVAL_MINUTES,
+    "HOST_SYNC_INTERVAL_MINUTES",
+    DEFAULT_HOST_SYNC_INTERVAL_MINUTES,
+  );
+  const hostSshConnectTimeoutSecs = parsePositiveInteger(
+    rawEnv.HOST_SSH_CONNECT_TIMEOUT_SECS,
+    "HOST_SSH_CONNECT_TIMEOUT_SECS",
+    DEFAULT_HOST_SSH_CONNECT_TIMEOUT_SECS,
   );
 
   const telegramBotToken = readRequired(rawEnv, "TELEGRAM_BOT_TOKEN");
@@ -237,48 +300,34 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     readRequired(rawEnv, "TELEGRAM_FORUM_CHAT_ID"),
     "TELEGRAM_FORUM_CHAT_ID",
   );
-  const omniBotToken = rawEnv.OMNI_BOT_TOKEN?.trim() || null;
-  const omniBotId = rawEnv.OMNI_BOT_ID?.trim()
-    ? normalizeIntegerString(rawEnv.OMNI_BOT_ID.trim(), "OMNI_BOT_ID")
-    : null;
   const spikeBotId = rawEnv.SPIKE_BOT_ID?.trim()
     ? normalizeIntegerString(rawEnv.SPIKE_BOT_ID.trim(), "SPIKE_BOT_ID")
     : null;
-  const omniEnabledSetting = parseOptionalBoolean(
-    rawEnv.OMNI_ENABLED,
-    "OMNI_ENABLED",
-  );
-  const omniEnabled =
-    omniEnabledSetting ?? Boolean(omniBotToken && omniBotId);
-  if (omniBotToken && !omniBotId && omniEnabledSetting !== false) {
-    throw new Error("Missing required runtime setting: OMNI_BOT_ID");
-  }
-  if (omniEnabled && (!omniBotToken || !omniBotId)) {
-    throw new Error(
-      "Omni is enabled but OMNI_BOT_TOKEN / OMNI_BOT_ID are not fully configured",
-    );
-  }
-  const effectiveAllowedBotIds = [
-    ...new Set([
-      ...telegramAllowedBotIds,
-      ...(omniEnabled && omniBotId ? [omniBotId] : []),
-    ]),
-  ];
 
   return {
     envFilePath,
     repoRoot,
     stateRoot,
-    atlasWorkspaceRoot,
+    currentHostId,
+    hostRegistryPath,
+    workspaceRoot,
     defaultSessionBindingPath,
     codexBinPath,
     codexConfigPath,
     codexMcpServerNames,
     codexSessionsRoot,
+    codexGatewayBackend: parseCodexGatewayBackend(
+      rawEnv.CODEX_GATEWAY_BACKEND,
+      { legacyAppServerEnabled: codexEnableLegacyAppServer },
+    ),
+    codexEnableLegacyAppServer,
+    allowSystemTempDelivery,
     codexLimitsSessionsRoot,
     codexLimitsCommand,
     codexLimitsCacheTtlSecs,
     codexLimitsCommandTimeoutSecs,
+    hostSyncIntervalMinutes,
+    hostSshConnectTimeoutSecs,
     codexModel:
       rawEnv.CODEX_MODEL?.trim() ||
       codexProfile.model ||
@@ -322,12 +371,9 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
     telegramBotToken,
     telegramAllowedUserId: telegramAllowedUserIds[0],
     telegramAllowedUserIds,
-    telegramAllowedBotIds: effectiveAllowedBotIds,
+    telegramAllowedBotIds,
     telegramForumChatId,
     telegramExpectedTopics: parseTopicList(rawEnv.TELEGRAM_EXPECTED_TOPICS),
-    omniEnabled,
-    omniBotToken,
-    omniBotId,
     spikeBotId,
   };
 }
@@ -336,7 +382,9 @@ export async function loadRuntimeConfig(options = {}) {
   const repoRoot = options.repoRoot || process.env.REPO_ROOT || getDefaultRepoRoot();
   const stateRoot = options.stateRoot || process.env.STATE_ROOT || getDefaultStateRoot();
   const envFilePath = await resolveRuntimeEnvFilePath({
+    allowRepoEnvFallback: options.allowRepoEnvFallback,
     explicitEnvFilePath: options.envFilePath || process.env.ENV_FILE || null,
+    platform: options.platform || process.platform,
     repoRoot,
     stateRoot,
   });

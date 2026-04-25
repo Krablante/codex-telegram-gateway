@@ -9,12 +9,12 @@ import {
   createStateRoot,
 } from "../test-support/zoo-fixtures.js";
 
-test("ZooService respawn menu deletes the previous Zoo menu message", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService respawn menu deletes the previous Zoo menu message", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -31,9 +31,9 @@ test("ZooService respawn menu deletes the previous Zoo menu message", async () =
     callbackQuery: {
       id: "cb-respawn",
       data: "zoo:m:respawn",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
       },
     },
@@ -51,8 +51,8 @@ test("ZooService respawn menu deletes the previous Zoo menu message", async () =
   assert.equal(topicState.menu_message_id, 901);
 });
 
-test("ZooService does not respawn the menu on transient edit failures", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService does not respawn the menu on transient edit failures", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   api.editMessageText = async (params) => {
     api.calls.editMessageText.push(params);
@@ -60,7 +60,7 @@ test("ZooService does not respawn the menu on transient edit failures", async ()
   };
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -82,21 +82,21 @@ test("ZooService does not respawn the menu on transient edit failures", async ()
   assert.equal(topicState.menu_message_id, 901);
 });
 
-test("ZooService starts idle pet animation on pet screen and stops it on root", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService starts idle pet animation on pet screen and stops it on root", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   const petId = "pet-idle";
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
-    repo_root: "/home/bloob/atlas/project-a",
-    cwd: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
+    repo_root: "/srv/codex-workspace/project-a",
+    cwd: "/srv/codex-workspace/project-a",
     creature_kind: "cat",
   });
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -115,9 +115,9 @@ test("ZooService starts idle pet animation on pet screen and stops it on root", 
     callbackQuery: {
       id: "cb-view",
       data: `zoo:v:${petId}`,
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
       },
     },
@@ -131,9 +131,9 @@ test("ZooService starts idle pet animation on pet screen and stops it on root", 
     callbackQuery: {
       id: "cb-root",
       data: "zoo:n:root",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
       },
     },
@@ -143,20 +143,20 @@ test("ZooService starts idle pet animation on pet screen and stops it on root", 
   assert.equal(service.petTickerIntervalByPetId.has(petId), false);
 });
 
-test("ZooService buildMenuPayload does not scan the full stable on a pet screen redraw", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService buildMenuPayload does not scan the full stable on a pet screen redraw", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const zooStore = new ZooStore(stateRoot);
   const petId = "pet-detail";
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
-    repo_root: "/home/bloob/atlas/project-a",
-    cwd: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
+    repo_root: "/srv/codex-workspace/project-a",
+    cwd: "/srv/codex-workspace/project-a",
     creature_kind: "cat",
   });
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "eng",
@@ -164,7 +164,7 @@ test("ZooService buildMenuPayload does not scan the full stable on a pet screen 
     active_screen: "pet",
     selected_pet_id: petId,
   });
-  zooStore.listPets = async () => {
+  zooStore.listPets = async (_t) => {
     throw new Error("pet screen redraw should not list all pets");
   };
   const service = new ZooService({
@@ -179,11 +179,11 @@ test("ZooService buildMenuPayload does not scan the full stable on a pet screen 
   assert.equal(payload.animationPetId, petId);
 });
 
-test("ZooService buildMenuPayload clears stale selected pet state when the pet is missing", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService buildMenuPayload clears stale selected pet state when the pet is missing", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -211,22 +211,22 @@ test("ZooService buildMenuPayload clears stale selected pet state when the pet i
   assert.match(payload.text, /Стойло пусто/u);
 });
 
-test("ZooService switches root pages through pagination callbacks", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService switches root pages through pagination callbacks", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   for (let index = 0; index < 8; index += 1) {
     await zooStore.savePet({
       pet_id: `pet-${index + 1}`,
       display_name: `project-${index + 1}`,
-      resolved_path: `/home/bloob/atlas/project-${index + 1}`,
-      repo_root: `/home/bloob/atlas/project-${index + 1}`,
-      cwd: `/home/bloob/atlas/project-${index + 1}`,
+      resolved_path: `/srv/codex-workspace/project-${index + 1}`,
+      repo_root: `/srv/codex-workspace/project-${index + 1}`,
+      cwd: `/srv/codex-workspace/project-${index + 1}`,
       creature_kind: "cat",
     });
   }
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "eng",
@@ -253,9 +253,9 @@ test("ZooService switches root pages through pagination callbacks", async () => 
     callbackQuery: {
       id: "cb-page-2",
       data: "zoo:p:1",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
       },
     },
@@ -277,30 +277,30 @@ test("ZooService switches root pages through pagination callbacks", async () => 
   );
 });
 
-test("ZooService auto-reconciles existing duplicate public/private pet names in the root menu", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService auto-reconciles existing duplicate public/private pet names in the root menu", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const zooStore = new ZooStore(stateRoot);
   await zooStore.savePet({
     pet_id: "pet-private",
     display_name: "Codex Telegram Gateway",
-    resolved_path: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-    repo_root: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-    cwd: "/home/bloob/atlas/homelab/infra/automation/codex-telegram-gateway",
-    cwd_relative_to_workspace_root: "homelab/infra/automation/codex-telegram-gateway",
+    resolved_path: "/srv/codex-workspace/internal/codex-telegram-gateway",
+    repo_root: "/srv/codex-workspace/internal/codex-telegram-gateway",
+    cwd: "/srv/codex-workspace/internal/codex-telegram-gateway",
+    cwd_relative_to_workspace_root: "internal/codex-telegram-gateway",
     creature_kind: "cat",
   });
   await zooStore.savePet({
     pet_id: "pet-public",
     display_name: "codex-telegram-gateway",
-    resolved_path: "/home/bloob/atlas/work/public/personal/automation/codex-telegram-gateway",
-    repo_root: "/home/bloob/atlas/work/public/personal/automation/codex-telegram-gateway",
-    cwd: "/home/bloob/atlas/work/public/personal/automation/codex-telegram-gateway",
+    resolved_path: "/srv/codex-workspace/work/public/personal/automation/codex-telegram-gateway",
+    repo_root: "/srv/codex-workspace/work/public/personal/automation/codex-telegram-gateway",
+    cwd: "/srv/codex-workspace/work/public/personal/automation/codex-telegram-gateway",
     cwd_relative_to_workspace_root:
       "work/public/personal/automation/codex-telegram-gateway",
     creature_kind: "fox",
   });
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "eng",
@@ -331,8 +331,8 @@ test("ZooService auto-reconciles existing duplicate public/private pet names in 
   assert.ok(buttonLabels.some((label) => label.endsWith("[pub]")));
 });
 
-test("ZooService recovers missing Zoo topic state from a live menu callback", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService recovers missing Zoo topic state from a live menu callback", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const service = new ZooService({
     config: buildConfig(stateRoot),
@@ -361,9 +361,9 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
     callbackQuery: {
       id: "cb-recover",
       data: "zoo:a:start",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
         message_id: 901,
       },
@@ -372,7 +372,7 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
 
   assert.equal(callbackResult.reason, "zoo-add-started");
   const recoveredTopicState = await service.zooStore.loadTopic({ force: true });
-  assert.equal(recoveredTopicState.chat_id, "-1003577434463");
+  assert.equal(recoveredTopicState.chat_id, "-1001234567890");
   assert.equal(recoveredTopicState.topic_id, "700");
   assert.equal(recoveredTopicState.menu_message_id, 901);
   assert.equal(recoveredTopicState.pending_add?.stage, "await_description");
@@ -385,8 +385,8 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
     botUsername: "gatewaybot",
     message: {
       text: "my private telegram to codex gateway",
-      from: { id: 5825672398, is_bot: false },
-      chat: { id: -1003577434463 },
+      from: { id: 123456789, is_bot: false },
+      chat: { id: -1001234567890 },
       message_thread_id: 700,
       message_id: 5,
     },
@@ -396,12 +396,12 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
   assert.equal(capturedDescription, "my private telegram to codex gateway");
 });
 
-test("ZooService does not let a stale Zoo callback replace the active menu message id", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService does not let a stale Zoo callback replace the active menu message id", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -419,9 +419,9 @@ test("ZooService does not let a stale Zoo callback replace the active menu messa
     callbackQuery: {
       id: "cb-stale-root",
       data: "zoo:n:root",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
         message_id: 777,
       },
@@ -434,8 +434,8 @@ test("ZooService does not let a stale Zoo callback replace the active menu messa
   assert.equal(api.calls.editMessageText.at(-1).message_id, 901);
 });
 
-test("ZooService recovers incomplete Zoo topic state from a live menu callback", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService recovers incomplete Zoo topic state from a live menu callback", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   await zooStore.patchTopic({
@@ -460,9 +460,9 @@ test("ZooService recovers incomplete Zoo topic state from a live menu callback",
     callbackQuery: {
       id: "cb-incomplete-state",
       data: "zoo:a:start",
-      from: { id: 5825672398, is_bot: false },
+      from: { id: 123456789, is_bot: false },
       message: {
-        chat: { id: -1003577434463 },
+        chat: { id: -1001234567890 },
         message_thread_id: 700,
         message_id: 901,
       },
@@ -471,7 +471,7 @@ test("ZooService recovers incomplete Zoo topic state from a live menu callback",
 
   assert.equal(result.reason, "zoo-add-started");
   const topicState = await zooStore.loadTopic({ force: true });
-  assert.equal(topicState.chat_id, "-1003577434463");
+  assert.equal(topicState.chat_id, "-1001234567890");
   assert.equal(topicState.topic_id, "700");
   assert.equal(topicState.menu_message_id, 901);
   assert.equal(topicState.pending_add?.stage, "await_description");

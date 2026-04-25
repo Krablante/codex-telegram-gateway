@@ -3,13 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   assertSmokeSupported,
-  resolveSmokeVariant,
 } from "../src/cli/run-smoke-common.js";
-
-test("resolveSmokeVariant detects omni flag", () => {
-  assert.equal(resolveSmokeVariant(["node", "run-smoke.js"]), "spike");
-  assert.equal(resolveSmokeVariant(["node", "run-smoke.js", "--omni"]), "omni");
-});
 
 test("assertSmokeSupported rejects native Windows smoke runs", async () => {
   await assert.rejects(

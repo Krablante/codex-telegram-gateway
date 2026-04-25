@@ -36,7 +36,3 @@ const HELP_CARD_ASSETS = {
 export function getHelpCardAssets(language) {
   return HELP_CARD_ASSETS[normalizeUiLanguage(language)] || HELP_CARD_ASSETS.rus;
 }
-
-export function getHelpCardAsset(language) {
-  return getHelpCardAssets(language)[0];
-}

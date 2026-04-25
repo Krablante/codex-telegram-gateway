@@ -1,11 +1,11 @@
 import {
-  buildDefaultAutoModeState,
-  normalizeAutoModeState,
-} from "./auto-mode.js";
-import {
   normalizeStoredModelOverride,
   normalizeReasoningEffort,
 } from "./codex-runtime-settings.js";
+import {
+  normalizeHostId,
+  normalizeHostLabel,
+} from "../hosts/topic-host.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import { cloneJson } from "../state/file-utils.js";
 import { normalizeSessionOwnerMode } from "../rollout/session-ownership.js";
@@ -17,6 +17,13 @@ function normalizeOptionalText(value) {
 
 function hasOwn(object, key) {
   return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function deleteMetaFields(target, keys) {
+  for (const key of keys) {
+    delete target[key];
+  }
+  return target;
 }
 
 function buildNormalizedSessionOwnership(
@@ -60,20 +67,44 @@ export function normalizeStoredSessionMeta(meta) {
   const normalizedOwnership = buildNormalizedSessionOwnership(meta, {
     defaultMode: meta?.last_run_status === "running" ? "active" : null,
   });
+  const executionHostId = normalizeHostId(
+    meta?.execution_host_id ?? meta?.executionHostId,
+    null,
+  );
+  const executionHostLabel = normalizeHostLabel(
+    meta?.execution_host_label ?? meta?.executionHostLabel,
+    executionHostId,
+  );
 
-  return {
+  const normalized = {
     ...meta,
     ...normalizedOwnership,
-    auto_mode: normalizeAutoModeState(meta.auto_mode),
+    execution_host_id: executionHostId,
+    execution_host_label: executionHostLabel,
+    execution_host_bound_at: normalizeOptionalText(
+      meta?.execution_host_bound_at ?? meta?.executionHostBoundAt,
+    ),
+    execution_host_last_ready_at: normalizeOptionalText(
+      meta?.execution_host_last_ready_at ?? meta?.executionHostLastReadyAt,
+    ),
+    execution_host_last_failure: normalizeOptionalText(
+      meta?.execution_host_last_failure ?? meta?.executionHostLastFailure,
+    ),
     spike_model_override: normalizeStoredModelOverride(meta.spike_model_override),
     spike_reasoning_effort_override: normalizeReasoningEffort(
       meta.spike_reasoning_effort_override,
     ),
-    omni_model_override: normalizeStoredModelOverride(meta.omni_model_override),
-    omni_reasoning_effort_override: normalizeReasoningEffort(
-      meta.omni_reasoning_effort_override,
+    codex_thread_model: normalizeStoredModelOverride(meta.codex_thread_model),
+    codex_thread_reasoning_effort: normalizeReasoningEffort(
+      meta.codex_thread_reasoning_effort,
+    ),
+    last_run_model: normalizeStoredModelOverride(meta.last_run_model),
+    last_run_reasoning_effort: normalizeReasoningEffort(
+      meta.last_run_reasoning_effort,
     ),
   };
+
+  return normalized;
 }
 
 export function normalizeOwnershipPatch(current, patch) {
@@ -167,9 +198,17 @@ export function buildRuntimeStateFields() {
     lifecycle_reactivated_reason: null,
     ui_language: "rus",
     runtime_provider: null,
+    codex_backend: null,
     provider_session_id: null,
     codex_thread_id: null,
+    codex_thread_model: null,
+    codex_thread_reasoning_effort: null,
     codex_rollout_path: null,
+    execution_host_id: null,
+    execution_host_label: null,
+    execution_host_bound_at: null,
+    execution_host_last_ready_at: null,
+    execution_host_last_failure: null,
     prompt_suffix_topic_enabled: true,
     prompt_suffix_text: null,
     prompt_suffix_enabled: false,
@@ -180,32 +219,35 @@ export function buildRuntimeStateFields() {
     last_user_prompt: null,
     last_agent_reply: null,
     last_run_status: null,
+    last_run_backend: null,
     session_owner_generation_id: null,
     session_owner_mode: null,
     session_owner_claimed_at: null,
     spike_run_owner_generation_id: null,
     last_run_started_at: null,
     last_run_finished_at: null,
+    last_run_model: null,
+    last_run_reasoning_effort: null,
     last_token_usage: null,
     last_context_snapshot: null,
     last_progress_message_id: null,
+    progress_notes_consumed_until: null,
     spike_model_override: null,
     spike_reasoning_effort_override: null,
-    omni_model_override: null,
-    omni_reasoning_effort_override: null,
     artifact_count: 0,
     last_artifact: null,
     last_diff_artifact: null,
-    auto_mode: buildDefaultAutoModeState(),
   };
 }
 
 export function stripLegacyMetaFields(value) {
   const cloned = cloneJson(value);
-  delete cloned.recent_window_entries;
-  delete cloned.last_log_artifact;
-  delete cloned.task_ledger_entries;
-  delete cloned.pinned_fact_count;
+  deleteMetaFields(cloned, [
+    "recent_window_entries",
+    "last_log_artifact",
+    "task_ledger_entries",
+    "pinned_fact_count",
+  ]);
   return cloned;
 }
 
@@ -218,6 +260,11 @@ export function buildPurgedStub(current, reason) {
     chat_id: current.chat_id,
     topic_id: current.topic_id,
     topic_name: current.topic_name ?? null,
+    execution_host_id: current.execution_host_id ?? null,
+    execution_host_label: current.execution_host_label ?? null,
+    execution_host_bound_at: current.execution_host_bound_at ?? null,
+    execution_host_last_ready_at: current.execution_host_last_ready_at ?? null,
+    execution_host_last_failure: current.execution_host_last_failure ?? null,
     lifecycle_state: "purged",
     created_at: current.created_at ?? now,
     updated_at: now,

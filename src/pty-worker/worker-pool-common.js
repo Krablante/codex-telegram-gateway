@@ -1,9 +1,15 @@
-import { buildTopicContextPrompt } from "../session-manager/topic-context.js";
+import os from "node:os";
+
+import { resolveExecutionCwd, translateWorkspacePathForHost } from "../hosts/host-paths.js";
+import { resolveEffectiveWorkStyle } from "../session-manager/prompt-suffix.js";
+import { buildTopicBaseInstructions } from "../session-manager/topic-context.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import { signalChildProcessTree } from "../runtime/process-tree.js";
-import { normalizeTokenUsage } from "../codex-runtime/token-usage.js";
+export { isContextWindowExceededText } from "../codex-runtime/context-window.js";
 
 const PROGRESS_PENDING_MARKER = "...";
+const INTERNAL_PROGRESS_ORCHESTRATION =
+  /(?:\bsubagent\b|\bsub-agent\b|\bspawn[_ -]?agent\b|\bagent_path\b|\bfork_context\b|\bforked workspace\b|\bexplorer\b|\bworker\s+\d+\b|\brepo-level rules\b|\breadme claims\b|сабагент|субагент|эксплорер|воркер\s+\d+)/iu;
 const TRANSIENT_TRANSPORT_ERROR_CODES = new Set([
   "ABORT_ERR",
   "ECONNABORTED",
@@ -60,6 +66,21 @@ export function getRetryDelayMs(error) {
   return (retryAfterSecs + 1) * 1000;
 }
 
+
+export function isTransientModelCapacityError(error) {
+  const messages = [
+    error?.message,
+    error?.cause?.message,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .filter(Boolean);
+
+  return messages.some((message) =>
+    message.includes("selected model is at capacity")
+    || (message.includes("model") && message.includes("at capacity")),
+  );
+}
+
 export function isTransientTransportError(error) {
   if (getRetryDelayMs(error) !== null) {
     return true;
@@ -107,7 +128,53 @@ function buildProgressSpinner() {
   return PROGRESS_PENDING_MARKER;
 }
 
+function buildNeutralProgressText(language = "rus") {
+  return [
+    isEnglish(language) ? "Working" : "Работаю",
+    "",
+    buildProgressSpinner(),
+  ].join("\n");
+}
+
+function isInternalOrchestrationProgressDetail(text) {
+  const compact = String(text || "").replace(/\s+/gu, " ").trim();
+  if (!compact) {
+    return false;
+  }
+
+  return INTERNAL_PROGRESS_ORCHESTRATION.test(compact);
+}
+
+export function isHiddenProgressDetail(text) {
+  const compact = String(text || "").replace(/\s+/gu, " ").trim();
+  if (!compact) {
+    return false;
+  }
+
+  return isInternalOrchestrationProgressDetail(compact);
+}
+
+function normalizeProgressDetail(text) {
+  const compact = excerpt(text, 500);
+  if (!compact) {
+    return null;
+  }
+
+  if (isHiddenProgressDetail(compact)) {
+    return null;
+  }
+
+  return compact;
+}
+
 function buildProgressStep(state, language = "rus") {
+  if (state.status === "starting") {
+    return {
+      heading: isEnglish(language) ? "Starting Codex run" : "Запускаю Codex run",
+      detail: null,
+    };
+  }
+
   if (["interrupting", "interrupted"].includes(state.status)) {
     return {
       heading: isEnglish(language) ? "Stopping the run" : "Останавливаю run",
@@ -137,21 +204,27 @@ function buildProgressStep(state, language = "rus") {
     typeof state.latestProgressMessage === "string" &&
     state.latestProgressMessage.trim()
   ) {
-    return {
-      heading: null,
-      detail: excerpt(state.latestProgressMessage, 500),
-    };
+    const detail = normalizeProgressDetail(state.latestProgressMessage);
+    if (detail) {
+      return {
+        heading: null,
+        detail,
+      };
+    }
   }
 
   if (
-    state.latestSummaryKind &&
-    !["thread", "turn", "command"].includes(state.latestSummaryKind) &&
+    state.latestSummaryKind === "agent_message" &&
     typeof state.latestSummary === "string" &&
     state.latestSummary.trim()
   ) {
+    const detail = normalizeProgressDetail(state.latestSummary);
+    if (!detail) {
+      return null;
+    }
     return {
       heading: null,
-      detail: excerpt(state.latestSummary, 500),
+      detail,
     };
   }
 
@@ -162,7 +235,7 @@ export function buildProgressText(state, language = "rus") {
   const spinner = buildProgressSpinner();
   const step = buildProgressStep(state, language);
   if (!step) {
-    return spinner;
+    return buildNeutralProgressText(language);
   }
 
   const parts = [];
@@ -197,21 +270,30 @@ export function buildFailureText(error, language = "rus") {
   ].join("\n");
 }
 
+function isDiagnosticOnlyWarning(line) {
+  return String(line || "").trim().startsWith("codex exec stderr:");
+}
+
 export function buildRunFailureText(result, language = "rus") {
+  const runtimeLabel = result?.backend === "exec-json"
+    ? "Codex exec"
+    : "Codex app-server";
   const warning = Array.isArray(result?.warnings)
-    ? result.warnings.find((line) => String(line || "").trim())
+    ? result.warnings.find((line) =>
+      String(line || "").trim() && !isDiagnosticOnlyWarning(line),
+    )
     : null;
   const errorMessage = warning
     || (result?.abortReason && result?.interrupted !== true
       ? `Codex turn aborted (${result.abortReason})`
       : null)
-    || (Number.isFinite(result?.exitCode)
-      ? `Codex app-server exited with code ${result.exitCode}`
+    || (Number.isFinite(result?.exitCode) && result.exitCode !== 0
+      ? `${runtimeLabel} exited with code ${result.exitCode}`
       : null)
     || (result?.signal
-      ? `Codex app-server was terminated by signal ${result.signal}`
+      ? `${runtimeLabel} was terminated by signal ${result.signal}`
       : null)
-    || "Codex app-server ended without a final reply";
+    || `${runtimeLabel} ended without a final reply`;
 
   return buildFailureText(new Error(errorMessage), language);
 }
@@ -243,28 +325,117 @@ export function buildPromptWithAttachments(prompt, attachments = [], language = 
   ];
 
   const normalizedPrompt = String(prompt || "").trim();
-  if (normalizedPrompt) {
-    lines.push(
-      "",
-      isEnglish(language) ? "User request:" : "Запрос пользователя:",
-      normalizedPrompt,
-    );
+  if (!normalizedPrompt) {
+    return lines.join("\n");
   }
 
-  return lines.join("\n");
+  return [lines.join("\n"), "", normalizedPrompt].join("\n");
 }
 
-export function buildPromptWithTopicContext(prompt, session, sessionStore) {
+function normalizeOptionalText(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || null;
+}
+
+function uniqueValues(values = []) {
+  const seen = new Set();
+  const unique = [];
+  for (const value of values) {
+    const normalized = normalizeOptionalText(value);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    unique.push(normalized);
+  }
+  return unique;
+}
+
+function resolvePromptDeliveryRoots(
+  session,
+  sessionStore,
+  executionHost = null,
+  currentHostId = null,
+  { allowSystemTempDelivery = false } = {},
+) {
+  const workspaceBinding = session?.workspace_binding ?? null;
+  const normalizedCurrentHostId = normalizeOptionalText(currentHostId);
+  const normalizedExecutionHostId = normalizeOptionalText(executionHost?.host_id);
+
+  if (executionHost && normalizedExecutionHostId && normalizedExecutionHostId !== normalizedCurrentHostId) {
+    const roots = [
+      translateWorkspacePathForHost(workspaceBinding?.worktree_path ?? null, {
+        workspaceBinding,
+        host: executionHost,
+        currentHostId: normalizedCurrentHostId,
+      }),
+      translateWorkspacePathForHost(workspaceBinding?.cwd ?? null, {
+        workspaceBinding,
+        host: executionHost,
+        currentHostId: normalizedCurrentHostId,
+      }),
+    ];
+    if (allowSystemTempDelivery) {
+      roots.push("/tmp");
+    }
+    return uniqueValues(roots);
+  }
+
+  const roots = [
+    workspaceBinding?.worktree_path ?? null,
+    workspaceBinding?.cwd ?? null,
+    typeof sessionStore?.getSessionDir === "function"
+      ? sessionStore.getSessionDir(session.chat_id, session.topic_id)
+      : null,
+  ];
+  if (allowSystemTempDelivery) {
+    roots.push(os.tmpdir());
+  }
+  return uniqueValues(roots);
+}
+
+export function buildThreadBaseInstructions(
+  session,
+  sessionStore,
+  {
+    executionHost = null,
+    allowSystemTempDelivery = false,
+    currentHostId = null,
+    globalPromptSuffix = null,
+  } = {},
+) {
   const topicContextPath =
     typeof sessionStore?.getTopicContextPath === "function"
       ? sessionStore.getTopicContextPath(session.chat_id, session.topic_id)
       : null;
+  const executionCwd = executionHost
+    ? resolveExecutionCwd({
+      workspaceBinding: session?.workspace_binding,
+      host: executionHost,
+      currentHostId,
+    })
+    : null;
+  const normalizedCurrentHostId = normalizeOptionalText(currentHostId);
+  const normalizedExecutionHostId = normalizeOptionalText(executionHost?.host_id);
+  const remoteExecution =
+    Boolean(executionHost)
+    && Boolean(normalizedExecutionHostId)
+    && normalizedExecutionHostId !== normalizedCurrentHostId;
+  const workStyleText = resolveEffectiveWorkStyle(session, globalPromptSuffix);
 
-  return [
-    buildTopicContextPrompt(session, { topicContextPath }),
-    "",
-    prompt,
-  ].join("\n");
+  return buildTopicBaseInstructions(session, {
+    topicContextPath: remoteExecution ? null : topicContextPath,
+    executionCwd,
+    fileDeliveryRoots: resolvePromptDeliveryRoots(
+      session,
+      sessionStore,
+      executionHost,
+      currentHostId,
+      { allowSystemTempDelivery },
+    ),
+    topicContextFileOnControlPlane: remoteExecution,
+    workStyleText,
+  });
 }
 
 export function buildSteerInput(prompt, attachments = [], language = "rus") {
@@ -321,9 +492,5 @@ export function stringifyMessageId(messageId) {
 }
 
 export function resolveReplyToMessageId(message) {
-  if (message?.is_internal_omni_handoff) {
-    return null;
-  }
-
   return Number.isInteger(message?.message_id) ? message.message_id : null;
 }

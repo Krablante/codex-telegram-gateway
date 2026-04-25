@@ -1,6 +1,7 @@
 import { DEFAULT_UI_LANGUAGE } from "../../i18n/ui-language.js";
 import { getTopicIdFromMessage } from "../../session-manager/session-key.js";
 import {
+  parseHostCommandArgs,
   parseLanguageCommandArgs,
   parsePromptSuffixCommandArgs,
   parseScopedRuntimeSettingCommandArgs,
@@ -37,6 +38,10 @@ export async function maybeHandleSurfaceCommand({
     command.name === "language"
       ? parseLanguageCommandArgs(command.args)
       : null;
+  const hostCommand =
+    command.name === "host"
+      ? parseHostCommandArgs(command.args)
+      : null;
   const scopedRuntimeSettingCommand = getCodexRuntimeCommandSpec(command.name)
     ? parseScopedRuntimeSettingCommandArgs(command.args)
     : null;
@@ -48,6 +53,8 @@ export async function maybeHandleSurfaceCommand({
     || command.name === "limits"
     || command.name === "interrupt"
     || command.name === "language"
+    || command.name === "hosts"
+    || command.name === "host"
     || command.name === "wait"
     || command.name === "suffix"
     || Boolean(scopedRuntimeSettingCommand);
@@ -83,6 +90,7 @@ export async function maybeHandleSurfaceCommand({
     config,
     generalUiLanguage,
     languageCommand,
+    hostCommand,
     lifecycleManager,
     markCommandHandled,
     message,

@@ -10,21 +10,21 @@ import {
   createStateRoot,
 } from "../test-support/zoo-fixtures.js";
 
-test("ZooService does not save a snapshot for a pet deleted during refresh", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService does not save a snapshot for a pet deleted during refresh", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   const petId = "pet-refresh";
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
-    repo_root: "/home/bloob/atlas/project-a",
-    cwd: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
+    repo_root: "/srv/codex-workspace/project-a",
+    cwd: "/srv/codex-workspace/project-a",
     creature_kind: "rabbit",
   });
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -39,7 +39,7 @@ test("ZooService does not save a snapshot for a pet deleted during refresh", asy
     config: buildConfig(stateRoot),
     sessionService: {},
     zooStore,
-    analysisRunner: async () => analysis.promise,
+    analysisRunner: async (_t) => analysis.promise,
   });
 
   const pet = await zooStore.loadPet(petId);
@@ -53,7 +53,7 @@ test("ZooService does not save a snapshot for a pet deleted during refresh", asy
   analysis.resolve({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
     creature_kind: "rabbit",
     mood: "alert",
     findings: ["one"],
@@ -89,21 +89,21 @@ test("ZooService does not save a snapshot for a pet deleted during refresh", asy
   );
 });
 
-test("ZooService clears stale pet selection when a deleted pet refresh fails", async () => {
-  const stateRoot = await createStateRoot();
+test("ZooService clears stale pet selection when a deleted pet refresh fails", async (t) => {
+  const stateRoot = await createStateRoot(t);
   const api = createApiStub();
   const zooStore = new ZooStore(stateRoot);
   const petId = "pet-refresh-fail";
   await zooStore.savePet({
     pet_id: petId,
     display_name: "project-a",
-    resolved_path: "/home/bloob/atlas/project-a",
-    repo_root: "/home/bloob/atlas/project-a",
-    cwd: "/home/bloob/atlas/project-a",
+    resolved_path: "/srv/codex-workspace/project-a",
+    repo_root: "/srv/codex-workspace/project-a",
+    cwd: "/srv/codex-workspace/project-a",
     creature_kind: "rabbit",
   });
   await zooStore.patchTopic({
-    chat_id: "-1003577434463",
+    chat_id: "-1001234567890",
     topic_id: "700",
     topic_name: "Zoo",
     ui_language: "rus",
@@ -117,7 +117,7 @@ test("ZooService clears stale pet selection when a deleted pet refresh fails", a
     config: buildConfig(stateRoot),
     sessionService: {},
     zooStore,
-    analysisRunner: async () => {
+    analysisRunner: async (_t) => {
       await zooStore.deletePet(petId);
       throw new Error("analysis exploded");
     },

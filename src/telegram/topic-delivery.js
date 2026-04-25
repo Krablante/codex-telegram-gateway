@@ -27,6 +27,7 @@ async function sendPhotoToTopic(api, message, photo) {
     api,
     chatId: message.chat.id,
     messageThreadId: message.message_thread_id,
+    replyToMessageId: photo.replyToMessageId,
     photo: {
       filePath: photo.filePath,
       fileName: photo.fileName,
@@ -110,9 +111,23 @@ export async function safeSendPhotoToTopic(
   session,
   lifecycleManager,
 ) {
-  try {
-    return await sendPhotoToTopic(api, message, photo);
-  } catch (error) {
-    return handleDeliveryError(session, error, lifecycleManager);
+  let currentPhoto = { ...photo };
+  let allowReplyTargetFallback = Boolean(currentPhoto.replyToMessageId);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await sendPhotoToTopic(api, message, currentPhoto);
+    } catch (error) {
+      if (allowReplyTargetFallback && isMissingReplyTargetError(error)) {
+        currentPhoto = {
+          ...currentPhoto,
+          replyToMessageId: null,
+        };
+        allowReplyTargetFallback = false;
+        continue;
+      }
+
+      return handleDeliveryError(session, error, lifecycleManager);
+    }
   }
 }

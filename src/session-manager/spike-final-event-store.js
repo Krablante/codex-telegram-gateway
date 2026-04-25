@@ -6,7 +6,7 @@ import {
   writeTextAtomic,
 } from "../state/file-utils.js";
 
-export const SPIKE_FINAL_EVENT_FILE_NAME = "spike-final-event.json";
+const SPIKE_FINAL_EVENT_FILE_NAME = "spike-final-event.json";
 
 function normalizeIntegerString(value) {
   const normalized = String(value ?? "").trim();
@@ -44,7 +44,7 @@ function normalizeMessageIds(value) {
   ];
 }
 
-export function buildDefaultSpikeFinalEvent() {
+function buildDefaultSpikeFinalEvent() {
   return {
     schema_version: 1,
     updated_at: null,
@@ -58,7 +58,7 @@ export function buildDefaultSpikeFinalEvent() {
   };
 }
 
-export function normalizeSpikeFinalEvent(value) {
+function normalizeSpikeFinalEvent(value) {
   const defaults = buildDefaultSpikeFinalEvent();
   return {
     ...defaults,

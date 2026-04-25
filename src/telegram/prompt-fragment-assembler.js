@@ -10,7 +10,7 @@ function normalizeKeyPart(value, fallback) {
   return String(value);
 }
 
-export function buildPromptFragmentKey(message) {
+function buildPromptFragmentKey(message) {
   const chatId = message?.chat?.id;
   const fromId = message?.from?.id;
   if (chatId === undefined || chatId === null || fromId === undefined || fromId === null) {
@@ -343,7 +343,7 @@ export class PromptFragmentAssembler {
   }
 
   cancelPendingForMessage(message, options = {}) {
-    let key = null;
+    let key;
     if (options.scope === "global") {
       key = buildManualWaitWindowKey(message);
     } else if (options.scope === "topic") {

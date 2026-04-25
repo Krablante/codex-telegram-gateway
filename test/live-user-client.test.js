@@ -10,7 +10,10 @@ import {
   TELEGRAM_USER_PRIVATE_FILE_MODE,
 } from "../src/live-user/config.js";
 import { writeTelegramUserSession } from "../src/live-user/client.js";
-import { supportsPosixFileModes } from "../src/state/file-utils.js";
+import {
+  PRIVATE_DIRECTORY_MODE,
+  supportsPosixFileModes,
+} from "../src/state/file-utils.js";
 
 async function getFileMode(filePath) {
   return (await fs.stat(filePath)).mode & 0o777;
@@ -36,11 +39,14 @@ test("live-user bootstrap hardens env, session, and account files to 0600", asyn
 
   await ensureTelegramUserBootstrapFiles(paths);
   await assertPrivateFileState(paths.envFilePath);
+  if (supportsPosixFileModes()) {
+    assert.equal(await getFileMode(paths.liveUserRoot), PRIVATE_DIRECTORY_MODE);
+  }
 
   await writeTelegramUserSession(paths, {
     sessionString: "session-value",
     account: {
-      id: "5825672398",
+      id: "123456789",
       username: "stupidumbidiot",
     },
   });
@@ -64,6 +70,9 @@ test("live-user bootstrap tightens permissions on pre-existing files", async () 
   const result = await ensureTelegramUserBootstrapFiles(paths);
 
   assert.equal(result.envTemplateCreated, false);
+  if (supportsPosixFileModes()) {
+    assert.equal(await getFileMode(paths.liveUserRoot), PRIVATE_DIRECTORY_MODE);
+  }
   await assertPrivateFileState(paths.envFilePath);
   await assertPrivateFileState(paths.sessionFilePath);
   await assertPrivateFileState(paths.accountFilePath);
