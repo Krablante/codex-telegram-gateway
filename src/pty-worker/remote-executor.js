@@ -56,6 +56,7 @@ export function buildRemoteStartRunParams({
   codexBinPath,
   remoteCwd,
   prompt,
+  developerInstructions = null,
   baseInstructions = null,
   localizedImagePaths = [],
   sessionKey = null,
@@ -68,13 +69,18 @@ export function buildRemoteStartRunParams({
   contextWindow = null,
   autoCompactTokenLimit = null,
 } = {}) {
-  const normalizedBaseInstructions = normalizeOptionalText(baseInstructions);
+  const normalizedDeveloperInstructions =
+    normalizeOptionalText(developerInstructions)
+    || normalizeOptionalText(baseInstructions);
   return {
     codexBinPath: resolvedHost?.codex_bin_path || codexBinPath,
     cwd: remoteCwd,
     prompt,
-    ...(normalizedBaseInstructions
-      ? { baseInstructions: normalizedBaseInstructions }
+    ...(normalizedDeveloperInstructions
+      ? {
+          developerInstructions: normalizedDeveloperInstructions,
+          baseInstructions: normalizedDeveloperInstructions,
+        }
       : {}),
     imagePaths: Array.isArray(localizedImagePaths) ? localizedImagePaths : [],
     sessionKey,
@@ -369,6 +375,7 @@ export async function runRemoteCodexTask({
   onRuntimeState = null,
   onWarning,
   prompt,
+  developerInstructions = null,
   baseInstructions = null,
   execFileImpl,
   providerSessionId = null,
@@ -670,6 +677,7 @@ export async function runRemoteCodexTask({
         codexBinPath,
         remoteCwd,
         prompt,
+        developerInstructions,
         baseInstructions,
         localizedImagePaths,
         sessionKey,

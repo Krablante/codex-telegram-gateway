@@ -90,7 +90,7 @@ test("buildTopicContextFileText keeps the detailed safe file-delivery instructio
 
   assert.match(text, /# Telegram topic context/u);
   assert.match(text, /The live user-turn prompt stays small/u);
-  assert.match(text, /Thread base instructions carry the short Telegram routing contract/u);
+  assert.match(text, /Thread developer instructions carry the short Telegram routing contract/u);
   assert.match(text, /chat_id: -1001234567890/u);
   assert.match(text, /Container-backed MCP mirror root: \/workspace\/codex-workspace/u);
   assert.match(text, /Current cwd inside container-backed MCP tools: \/workspace\/codex-workspace/u);

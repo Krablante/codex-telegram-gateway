@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildRunFailureText,
   buildProgressText,
-  buildThreadBaseInstructions,
+  buildThreadDeveloperInstructions,
   isContextWindowExceededText,
   isTransientModelCapacityError,
 } from "../src/pty-worker/worker-pool-common.js";
@@ -149,8 +149,8 @@ test("buildRunFailureText keeps raw exec stderr out of user-visible failures", (
   assert.doesNotMatch(text, /codex exec stderr/u);
 });
 
-test("buildThreadBaseInstructions appends the effective topic work style", () => {
-  const instructions = buildThreadBaseInstructions(
+test("buildThreadDeveloperInstructions appends the effective topic work style", () => {
+  const instructions = buildThreadDeveloperInstructions(
     buildSession({
       prompt_suffix_enabled: true,
       prompt_suffix_text: "TOPIC\nKeep it short in this thread.",
@@ -178,8 +178,8 @@ test("buildThreadBaseInstructions appends the effective topic work style", () =>
   assert.doesNotMatch(instructions, /GLOBAL/u);
 });
 
-test("buildThreadBaseInstructions suppresses work style when topic suffix routing is off", () => {
-  const instructions = buildThreadBaseInstructions(
+test("buildThreadDeveloperInstructions suppresses work style when topic suffix routing is off", () => {
+  const instructions = buildThreadDeveloperInstructions(
     buildSession({
       prompt_suffix_topic_enabled: false,
       prompt_suffix_enabled: true,

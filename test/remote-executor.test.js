@@ -51,7 +51,7 @@ class FakeRemoteExecutorChild extends EventEmitter {
   }
 }
 
-test("buildRemoteStartRunParams keeps baseInstructions on the remote startRun payload", () => {
+test("buildRemoteStartRunParams keeps developerInstructions on the remote startRun payload", () => {
   const params = buildRemoteStartRunParams({
     resolvedHost: {
       codex_bin_path: "/home/worker-b/workspace/state/oss/forks/codex/bin/codex",
@@ -67,6 +67,10 @@ test("buildRemoteStartRunParams keeps baseInstructions on the remote startRun pa
   });
 
   assert.equal(
+    params.developerInstructions,
+    "Context:\n- host: worker-b, cwd: /home/worker-b/workspace",
+  );
+  assert.equal(
     params.baseInstructions,
     "Context:\n- host: worker-b, cwd: /home/worker-b/workspace",
   );
@@ -78,7 +82,7 @@ test("buildRemoteStartRunParams keeps baseInstructions on the remote startRun pa
   assert.equal(params.autoCompactTokenLimit, 375000);
 });
 
-test("buildRemoteStartRunParams omits blank baseInstructions", () => {
+test("buildRemoteStartRunParams omits blank developer/base instructions", () => {
   const params = buildRemoteStartRunParams({
     resolvedHost: {},
     codexBinPath: "/fallback/codex",
@@ -87,7 +91,22 @@ test("buildRemoteStartRunParams omits blank baseInstructions", () => {
     baseInstructions: "   ",
   });
 
+  assert.equal("developerInstructions" in params, false);
   assert.equal("baseInstructions" in params, false);
+});
+
+test("buildRemoteStartRunParams prefers explicit developerInstructions over legacy baseInstructions", () => {
+  const params = buildRemoteStartRunParams({
+    resolvedHost: {},
+    codexBinPath: "/fallback/codex",
+    remoteCwd: "/home/worker-b/workspace",
+    prompt: "User Prompt:\nrun a quick task",
+    developerInstructions: "Context:\n- fresh developer context",
+    baseInstructions: "Context:\n- legacy base context",
+  });
+
+  assert.equal(params.developerInstructions, "Context:\n- fresh developer context");
+  assert.equal(params.baseInstructions, "Context:\n- fresh developer context");
 });
 
 test("assertSafeRemoteGatewayRepoRoot rejects broad destructive sync targets", () => {

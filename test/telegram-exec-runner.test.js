@@ -104,6 +104,35 @@ test("buildCodexExecTaskArgs appends runtime overrides and images without using 
   ]);
 });
 
+test("buildCodexExecTaskArgs sends gateway context as developer instructions", () => {
+  assert.deepEqual(buildCodexExecTaskArgs({
+    cwd: "/repo",
+    developerInstructions: "Context:\n- quote: \"ok\"",
+  }), [
+    "exec",
+    "--json",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "-C",
+    "/repo",
+    "-c",
+    'developer_instructions="Context:\\n- quote: \\"ok\\""',
+    "-",
+  ]);
+});
+
+test("buildCodexExecTaskArgs keeps developer instructions before resume thread stdin", () => {
+  assert.deepEqual(buildCodexExecTaskArgs({
+    cwd: "/repo",
+    sessionThreadId: "thread-123",
+    developerInstructions: "Context:\n- resume: yes",
+  }).slice(-4), [
+    "-c",
+    'developer_instructions="Context:\\n- resume: yes"',
+    "thread-123",
+    "-",
+  ]);
+});
+
 test("buildRemoteCodexExecSshArgs sends only command args over ssh; prompt stays on stdin", () => {
   const args = buildRemoteCodexExecSshArgs({
     host: { ssh_target: "worker-a" },
@@ -357,8 +386,14 @@ test("runCodexExecTask streams JSONL summaries, persists first thread id, and wr
   assert.match(warnings[0], /Malformed codex exec JSONL ignored/u);
   assert.match(result.warnings.join("\n"), /Ignored malformed codex exec JSONL lines: 1/u);
   assert.equal(spawnCalls[0].command, "codex");
-  assert.deepEqual(spawnCalls[0].args, buildCodexExecTaskArgs({ cwd: "/srv/codex-workspace" }));
-  assert.match(child.stdinText, /^Telegram delivery stays here\.\n\nanswer briefly$/u);
+  assert.deepEqual(
+    spawnCalls[0].args,
+    buildCodexExecTaskArgs({
+      cwd: "/srv/codex-workspace",
+      developerInstructions: "Telegram delivery stays here.",
+    }),
+  );
+  assert.equal(child.stdinText, "answer briefly");
   assert.doesNotMatch(child.stdinText, /Context:\nContext:/u);
   assert.doesNotMatch(child.stdinText, /User request:/u);
 });
@@ -469,8 +504,10 @@ test("runRemoteCodexExecTask expands remote tilde paths before launching ssh exe
   assert.match(sshCommand, /\/home\/worker-a\/workspace\/state\/oss\/forks\/codex\/bin\/codex/u);
   assert.match(sshCommand, /-C/u);
   assert.match(sshCommand, /\/home\/worker-a\/workspace/u);
+  assert.match(sshCommand, /developer_instructions=/u);
+  assert.match(sshCommand, /remote context/u);
   assert.doesNotMatch(sshCommand, /~\/workspace/u);
-  assert.match(child.stdinText, /^remote context\n\nremote prompt$/u);
+  assert.equal(child.stdinText, "remote prompt");
   assert.doesNotMatch(child.stdinText, /User request:/u);
 });
 
@@ -632,8 +669,15 @@ test("runRemoteCodexExecTask treats requested steer exit code 1 as controlled in
   assert.deepEqual(result.warnings, []);
 });
 
-test("buildCodexExecPrompt leaves plain prompts untouched when no base instructions exist", () => {
+test("buildCodexExecPrompt leaves plain prompts untouched", () => {
   assert.equal(buildCodexExecPrompt({ prompt: "hello" }), "hello");
+  assert.equal(
+    buildCodexExecPrompt({
+      prompt: "hello",
+      baseInstructions: "Context:\nignored",
+    }),
+    "hello",
+  );
 });
 
 test("runCodexExecTask does not promote an agent message to final without turn.completed", async () => {

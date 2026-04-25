@@ -1,5 +1,5 @@
-function escapeTomlString(value) {
-  return String(value ?? "").replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
+function formatTomlString(value) {
+  return JSON.stringify(String(value ?? ""));
 }
 
 function normalizePositiveInteger(value) {
@@ -19,18 +19,19 @@ export function appendCodexRuntimeConfigArgs(
     autoCompactTokenLimit = null,
     sandboxMode = null,
     approvalPolicy = null,
+    developerInstructions = null,
   } = {},
 ) {
   const nextArgs = Array.isArray(args) ? args : [];
 
   if (model) {
-    nextArgs.push("-c", `model="${escapeTomlString(model)}"`);
+    nextArgs.push("-c", `model=${formatTomlString(model)}`);
   }
 
   if (reasoningEffort) {
     nextArgs.push(
       "-c",
-      `model_reasoning_effort="${escapeTomlString(reasoningEffort)}"`,
+      `model_reasoning_effort=${formatTomlString(reasoningEffort)}`,
     );
   }
 
@@ -51,14 +52,25 @@ export function appendCodexRuntimeConfigArgs(
   if (sandboxMode) {
     nextArgs.push(
       "-c",
-      `sandbox_mode="${escapeTomlString(sandboxMode)}"`,
+      `sandbox_mode=${formatTomlString(sandboxMode)}`,
     );
   }
 
   if (approvalPolicy) {
     nextArgs.push(
       "-c",
-      `approval_policy="${escapeTomlString(approvalPolicy)}"`,
+      `approval_policy=${formatTomlString(approvalPolicy)}`,
+    );
+  }
+
+  const normalizedDeveloperInstructions =
+    typeof developerInstructions === "string"
+      ? developerInstructions.trim()
+      : "";
+  if (normalizedDeveloperInstructions) {
+    nextArgs.push(
+      "-c",
+      `developer_instructions=${formatTomlString(normalizedDeveloperInstructions)}`,
     );
   }
 

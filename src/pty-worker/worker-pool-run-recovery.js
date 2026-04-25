@@ -4,7 +4,7 @@ import { buildCompactResumePrompt } from "./compact-resume.js";
 import {
   buildProgressText,
   buildPromptWithAttachments,
-  buildThreadBaseInstructions,
+  buildThreadDeveloperInstructions,
   isContextWindowExceededText,
   isTransientModelCapacityError,
   sleep,
@@ -202,8 +202,8 @@ export async function executeRunAttempts(
     && typeof pool.globalPromptSuffixStore?.load === "function"
     ? await pool.globalPromptSuffixStore.load()
     : null;
-  const baseInstructions = includeTopicContext
-    ? buildThreadBaseInstructions(
+  const developerInstructions = includeTopicContext
+    ? buildThreadDeveloperInstructions(
       run.session,
       pool.sessionStore,
       {
@@ -234,7 +234,8 @@ export async function executeRunAttempts(
     try {
       result = await pool.runAttempt(run, {
         prompt: nextPrompt,
-        baseInstructions,
+        developerInstructions,
+        baseInstructions: developerInstructions,
         imagePaths,
         sessionThreadId: nextSessionThreadId,
         skipThreadHistoryLookup: nextSkipThreadHistoryLookup,

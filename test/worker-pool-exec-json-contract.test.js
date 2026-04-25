@@ -52,6 +52,7 @@ test("CodexWorkerPool mirrors the exec-json live smoke through a local runner co
       codexBinPath,
       cwd,
       prompt,
+      developerInstructions,
       baseInstructions,
       imagePaths,
       sessionThreadId,
@@ -62,6 +63,7 @@ test("CodexWorkerPool mirrors the exec-json live smoke through a local runner co
         codexBinPath,
         cwd,
         prompt,
+        developerInstructions,
         baseInstructions,
         imagePaths,
         sessionThreadId,
@@ -120,11 +122,12 @@ test("CodexWorkerPool mirrors the exec-json live smoke through a local runner co
   assert.deepEqual(runCall.imagePaths, []);
   assert.equal(runCall.sessionThreadId, null);
   assert.equal(runCall.jsonlLogPath, expectedJsonlLogPath);
-  assert.match(runCall.baseInstructions, /^Context:/u);
+  assert.match(runCall.developerInstructions, /^Context:/u);
   assert.match(
-    runCall.baseInstructions,
+    runCall.developerInstructions,
     /Telegram topic 4301 \(-1001234567890:4301\)/u,
   );
+  assert.equal(runCall.baseInstructions, runCall.developerInstructions);
   assert.equal(await fs.readFile(expectedJsonlLogPath, "utf8"), "");
 
   const reloaded = await sessionStore.load(session.chat_id, session.topic_id);

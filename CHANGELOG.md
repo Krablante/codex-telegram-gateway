@@ -6,6 +6,12 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.70] - 2026-04-25
+
+Changed:
+
+- routing/file-delivery context and saved `Work Style` now reach Codex as developer instructions instead of ordinary user prompt text; the live user prompt stays clean and minimal
+
 ## [0.3.69] - 2026-04-25
 
 Fixed:

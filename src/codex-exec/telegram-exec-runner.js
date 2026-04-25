@@ -159,18 +159,16 @@ function isLikelyNonPrimaryExecEvent(event, item = event?.item ?? null) {
   );
 }
 
-export function buildCodexExecPrompt({ prompt = "", baseInstructions = null } = {}) {
-  const normalizedPrompt = String(prompt || "");
-  const normalizedBaseInstructions = normalizeOptionalText(baseInstructions);
-  if (!normalizedBaseInstructions) {
-    return normalizedPrompt;
-  }
+function resolveDeveloperInstructions({
+  developerInstructions = null,
+  baseInstructions = null,
+} = {}) {
+  return normalizeOptionalText(developerInstructions)
+    || normalizeOptionalText(baseInstructions);
+}
 
-  return [
-    normalizedBaseInstructions,
-    "",
-    normalizedPrompt,
-  ].join("\n");
+export function buildCodexExecPrompt({ prompt = "" } = {}) {
+  return String(prompt || "");
 }
 
 export function buildCodexExecTaskArgs({
@@ -181,6 +179,7 @@ export function buildCodexExecTaskArgs({
   reasoningEffort = null,
   contextWindow = null,
   autoCompactTokenLimit = null,
+  developerInstructions = null,
 } = {}) {
   const normalizedCwd = normalizeOptionalText(cwd);
   if (!normalizedCwd) {
@@ -205,6 +204,7 @@ export function buildCodexExecTaskArgs({
     reasoningEffort,
     contextWindow,
     autoCompactTokenLimit,
+    developerInstructions,
   });
 
   for (const imagePath of Array.isArray(imagePaths) ? imagePaths : []) {
@@ -808,6 +808,7 @@ export function runCodexExecTask({
   codexBinPath,
   cwd,
   prompt,
+  developerInstructions = null,
   baseInstructions = null,
   sessionThreadId = null,
   imagePaths = [],
@@ -830,13 +831,17 @@ export function runCodexExecTask({
     reasoningEffort,
     contextWindow,
     autoCompactTokenLimit,
+    developerInstructions: resolveDeveloperInstructions({
+      developerInstructions,
+      baseInstructions,
+    }),
   });
 
   return startExecChild({
     command: codexBinPath,
     args,
     cwd,
-    prompt: buildCodexExecPrompt({ prompt, baseInstructions }),
+    prompt: buildCodexExecPrompt({ prompt }),
     onEvent,
     onWarning,
     onRuntimeState,
@@ -862,6 +867,7 @@ export async function runRemoteCodexExecTask({
   onWarning,
   jsonlLogPath = null,
   prompt,
+  developerInstructions = null,
   baseInstructions = null,
   execFileImpl,
   reasoningEffort = null,
@@ -925,6 +931,10 @@ export async function runRemoteCodexExecTask({
     reasoningEffort,
     contextWindow,
     autoCompactTokenLimit,
+    developerInstructions: resolveDeveloperInstructions({
+      developerInstructions,
+      baseInstructions,
+    }),
   });
   const sshArgs = buildRemoteCodexExecSshArgs({
     host: resolvedHost,
@@ -936,7 +946,7 @@ export async function runRemoteCodexExecTask({
   const execTask = startExecChild({
     command: "ssh",
     args: sshArgs,
-    prompt: buildCodexExecPrompt({ prompt, baseInstructions }),
+    prompt: buildCodexExecPrompt({ prompt }),
     onEvent,
     onWarning,
     onRuntimeState,

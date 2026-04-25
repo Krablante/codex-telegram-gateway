@@ -247,8 +247,21 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
       lastPromptAt: null,
       activeRunCount: 0,
     },
-    runTask: ({ prompt, imagePaths, sessionThreadId, onEvent }) => {
-      runCalls.push({ prompt, imagePaths, sessionThreadId });
+    runTask: ({
+      prompt,
+      developerInstructions,
+      baseInstructions,
+      imagePaths,
+      sessionThreadId,
+      onEvent,
+    }) => {
+      runCalls.push({
+        prompt,
+        developerInstructions,
+        baseInstructions,
+        imagePaths,
+        sessionThreadId,
+      });
       const child = { kill() {} };
       if (runCalls.length === 1) {
         return {
@@ -356,6 +369,10 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
   assert.equal(runCalls[0].sessionThreadId, null);
   assert.equal(runCalls[1].sessionThreadId, "aborted-thread");
   assert.match(runCalls[1].prompt, /И ещё учти follow-up после live steer\./u);
+  assert.doesNotMatch(runCalls[1].prompt, /Context:/u);
+  assert.match(runCalls[1].developerInstructions, /^Context:/u);
+  assert.match(runCalls[1].developerInstructions, /Telegram topic 2033/u);
+  assert.equal(runCalls[1].baseInstructions, runCalls[1].developerInstructions);
   assert.deepEqual(runCalls[1].imagePaths, [restartImagePath]);
 
   const finalReply = sentMessages.at(-1)?.text || "";

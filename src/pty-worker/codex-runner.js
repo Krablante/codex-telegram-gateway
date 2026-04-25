@@ -84,6 +84,7 @@ export function runCodexTask({
   codexBinPath,
   cwd,
   prompt,
+  developerInstructions = null,
   baseInstructions = null,
   sessionKey = null,
   sessionThreadId = null,
@@ -127,13 +128,15 @@ export function runCodexTask({
 
   const stdoutReader = readline.createInterface({ input: child.stdout });
   const stderrReader = readline.createInterface({ input: child.stderr });
-  const normalizedBaseInstructions = normalizeOptionalText(baseInstructions);
+  const normalizedDeveloperInstructions =
+    normalizeOptionalText(developerInstructions)
+    || normalizeOptionalText(baseInstructions);
   const threadParams = {
     cwd,
     approvalPolicy: "never",
     sandbox: "danger-full-access",
-    ...(normalizedBaseInstructions
-      ? { baseInstructions: normalizedBaseInstructions }
+    ...(normalizedDeveloperInstructions
+      ? { developerInstructions: normalizedDeveloperInstructions }
       : {}),
   };
 

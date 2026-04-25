@@ -23,13 +23,13 @@ const config = {
 };
 
 test("extractBotCommand parses direct commands and bot username suffix", () => {
-  const rawCommand = "/status@jvan34fsdfbifbiwnoi4bot";
+  const rawCommand = "/status@gatewaybot";
   const message = {
     text: `${rawCommand} now`,
     entities: [{ type: "bot_command", offset: 0, length: rawCommand.length }],
   };
 
-  const command = extractBotCommand(message, "jvan34fsdfbifbiwnoi4bot");
+  const command = extractBotCommand(message, "gatewaybot");
   assert.equal(command.name, "status");
   assert.equal(command.args, "now");
 });

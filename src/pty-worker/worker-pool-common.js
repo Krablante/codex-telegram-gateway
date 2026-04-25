@@ -2,7 +2,7 @@ import os from "node:os";
 
 import { resolveExecutionCwd, translateWorkspacePathForHost } from "../hosts/host-paths.js";
 import { resolveEffectiveWorkStyle } from "../session-manager/prompt-suffix.js";
-import { buildTopicBaseInstructions } from "../session-manager/topic-context.js";
+import { buildTopicDeveloperInstructions } from "../session-manager/topic-context.js";
 import { normalizeUiLanguage } from "../i18n/ui-language.js";
 import { signalChildProcessTree } from "../runtime/process-tree.js";
 export { isContextWindowExceededText } from "../codex-runtime/context-window.js";
@@ -396,7 +396,7 @@ function resolvePromptDeliveryRoots(
   return uniqueValues(roots);
 }
 
-export function buildThreadBaseInstructions(
+export function buildThreadDeveloperInstructions(
   session,
   sessionStore,
   {
@@ -425,7 +425,7 @@ export function buildThreadBaseInstructions(
     && normalizedExecutionHostId !== normalizedCurrentHostId;
   const workStyleText = resolveEffectiveWorkStyle(session, globalPromptSuffix);
 
-  return buildTopicBaseInstructions(session, {
+  return buildTopicDeveloperInstructions(session, {
     topicContextPath: remoteExecution ? null : topicContextPath,
     executionCwd,
     fileDeliveryRoots: resolvePromptDeliveryRoots(

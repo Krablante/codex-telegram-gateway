@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { buildRunCodexTaskArgs } from "../src/cli/host-executor.js";
 
-test("buildRunCodexTaskArgs forwards baseInstructions into runCodexTask", () => {
+test("buildRunCodexTaskArgs forwards developerInstructions into runCodexTask", () => {
   const args = buildRunCodexTaskArgs({
     cwd: "~/workspace",
     prompt: "User Prompt:\nrun a quick task",
@@ -15,6 +15,10 @@ test("buildRunCodexTaskArgs forwards baseInstructions into runCodexTask", () => 
   });
 
   assert.equal(
+    args.developerInstructions,
+    "Context:\n- host: worker-b, cwd: /home/worker-b/workspace",
+  );
+  assert.equal(
     args.baseInstructions,
     "Context:\n- host: worker-b, cwd: /home/worker-b/workspace",
   );
@@ -23,4 +27,16 @@ test("buildRunCodexTaskArgs forwards baseInstructions into runCodexTask", () => 
   assert.match(args.knownRolloutPath, /[\\/]rollout\.jsonl$/u);
   assert.equal(args.contextWindow, 400000);
   assert.equal(args.autoCompactTokenLimit, 375000);
+});
+
+test("buildRunCodexTaskArgs prefers explicit developerInstructions over legacy baseInstructions", () => {
+  const args = buildRunCodexTaskArgs({
+    cwd: "~/workspace",
+    prompt: "User Prompt:\nrun a quick task",
+    developerInstructions: "Context:\n- fresh developer context",
+    baseInstructions: "Context:\n- legacy base context",
+  });
+
+  assert.equal(args.developerInstructions, "Context:\n- fresh developer context");
+  assert.equal(args.baseInstructions, "Context:\n- legacy base context");
 });

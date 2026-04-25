@@ -59,8 +59,8 @@ Expose the real Codex runtime local to the selected execution host through Teleg
 ## Prompt and context model
 
 - stable per-topic routing and file-delivery context is rendered as a host-aware `Context:` block for every run
-- exec-json prepends that block to stdin before the rendered `User Prompt:`; the fallback app-server path sends the same block as `baseInstructions`
-- effective saved `Work Style` is appended to that context block too
+- exec-json sends that block through Codex `developer_instructions`, while the fallback app-server path sends the same block as `developerInstructions`
+- effective saved `Work Style` is appended to that developer-instructions block too
 - the visible user-turn body is intentionally small and only carries `User Prompt:`
 - `Context:` names the bound host, execution cwd, `/workspace/<workspace-root-basename>` MCP mirror root, Telegram delivery roots, shared operator memory, and bound-host memory
 - runtime profile resolution uses the current Codex catalog, while model menus expose only the list-visible subset; for host-bound topics the catalog comes from the current host config directly or a mirrored remote-host `models_cache.json` snapshot when available

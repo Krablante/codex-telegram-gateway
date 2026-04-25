@@ -119,9 +119,9 @@ Topic suffix overrides global suffix.
 This is the canonical prompt contract:
 
 - stable routing/file-delivery/shared-memory guidance is rendered as a host-aware `Context:` block for each run
-- exec-json prepends that block to stdin before the rendered `User Prompt:`
-- fallback app-server sends the same block as thread-level `baseInstructions`
-- the effective saved `Work Style` rides in the same block too
+- exec-json sends that block as Codex `developer_instructions`, not as ordinary user prompt text
+- fallback app-server sends the same block as thread-level `developerInstructions`
+- the effective saved `Work Style` rides in the same developer-instructions block too
 - the user-turn body stays minimal and only carries `User Prompt:`
 
 The `Context:` block is behavioral, not an inventory dump. It tells the agent:

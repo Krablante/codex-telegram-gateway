@@ -85,7 +85,7 @@ test("runCodexTask ignores foreign thread completion events and only finishes th
   );
 });
 
-test("runCodexTask forwards baseInstructions to thread/start", async () => {
+test("runCodexTask forwards developerInstructions to thread/start", async () => {
   const child = createMockChild();
   const captured = [];
   const ws = createMockWebSocket({
@@ -115,7 +115,7 @@ test("runCodexTask forwards baseInstructions to thread/start", async () => {
     codexBinPath: "codex",
     cwd: process.cwd(),
     prompt: "Сделай задачу.",
-    baseInstructions: "Context:\n- bound host: controller\n- workspace cwd: /srv/codex-workspace",
+    developerInstructions: "Context:\n- bound host: controller\n- workspace cwd: /srv/codex-workspace",
     spawnImpl() {
       return child;
     },
@@ -125,9 +125,10 @@ test("runCodexTask forwards baseInstructions to thread/start", async () => {
   emitListenBanner(child, 43143);
   await waitForCondition(() => captured.length === 1);
   assert.equal(
-    captured[0].baseInstructions,
+    captured[0].developerInstructions,
     "Context:\n- bound host: controller\n- workspace cwd: /srv/codex-workspace",
   );
+  assert.equal("baseInstructions" in captured[0], false);
 
   ws.emitNotification({
     method: "turn/completed",
@@ -143,7 +144,7 @@ test("runCodexTask forwards baseInstructions to thread/start", async () => {
   assert.equal(finished.exitCode, 0);
 });
 
-test("runCodexTask forwards baseInstructions to thread/resume", async () => {
+test("runCodexTask forwards developerInstructions to thread/resume", async () => {
   const child = createMockChild();
   const captured = [];
   const ws = createMockWebSocket({
@@ -173,7 +174,7 @@ test("runCodexTask forwards baseInstructions to thread/resume", async () => {
     codexBinPath: "codex",
     cwd: process.cwd(),
     prompt: "Продолжай.",
-    baseInstructions: "Context:\n- bound host: controller\n- workspace cwd: /srv/codex-workspace",
+    developerInstructions: "Context:\n- bound host: controller\n- workspace cwd: /srv/codex-workspace",
     sessionThreadId: "root-thread",
     spawnImpl() {
       return child;
@@ -184,9 +185,69 @@ test("runCodexTask forwards baseInstructions to thread/resume", async () => {
   emitListenBanner(child, 43144);
   await waitForCondition(() => captured.length === 1);
   assert.equal(
-    captured[0].baseInstructions,
+    captured[0].developerInstructions,
     "Context:\n- bound host: controller\n- workspace cwd: /srv/codex-workspace",
   );
+  assert.equal("baseInstructions" in captured[0], false);
+
+  ws.emitNotification({
+    method: "turn/completed",
+    params: {
+      threadId: "root-thread",
+      turn: {
+        id: "root-turn",
+      },
+    },
+  });
+
+  const finished = await run.finished;
+  assert.equal(finished.exitCode, 0);
+});
+
+test("runCodexTask maps legacy baseInstructions to developerInstructions", async () => {
+  const child = createMockChild();
+  const captured = [];
+  const ws = createMockWebSocket({
+    requestHandlers: {
+      initialize() {
+        return { ok: true };
+      },
+      "thread/start"(params) {
+        captured.push(params);
+        return {
+          thread: {
+            id: "root-thread",
+          },
+        };
+      },
+      "turn/start"() {
+        return {
+          turn: {
+            id: "root-turn",
+          },
+        };
+      },
+    },
+  });
+
+  const run = runCodexTask({
+    codexBinPath: "codex",
+    cwd: process.cwd(),
+    prompt: "Сделай задачу.",
+    baseInstructions: "Context:\n- legacy caller still works",
+    spawnImpl() {
+      return child;
+    },
+    openWebSocketImpl: async () => ws,
+  });
+
+  emitListenBanner(child, 43145);
+  await waitForCondition(() => captured.length === 1);
+  assert.equal(
+    captured[0].developerInstructions,
+    "Context:\n- legacy caller still works",
+  );
+  assert.equal("baseInstructions" in captured[0], false);
 
   ws.emitNotification({
     method: "turn/completed",

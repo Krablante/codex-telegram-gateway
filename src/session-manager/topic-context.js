@@ -94,7 +94,7 @@ function buildTopicContextLines(session, topicContextPath = null) {
     "# Telegram topic context",
     "",
     "The live user-turn prompt stays small.",
-    "Thread base instructions carry the short Telegram routing contract.",
+    "Thread developer instructions carry the short Telegram routing contract.",
     "Read this file only when you need fuller routing or file-delivery detail.",
     "",
     `session_key: ${session.session_key}`,
@@ -145,7 +145,7 @@ export function buildTopicContextFileText(session, { topicContextPath = null } =
   return `${buildTopicContextLines(session, topicContextPath).join("\n")}\n`;
 }
 
-export function buildTopicBaseInstructions(
+export function buildTopicDeveloperInstructions(
   session,
   {
     topicContextPath = null,
@@ -219,5 +219,5 @@ export function buildTopicBaseInstructions(
 }
 
 export function buildTopicContextPrompt(session, options = {}) {
-  return buildTopicBaseInstructions(session, options);
+  return buildTopicDeveloperInstructions(session, options);
 }

@@ -68,6 +68,8 @@ export function buildRunCodexTaskArgs(params = {}) {
     codexBinPath: params.codexBinPath,
     cwd: expandHomePath(params.cwd),
     prompt: params.prompt,
+    developerInstructions:
+      params.developerInstructions ?? params.baseInstructions ?? null,
     baseInstructions: params.baseInstructions ?? null,
     imagePaths: normalizeInputItems(
       Array.isArray(params.imagePaths)

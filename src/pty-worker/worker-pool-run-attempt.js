@@ -313,6 +313,7 @@ export async function runAttempt(
   run,
   {
     prompt,
+    developerInstructions = null,
     baseInstructions = null,
     imagePaths = [],
     sessionThreadId,
@@ -382,6 +383,7 @@ export async function runAttempt(
     codexBinPath: pool.config.codexBinPath,
     cwd: run.session.workspace_binding.cwd,
     prompt,
+    developerInstructions: developerInstructions ?? baseInstructions,
     baseInstructions,
     imagePaths,
     session: run.session,
