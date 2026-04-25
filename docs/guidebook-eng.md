@@ -14,7 +14,7 @@ The normal start looks like this:
 
 ```text
 /new Backend Cleanup
-/new host=worker-a cwd=homelab/infra/automation/codex-telegram-gateway Gateway Audit
+/new host=worker-a cwd=projects/codex-telegram-gateway Gateway Audit
 ```
 
 Then enter the new topic and send the task as plain text.

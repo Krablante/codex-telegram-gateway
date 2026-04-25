@@ -129,7 +129,7 @@ The `Context:` block is behavioral, not an inventory dump. It tells the agent:
 - which Telegram topic is the default delivery target
 - which bound host and cwd to use
 - to report host unavailability instead of silently rebinding
-- the `/workspace/workspace` mirror root plus current mirrored cwd for container-backed MCPs
+- the `/workspace/<workspace-root-basename>` mirror root plus current mirrored cwd for container-backed MCPs
 - how to send files back through Telegram
 - where to find shared and bound-host operator memory when needed
 - when to lazily read the per-topic context file for extra routing/detail

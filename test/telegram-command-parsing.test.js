@@ -143,25 +143,25 @@ test("parseNewTopicCommandArgs keeps legacy title mode and supports explicit bin
     },
   );
   assert.deepEqual(
-    parseNewTopicCommandArgs("--cwd=homelab/infra/automation/codex-telegram-gateway"),
+    parseNewTopicCommandArgs("--cwd=projects/codex-telegram-gateway"),
     {
-      bindingPath: "homelab/infra/automation/codex-telegram-gateway",
+      bindingPath: "projects/codex-telegram-gateway",
       executionHostId: null,
       title: "",
     },
   );
   assert.deepEqual(
-    parseNewTopicCommandArgs('cwd="C:/Users/Konstantin/Source Repos" Windows topic'),
+    parseNewTopicCommandArgs('cwd="C:/Users/Example/Source Repos" Windows topic'),
     {
-      bindingPath: "C:/Users/Konstantin/Source Repos",
+      bindingPath: "C:/Users/Example/Source Repos",
       executionHostId: null,
       title: "Windows topic",
     },
   );
   assert.deepEqual(
-    parseNewTopicCommandArgs('host=worker-a cwd=homelab/infra "Remote gateway topic"'),
+    parseNewTopicCommandArgs('host=worker-a cwd=projects/gateway "Remote gateway topic"'),
     {
-      bindingPath: "homelab/infra",
+      bindingPath: "projects/gateway",
       executionHostId: "worker-a",
       title: "Remote gateway topic",
     },

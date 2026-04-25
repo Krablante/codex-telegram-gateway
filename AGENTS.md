@@ -26,9 +26,9 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 ## Default paths
 
 - repo root: wherever the repo is cloned
-- default CLI env file: `${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
+- default CLI env file: `${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env`
 - default `make` env file: `.env`
-- default state root: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
+- default state root: `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway`
 - optional workspace root override: `WORKSPACE_ROOT`
 
 ## Run and validate
@@ -74,3 +74,8 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - do not add approval-flow or sandbox policy layers in this repo
 - keep bot tokens and runtime secrets out of git
 - keep mutable logs, sessions, indexes, and artifacts under the configured state root, not in the repo
+
+## Atlas reminder
+
+- root `atlas/AGENTS.md` is the main workspace contract for local Atlas work
+- `atlas/_context/README.md` is the one-file fast-start for shared workspace context

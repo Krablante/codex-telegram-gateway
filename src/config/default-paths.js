@@ -66,7 +66,7 @@ function getDefaultConfigRoot(options = {}) {
 
 export function getDefaultEnvFilePath(options = {}) {
   return path.join(
-    options.stateRoot || options.configRoot || getDefaultConfigRoot(options),
+    options.configRoot || getDefaultConfigRoot(options),
     "runtime.env",
   );
 }
@@ -101,7 +101,6 @@ export async function resolveRuntimeEnvFilePath({
   platform = process.platform,
   repoRoot = getDefaultRepoRoot(),
   configRoot = getDefaultConfigRoot({ platform }),
-  stateRoot = null,
   allowRepoEnvFallback =
     process.env.CODEX_GATEWAY_ALLOW_REPO_ENV === "1" || isWindows(platform),
 } = {}) {
@@ -119,7 +118,7 @@ export async function resolveRuntimeEnvFilePath({
     return repoEnvFilePath;
   }
 
-  const defaultEnvFilePath = getDefaultEnvFilePath({ configRoot, stateRoot });
+  const defaultEnvFilePath = getDefaultEnvFilePath({ configRoot });
   if (await fileExists(defaultEnvFilePath)) {
     return defaultEnvFilePath;
   }

@@ -67,7 +67,7 @@ test("ZooService add-project flow captures the description reply", async (t) => 
     api,
     botUsername: "gatewaybot",
     message: {
-      text: "my private telegram to codex gateway",
+      text: "my Telegram gateway project",
       from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 700,
@@ -76,7 +76,7 @@ test("ZooService add-project flow captures the description reply", async (t) => 
   });
 
   assert.equal(replyResult.reason, "zoo-lookup-started");
-  assert.equal(capturedDescription, "my private telegram to codex gateway");
+  assert.equal(capturedDescription, "my Telegram gateway project");
   assert.equal(api.calls.deleteMessage.at(-1).message_id, 5);
 });
 

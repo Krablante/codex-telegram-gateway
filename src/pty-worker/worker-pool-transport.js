@@ -183,15 +183,27 @@ export function steerActiveRun(
   }
 
   const pending = pool.pendingLiveSteers.get(sessionKey) || {
+    attachments: [],
     input: [],
     exchangePrompt: "",
+    rawPrompt: "",
     replyToMessageId: null,
   };
-  if (!pool.startingRuns.has(sessionKey)) {
+  const canBufferForActiveRun =
+    run
+    && ["interrupting", "rebuilding", "running", "starting"].includes(
+      run.state?.status,
+    );
+  if (!pool.startingRuns.has(sessionKey) && !canBufferForActiveRun) {
     return { ok: false, reason: "finalizing" };
   }
   pending.input.push(...input);
   pending.exchangePrompt = appendPromptPart(pending.exchangePrompt, exchangePrompt);
+  pending.rawPrompt = appendPromptPart(
+    pending.rawPrompt,
+    normalizedPrompt || exchangePrompt,
+  );
+  pending.attachments.push(...normalizedAttachments);
   const replyTargetMessageId = resolveReplyToMessageId(message);
   if (Number.isInteger(replyTargetMessageId)) {
     pending.replyToMessageId = replyTargetMessageId;
@@ -203,6 +215,25 @@ export function steerActiveRun(
     reason: "steer-buffered",
     inputCount: pending.input.length,
   };
+}
+
+export async function requeuePendingLiveSteer(pool, sessionKey, run) {
+  const pending = pool.pendingLiveSteers.get(sessionKey);
+  if (!pending || !pool.promptQueueStore) {
+    return false;
+  }
+
+  const session =
+    await pool.sessionStore.load?.(run.session.chat_id, run.session.topic_id)
+    || run.session;
+  await pool.promptQueueStore.enqueue(session, {
+    rawPrompt: pending.rawPrompt || pending.exchangePrompt,
+    prompt: pending.exchangePrompt,
+    attachments: pending.attachments || [],
+    replyToMessageId: pending.replyToMessageId,
+  });
+  pool.pendingLiveSteers.delete(sessionKey);
+  return true;
 }
 
 export function startProgressLoop(pool, run) {

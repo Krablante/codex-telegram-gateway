@@ -2,6 +2,7 @@ import {
   DEFAULT_UI_LANGUAGE,
   getSessionUiLanguage,
 } from "../../../i18n/ui-language.js";
+import { summarizeQueuedPrompt } from "../../../session-manager/prompt-queue.js";
 import { renderUserPrompt } from "../../../session-manager/prompt-suffix.js";
 import { getTopicIdFromMessage } from "../../../session-manager/session-key.js";
 import { buildReplyMessageParams } from "../../command-parsing.js";
@@ -15,6 +16,7 @@ import {
   buildExecutionHostUnavailableMessage,
   buildMissingTopicBindingMessage,
   buildNoSessionTopicMessage,
+  buildQueueQueuedMessage,
 } from "./messages.js";
 import { buildPromptFromMessages } from "./prompt-builders.js";
 import {
@@ -24,6 +26,16 @@ import {
   loadPendingPromptAttachments,
 } from "./attachments.js";
 import { maybeHandleBusyPromptStart } from "./start-steer.js";
+
+const SHUTDOWN_QUEUE_REASONS = new Set(["shutdown", "shutting-down"]);
+
+function shouldQueuePromptForShutdown(started, workerPool) {
+  if (SHUTDOWN_QUEUE_REASONS.has(started?.reason)) {
+    return true;
+  }
+
+  return Boolean(workerPool?.shuttingDown && started && !started.ok);
+}
 
 async function startTopicPromptRun({
   api,
@@ -193,6 +205,49 @@ async function startTopicPromptRun({
   });
 
   if (!started.ok) {
+    if (
+      shouldQueuePromptForShutdown(started, workerPool)
+      && typeof sessionService.enqueuePromptQueue === "function"
+    ) {
+      let queued = null;
+      try {
+        queued = await sessionService.enqueuePromptQueue(session, {
+          rawPrompt,
+          prompt: effectivePrompt,
+          attachments,
+          replyToMessageId: Number.isInteger(message.message_id)
+            ? message.message_id
+            : null,
+        });
+      } catch {
+        // Fall through to the normal shutdown/capacity reply if queue storage is unavailable.
+      }
+
+      if (queued) {
+        if (attachments.length > 0) {
+          await clearPendingPromptAttachments({ session, sessionService });
+        }
+        const delivery = await safeSendMessage(
+          api,
+          buildReplyMessageParams(
+            message,
+            buildQueueQueuedMessage({
+              position: queued.position,
+              preview: summarizeQueuedPrompt(rawPrompt),
+              waitingForCapacity: true,
+              language: getSessionUiLanguage(session),
+            }),
+          ),
+          session,
+          lifecycleManager,
+        );
+        return {
+          handled: true,
+          reason: delivery.parked ? "topic-unavailable" : "prompt-queued",
+        };
+      }
+    }
+
     if (started.reason === "busy") {
       const busyResult = await maybeHandleBusyPromptStart({
         api,

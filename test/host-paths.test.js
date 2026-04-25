@@ -10,21 +10,21 @@ import {
 test("resolveBindingRelativeCwd prefers stored relative path", () => {
   assert.equal(
     resolveBindingRelativeCwd({
-      cwd_relative_to_workspace_root: "homelab/infra",
+      cwd_relative_to_workspace_root: "projects/gateway",
       cwd: "/srv/codex-workspace/other",
       workspace_root: "/srv/codex-workspace",
     }),
-    "homelab/infra",
+    "projects/gateway",
   );
 });
 
 test("resolveBindingRelativeCwd derives relative cwd from workspace root", () => {
   assert.equal(
     resolveBindingRelativeCwd({
-      cwd: "/srv/codex-workspace/homelab/infra",
+      cwd: "/srv/codex-workspace/projects/gateway",
       workspace_root: "/srv/codex-workspace",
     }),
-    "homelab/infra",
+    "projects/gateway",
   );
 });
 
@@ -49,7 +49,7 @@ test("resolveExecutionCwd translates remote cwd from host workspace root", () =>
 test("translateWorkspacePathForHost keeps local paths unchanged", () => {
   assert.equal(
     translateWorkspacePathForHost(
-      "/srv/codex-workspace/homelab/infra/automation",
+      "/srv/codex-workspace/projects/gateway",
       {
         workspaceBinding: {
           workspace_root: "/srv/codex-workspace",
@@ -61,7 +61,7 @@ test("translateWorkspacePathForHost keeps local paths unchanged", () => {
         currentHostId: "controller",
       },
     ),
-    "/srv/codex-workspace/homelab/infra/automation",
+    "/srv/codex-workspace/projects/gateway",
   );
 });
 

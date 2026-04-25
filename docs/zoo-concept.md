@@ -38,7 +38,7 @@ The goal is simple: each selected project gets a persistent creature, a last kno
 
 1. The operator taps `Add project`.
 2. The Zoo asks for a natural-language description of the project.
-3. The operator replies with something vague like `my private telegram to codex gateway`.
+3. The operator replies with something vague like `my Telegram gateway project`.
 4. The gateway runs a Zoo lookup pass through `codex exec` with `gpt-5.4-mini`, `reasoning: high`.
 5. The model searches the workspace and returns one best absolute path in strict JSON.
 6. The gateway renders that result into the pinned menu itself instead of posting a separate chat message.

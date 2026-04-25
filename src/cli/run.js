@@ -47,6 +47,7 @@ async function main() {
     hostRegistryService,
     offsetStore,
     probe,
+    promptQueueStore,
     runtimeObserver,
     rolloutCoordinationStore,
     runTask,
@@ -96,6 +97,7 @@ async function main() {
     globalPromptSuffixStore,
     globalCodexSettingsStore,
     hostRegistryService,
+    promptQueueStore,
     serviceGenerationId: serviceState.generationId,
     onRunTerminated: handleRunTerminated,
     runTask,
@@ -211,6 +213,7 @@ async function main() {
 
   const performShutdown = async () => {
     serviceState.retiring = true;
+    workerPool.shuttingDown = true;
     let firstError = null;
     const steps = [
       () => promptFragmentAssembler.flushAll(),

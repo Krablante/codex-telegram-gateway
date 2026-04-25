@@ -12,6 +12,20 @@
     "nodejs",
     "windows"
   ],
+  "files": [
+    "src/",
+    "scripts/",
+    "assets/",
+    "docs/",
+    ".env.example",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "Makefile",
+    "README.md",
+    "SECURITY.md"
+  ],
   "homepage": "https://github.com/Krablante/codex-telegram-gateway",
   "repository": {
     "type": "git",

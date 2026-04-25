@@ -325,6 +325,16 @@ export async function drainPendingSpikePromptQueue({
       await promptQueueStore.shift(currentSession);
       continue;
     }
+    if (workerPool.shouldSkipQueuedPromptStart?.(currentSession.session_key)) {
+      results.push({
+        sessionKey: currentSession.session_key,
+        topicId: currentSession.topic_id,
+        queueLength: queuedItems.length,
+        entry: head,
+        result: { handled: true, reason: "queue-backoff" },
+      });
+      continue;
+    }
     const result = await workerPool.startPromptRun({
       session: currentSession,
       prompt: normalizedHead.prompt,
@@ -336,6 +346,7 @@ export async function drainPendingSpikePromptQueue({
     if (result?.ok) {
       await promptQueueStore.shift(currentSession);
     }
+    workerPool.noteQueuedPromptStartResult?.(currentSession.session_key, result);
 
     results.push({
       sessionKey: currentSession.session_key,

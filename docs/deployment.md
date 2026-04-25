@@ -7,10 +7,10 @@ Required runtime settings:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ALLOWED_USER_ID` or `TELEGRAM_ALLOWED_USER_IDS`
 - `TELEGRAM_FORUM_CHAT_ID`
+- `WORKSPACE_ROOT`
 
 Recommended on multi-host installs:
 
-- `WORKSPACE_ROOT`
 - `CURRENT_HOST_ID` (treat as required on Linux service)
 
 Optional but commonly useful:
@@ -41,17 +41,19 @@ Optional but commonly useful:
 
 ## Canonical runtime env
 
-`${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env`
 
 Practical Linux service bootstrap:
 
 ```bash
 cd /path/to/codex-telegram-gateway
 npm ci
-install -d -m700 ${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway
-install -m600 .env.example ${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env
-$EDITOR ${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make doctor
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway"
+install -d -m700 "$(dirname "$runtime_env")" "$state_root"
+install -m600 .env.example "$runtime_env"
+$EDITOR "$runtime_env"
+ENV_FILE="$runtime_env" make doctor
 ```
 
 On native Windows, the practical default is repo-local `.env`, and it is preferred even if a config `runtime.env` also exists. Explicit `ENV_FILE` still wins. On Linux service, repo-local `.env` fallback is disabled unless `CODEX_GATEWAY_ALLOW_REPO_ENV=1`; use the canonical config `runtime.env`.
@@ -115,13 +117,14 @@ Practical operator sequence on `controller`:
 
 ```bash
 cd /path/to/codex-telegram-gateway
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-bootstrap
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-bootstrap-runtime ARGS='--host worker-a'
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-doctor
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-remote-smoke ARGS='--host worker-a'
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync-install
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync-status
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+ENV_FILE="$runtime_env" make host-bootstrap
+ENV_FILE="$runtime_env" make host-sync
+ENV_FILE="$runtime_env" make host-bootstrap-runtime ARGS='--host worker-a'
+ENV_FILE="$runtime_env" make host-doctor
+ENV_FILE="$runtime_env" make host-remote-smoke ARGS='--host worker-a'
+ENV_FILE="$runtime_env" make host-sync-install
+ENV_FILE="$runtime_env" make host-sync-status
 ```
 
 Host registry `ssh_target` values are intentionally constrained to safe SSH aliases or `user@host` names. Values with whitespace, leading `-`, shell metacharacters, or `:` are rejected before SSH/rsync calls. Rsync calls use protected-args mode so valid remote paths with spaces stay single operands after the SSH hop.
@@ -141,6 +144,8 @@ Generated user units set `UMask=0077`; runtime state writers also create private
 Useful entrypoints:
 
 ```bash
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+export ENV_FILE="$runtime_env"
 make service-install
 make service-status
 make service-logs

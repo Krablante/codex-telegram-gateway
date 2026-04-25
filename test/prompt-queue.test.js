@@ -249,6 +249,55 @@ test("drainPendingSpikePromptQueue keeps the head queued when the worker is stil
   assert.equal(queuedAfterRetry.length, 0);
 });
 
+test("drainPendingSpikePromptQueue backs off unavailable-host retries", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-prompt-queue-host-backoff-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const promptQueueStore = new SpikePromptQueueStore(sessionStore);
+  const session = await ensureSession(sessionStore, 998);
+
+  await promptQueueStore.enqueue(session, {
+    rawPrompt: "run when host returns",
+    prompt: "run when host returns",
+  });
+
+  let startCalls = 0;
+  const blockedSessions = new Set();
+  const workerPool = {
+    shouldSkipQueuedPromptStart(sessionKey) {
+      return blockedSessions.has(sessionKey);
+    },
+    noteQueuedPromptStartResult(sessionKey, result) {
+      if (result?.reason === "host-unavailable") {
+        blockedSessions.add(sessionKey);
+      }
+    },
+    async startPromptRun() {
+      startCalls += 1;
+      return { ok: false, reason: "host-unavailable" };
+    },
+  };
+
+  const firstResults = await drainPendingSpikePromptQueue({
+    session,
+    sessionStore,
+    promptQueueStore,
+    workerPool,
+  });
+  const secondResults = await drainPendingSpikePromptQueue({
+    session,
+    sessionStore,
+    promptQueueStore,
+    workerPool,
+  });
+
+  assert.equal(startCalls, 1);
+  assert.equal(firstResults[0].result.reason, "host-unavailable");
+  assert.equal(secondResults[0].result.reason, "queue-backoff");
+  assert.equal((await promptQueueStore.load(session)).length, 1);
+});
+
 test("drainPendingSpikePromptQueue skips prompts for a running session owned by another generation", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-prompt-queue-foreign-owner-"),

@@ -10,7 +10,7 @@ function buildWindowedLimitsSummary(overrides = {}) {
   return {
     available: true,
     capturedAt: "2026-04-04T13:10:00.000Z",
-    source: "windows_rtx",
+    source: "windows_worker",
     planType: null,
     limitName: "codex",
     unlimited: false,

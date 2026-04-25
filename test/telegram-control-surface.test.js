@@ -22,7 +22,7 @@ function buildUnlimitedLimitsSummary(overrides = {}) {
   return {
     available: true,
     capturedAt: "2026-04-04T13:00:00.000Z",
-    source: "windows_rtx",
+    source: "windows_worker",
     planType: "business",
     limitName: "codex",
     unlimited: true,

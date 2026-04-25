@@ -36,7 +36,7 @@ test("normalizeLimitsSnapshot and render helpers treat unlimited Codex accounts 
   const normalized = normalizeLimitsSnapshot(snapshot);
   const summary = buildCodexLimitsSummary(snapshot, {
     capturedAt: "2026-04-04T13:00:00.000Z",
-    source: "windows_rtx",
+    source: "windows_worker",
   });
 
   assert.equal(normalized.unlimited, true);
@@ -159,7 +159,7 @@ test("CodexLimitsService accepts CODEX_LIMITS_COMMAND JSON argv payloads", async
     scriptPath,
     [
       "console.log(JSON.stringify({",
-      '  source: "windows_rtx",',
+      '  source: "windows_worker",',
       '  captured_at: "2026-04-04T13:10:00.000Z",',
       "  snapshot: {",
       '    limit_id: "codex",',
@@ -181,7 +181,7 @@ test("CodexLimitsService accepts CODEX_LIMITS_COMMAND JSON argv payloads", async
 
     assert.equal(summary.available, true);
     assert.equal(summary.unlimited, false);
-    assert.equal(summary.source, "windows_rtx");
+    assert.equal(summary.source, "windows_worker");
     assert.equal(summary.capturedAt, "2026-04-04T13:10:00.000Z");
     assert.deepEqual(buildCodexLimitsMenuLines(summary, "eng"), [
       "limits 5h: 89% left",

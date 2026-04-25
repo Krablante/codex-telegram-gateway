@@ -32,8 +32,17 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      - name: Run static checks
+        run: |
+          npm run check:syntax
+          npm run lint -- --quiet
+          npm run typecheck
+
       - name: Run automated test suite
         run: npm test -- --test-concurrency=1 --test-reporter=dot
+
+      - name: Run hygiene checks
+        run: npm run hygiene
 
       - name: Build guidebook smoke artifact
         run: npm run guidebook:build -- --language eng --output "${RUNNER_TEMP}/guidebook-eng.pdf"

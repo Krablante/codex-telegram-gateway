@@ -384,7 +384,7 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
     api,
     botUsername: "gatewaybot",
     message: {
-      text: "my private telegram to codex gateway",
+      text: "my Telegram gateway project",
       from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
       message_thread_id: 700,
@@ -393,7 +393,7 @@ test("ZooService recovers missing Zoo topic state from a live menu callback", as
   });
 
   assert.equal(replyResult.reason, "zoo-lookup-started");
-  assert.equal(capturedDescription, "my private telegram to codex gateway");
+  assert.equal(capturedDescription, "my Telegram gateway project");
 });
 
 test("ZooService does not let a stale Zoo callback replace the active menu message id", async (t) => {

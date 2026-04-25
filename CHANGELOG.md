@@ -6,6 +6,20 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+Fixed:
+
+- default runtime-env discovery now resolves the Linux operator env from the config root instead of the mutable state root, repairs env-file mode to `0600` on POSIX, and ignores stale `STATE_ROOT/runtime.env` fallbacks
+- buffered live-steer text is no longer silently dropped when a run exits before the pending steer can flush; it is requeued as the next prompt when queue storage is available
+- shutdown now blocks fresh starts before flushing buffered prompt assemblers, and shutdown-time prompts are preserved in the durable prompt queue when possible
+- queued prompts for an unavailable bound host now back off instead of retrying every background tick
+- host-sync systemd units now use `UMask=0077`, matching the main service privacy contract
+
+Changed:
+
+- CI now runs syntax, lint, typecheck, full tests, and hygiene on Ubuntu before PDF smoke builds
+- npm pack output is restricted to runtime/docs/assets/scripts instead of shipping tests and CI metadata
+- public docs, examples, fixtures, and local gitignore rules were tightened around config-root env files, neutral paths, runtime artifacts, and disclosure guidance
+
 ## [0.3.67] - 2026-04-25
 
 Changed:
@@ -37,8 +51,8 @@ Fixed:
 
 Ops:
 
-- `make smoke` and `make smoke-omni` now fail closed when local `systemctl --user` health cannot be determined
-- `make service-restart-live` now skips the Omni restart cleanly when the Omni unit is not installed instead of failing the whole live restart path
+- Spike smoke and legacy autonomy smoke checks now fail closed when local `systemctl --user` health cannot be determined
+- `make service-restart-live` now skips the legacy autonomy runner restart cleanly when the legacy autonomy runner unit is not installed instead of failing the whole live restart path
 
 Docs:
 
@@ -60,7 +74,7 @@ Fixed:
 - bare `wait 60` / `wait 600` aliases now still parse when Telegram attaches unrelated entities to the same message
 - topic `/menu` repins are safer: the gateway no longer guesses and deletes `message_id + 1`, so it stops risking accidental deletion of an unrelated neighboring message
 - direct `/help` and `/guide` delivery paths now handle undelivered document results explicitly instead of silently pretending success
-- Omni reply sends now have the same missing-reply-target fallback as topic sends, direct Omni-query children are tracked for shutdown, and auto continuation paths stop queueing fresh Spike work after Telegram already parked the topic
+- legacy autonomy runner reply sends now have the same missing-reply-target fallback as topic sends, direct legacy autonomy runner-query children are tracked for shutdown, and auto continuation paths stop queueing fresh Spike work after Telegram already parked the topic
 - replacement rollout generations no longer inherit ambient `process.execArgv` flags unless the caller passes them explicitly
 
 Docs:
@@ -78,7 +92,7 @@ Fixed:
 
 - `/compact` now persists a real in-progress state while the brief rebuild runs, blocks direct prompt starts in that topic during the rebuild, validates the rebuilt brief shape before accepting it, and clears stale run/ownership continuity cleanly when the fresh-start handoff is committed
 - session-aware rollout now keeps ownership on just-starting topics instead of relying only on `last_run_status === "running"`, so retained topics keep forwarding correctly across soft restarts even during the start window
-- topic control-panel `/compact` actions now respect queued Omni handoffs the same way typed `/compact` already did
+- topic control-panel `/compact` actions now respect queued legacy autonomy runner handoffs the same way typed `/compact` already did
 - `message_thread_id: 0` is now treated strictly as Telegram `General`, not as a synthetic work-topic session id
 - topic document delivery now preserves `reply_to_message_id` and `contentType`, with the same missing-reply-target fallback as normal topic replies
 - stale configured default models now fall back to a real available model instead of bypassing cached-model validation
@@ -275,7 +289,7 @@ Tests:
 
 Fixed:
 
-- changing the configured model now clears a stale incompatible reasoning override for Spike, Omni, and `/compact` instead of leaving hidden unsupported values in state
+- changing the configured model now clears a stale incompatible reasoning override for Spike, legacy autonomy runner, and `/compact` instead of leaving hidden unsupported values in state
 - stale unavailable model overrides now stop shadowing the configured default profile, while an explicit config default still survives a stale cached model list
 
 Docs:
@@ -304,12 +318,12 @@ Tests:
 
 Fixed:
 
-- `/auto` continuation handoffs now switch to a compact goal capsule after bootstrap, so live Omni -> Spike prompts stay focused instead of dragging the full mission essay every cycle
-- Omni memory now keeps the legacy `remaining_goal_gap` alias in sync with `goal_unsatisfied`, so stale gap text does not linger after a new decision updates the real next gap
+- `/auto` continuation handoffs now switch to a compact goal capsule after bootstrap, so live autonomy -> Spike prompts stay focused instead of dragging the full mission essay every cycle
+- legacy autonomy runner memory now keeps the legacy `remaining_goal_gap` alias in sync with `goal_unsatisfied`, so stale gap text does not linger after a new decision updates the real next gap
 
 Ops:
 
-- added `make service-restart-live` as the canonical live restart path: restart `Omni`, then soft-roll `Spike`
+- added `make service-restart-live` as the canonical live restart path: restart `legacy autonomy runner`, then soft-roll `Spike`
 
 Docs:
 
@@ -324,15 +338,15 @@ Tests:
 
 Fixed:
 
-- `/auto` now refreshes continuity after 10 Omni handoffs at the next safe cycle boundary instead of waiting for an additional age threshold
+- `/auto` now refreshes continuity after 10 legacy autonomy runner handoffs at the next safe cycle boundary instead of waiting for an additional age threshold
 
 Docs:
 
-- Omni auto-mode docs now describe the count-only compact trigger explicitly
+- legacy autonomy runner auto-mode docs now describe the count-only compact trigger explicitly
 
 Tests:
 
-- tightened the Omni cycle regression so a future `first_omni_prompt_at` can no longer block a valid count-based auto-compact
+- tightened the legacy autonomy runner cycle regression so a future `first_autonomy_prompt_at` can no longer block a valid count-based auto-compact
 
 ## [0.3.26] - 2026-04-05
 
@@ -499,7 +513,7 @@ Fixed:
 Added:
 
 - session-aware Spike rollout and handoff via `make service-rollout`, `make service-restart`, `make service-hard-restart`, plus generation/liveness verification and rollout ownership storage
-- modular handler/runtime slices across Telegram, worker-pool, Omni, and Zoo, with matching `test-support/` fixtures and a much broader public regression suite
+- modular handler/runtime slices across Telegram, worker-pool, legacy autonomy runner, and Zoo, with matching `test-support/` fixtures and a much broader public regression suite
 - public runbook PDF build support, Russian runbook source, `scripts/windows/admin.cmd`, and `scripts/windows/user-e2e.cmd`
 
 Changed:
@@ -572,7 +586,7 @@ Added:
 
 - experimental menu-only `Zoo` topic for project tamagotchi cards, including project lookup, stable pet identity, localized cards, duplicate private/public repo disambiguation, and per-pet snapshot history
 - `General` now has `/clear`, which preserves the active menu and removes tracked clutter without needing a user-session cleanup sweep
-- native Windows wrapper scripts for install, Codex CLI install, doctor, test, run, Omni run, and live-user helpers
+- native Windows wrapper scripts for install, Codex CLI install, doctor, test, run, and live-user helpers
 
 Changed:
 
@@ -595,35 +609,35 @@ Docs:
 
 Added:
 
-- public `Omni` support with `/auto`, goal-locked supervision, topic-scoped Omni memory, richer Spike handoffs, sleep/pivot/block/done decisions, and safe auto-compact at cycle boundaries
+- public `legacy autonomy runner` support with `/auto`, goal-locked supervision, topic-scoped legacy autonomy runner memory, richer Spike handoffs, sleep/pivot/block/done decisions, and safe auto-compact at cycle boundaries
 - full prompt queue support via `/q`, including queued text, queued attachments, queue status/delete operations, and correct handoff across the short finalization window
-- new Telegram control surfaces: global menu in `General`, topic-local `/menu`, per-topic and global runtime-setting controls, and explicit `Spike`/`Omni` model and reasoning commands
+- new Telegram control surfaces: global menu in `General`, topic-local `/menu`, per-topic and global runtime-setting controls, and explicit `Spike`/`legacy autonomy runner` model and reasoning commands
 - beginner `/guide` PDF generation from source markdown, plus refreshed help-card assets
 - live-user helpers for userbot login/status/e2e flows and state-only bootstrap files
-- optional dedicated Omni runner via `make run-omni`, `make service-install-omni`, and `src/cli/run-omni.js`
+- optional dedicated legacy autonomy runner entrypoints for auto-mode deployments
 
 Changed:
 
-- deployment is now cleanly split between Spike-only mode and Spike + Omni mode, with Omni truly optional instead of assumed
+- deployment is now cleanly split between Spike-only mode and Spike plus legacy autonomy runner mode, with legacy autonomy runner truly optional instead of assumed
 - Telegram reply rendering is much more robust for nested lists, fenced code blocks, links, shortened local file labels, and `telegram-file` delivery blocks
 - direct prompts, long Telegram fragments, media groups, caption-first flows, queued prompts, and attachment-only messages now share a more reliable prompt assembly path
 - topic creation via `/new` supports explicit `cwd=...` or `path=...` bindings, automatic topic-local menu bootstrap, and better inherited language behavior
-- runtime settings moved to a richer model with global/topic overrides for Spike and Omni model/reasoning, plus clearer `/status` reporting
+- runtime settings moved to a richer model with global/topic overrides for Spike and legacy autonomy runner model/reasoning, plus clearer `/status` reporting
 - public defaults are generic again: XDG config/state paths, repo-local `.env` for `make`, `WORKSPACE_ROOT`, public-safe examples, and public-safe test fixtures
 - README and setup/onboarding docs were rewritten into a clearer OSS-style entrypoint with stronger quick start, docs map, path-binding guidance, and Windows path notes
 
 Fixed:
 
 - `/q` no longer loses prompts around the short end-of-run finalization window
-- sleeping/stale `/auto` state handling is safer and no longer blocks normal prompts when Omni is disabled
-- unavailable-topic failures are handled more gracefully across topic replies, diff delivery, help delivery, and Omni lifecycle transitions
+- sleeping/stale `/auto` state handling is safer and no longer blocks normal prompts when legacy autonomy runner is disabled
+- unavailable-topic failures are handled more gracefully across topic replies, diff delivery, help delivery, and legacy autonomy runner lifecycle transitions
 - guidebook PDF generation now uses stable viewer-safe output with corrected text flow, spacing, colors, and public wording
 - dependency audit tail was cleaned up by refreshing the lockfile so `npm audit --omit=dev` is clean again
 
 Docs:
 
 - docs were split into focused guides for setup, deployment, architecture, Telegram surface, `/auto`, testing, runbook, and state contract
-- guidebook content now explains `Spike`, `Omni`, `/new`, `/q`, `/wait`, `/suffix`, `/compact`, `/purge`, menus, `/help`, and optional Omni usage in beginner-friendly language
+- guidebook content now explains `Spike`, `legacy autonomy runner`, `/new`, `/q`, `/wait`, `/suffix`, `/compact`, `/purge`, menus, `/help`, and optional legacy autonomy runner usage in beginner-friendly language
 - workspace binding behavior is now documented explicitly, including `WORKSPACE_ROOT`, `DEFAULT_SESSION_BINDING_PATH`, relative `cwd=...`, absolute paths, and Windows path examples
 
 ## [0.1.2] - 2026-04-01

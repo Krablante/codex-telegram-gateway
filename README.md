@@ -103,8 +103,8 @@ The repo has now moved to an explicit modular handler system and should stay tha
 ## Canonical paths
 
 - repo root: wherever you cloned the repo, for example `/path/to/codex-telegram-gateway`
-- state root: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
-- runtime env: `${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
+- state root: `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway`
+- runtime env: `${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env`
 
 ## Read This Next
 
@@ -152,7 +152,7 @@ When `CODEX_LIMITS_COMMAND` is used, set the optional JSON `source` field to the
 The bot should be an admin in the forum chat. Topic creation and cleanup flows work best when it can post, edit, delete, pin, and manage topics.
 
 `/menu` also accepts the Telegram-style `/<command>@YourBot` form, shows an in-menu `Status` screen, and recreates the pinned topic panel cleanly when you reopen it so old menu messages do not pile up. Telegram may still keep its own pin service notice, but the gateway no longer guesses and deletes neighboring message ids.
-If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn, the gateway now retries that same top-level run on the same Codex thread before it falls back to a fresh-thread rebuild; accepted live-steer images are replayed into the recovery attempt, ordinary upstream-interrupted turns still use a bounded two-retry budget, and a final answer that already landed before the abort is kept as `completed` instead of being thrown away. If local continuity metadata is stale or incomplete, Spike now repairs that continuity from real Codex history surfaces such as `thread/list`, `provider_session_id`, rollout metadata, and `session_key` before it gives up and drops to a brief rebuild.
+If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn, the gateway now retries that same top-level run on the stored `codex_thread_id` before it falls back to a fresh-thread rebuild; accepted live-steer images are replayed into the recovery attempt, ordinary upstream-interrupted turns still use a bounded two-retry budget, and an already completed `turn.completed` answer is kept as `completed` instead of being thrown away. Fallback app-server debugging may inspect older provider, rollout, and `thread/list` hints, but default `exec-json` continuity stays on the Codex thread id.
 
 Native Windows:
 
@@ -167,7 +167,7 @@ scripts\windows\run.cmd
 
 Use `WORKSPACE_ROOT` and `DEFAULT_SESSION_BINDING_PATH` with Windows paths such as `O:/workspace`.
 
-On native Windows, when `ENV_FILE` is unset the repo first uses `%LOCALAPPDATA%\codex-telegram-gateway\runtime.env` if it already exists, then falls back to repo-local `.env`, and otherwise uses that default state path. Runtime state lives under `%LOCALAPPDATA%\codex-telegram-gateway` by default. If you want the repo-local `.env` to win while an older state env already exists, run commands as `set ENV_FILE=.env && ...` (or PowerShell `$env:ENV_FILE='.env'`). The `scripts\windows\*.cmd` wrappers avoid the common PowerShell `npm.ps1` execution-policy trap, change into the repo root before launching Node, and keep installs on the reproducible `npm ci --ignore-scripts` path.
+On native Windows, when `ENV_FILE` is unset the repo first uses repo-local `.env`, then falls back to `%LOCALAPPDATA%\codex-telegram-gateway\runtime.env`. Runtime state also lives under `%LOCALAPPDATA%\codex-telegram-gateway` by default. If you want a specific env file, run commands as `set ENV_FILE=C:\path\to\runtime.env && ...` (or PowerShell `$env:ENV_FILE='C:\path\to\runtime.env'`). The `scripts\windows\*.cmd` wrappers avoid the common PowerShell `npm.ps1` execution-policy trap, change into the repo root before launching Node, and keep installs on the reproducible `npm ci --ignore-scripts` path.
 The repo now ships a real `.env.example`, so the `copy .env.example .env` bootstrap path is not a doc-only placeholder anymore. `CODEX_BIN_PATH` is intentionally left empty there so native Windows can fall through to `codex.cmd`; if you override it manually, prefer `codex.cmd` or an absolute `...\codex.cmd` path.
 
 Install the Codex CLI once before the first run:
@@ -183,6 +183,8 @@ scripts\windows\install-codex.cmd
 Linux/operator path:
 
 ```bash
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+export ENV_FILE="$runtime_env"
 make doctor
 make check-syntax
 make lint
@@ -246,7 +248,7 @@ scripts\windows\user-spike-audit.cmd
 - `make admin ARGS='status'` now also shows heartbeat freshness, pid liveness, the configured and resolved `CODEX_BIN_PATH`, `CODEX_CONFIG_PATH`, and parsed MCP server names, so operators can confirm the live Codex profile before assuming tool loss
 - `/status` now separates configured limits from the live effective rollout window when they differ, so operators can see both the intended config and the current in-flight session reality
 - fallback `codex app-server` launches are still available for debugging the legacy transport, but they are no longer the default runtime path
-- native resume/interrupt recovery now follows real Codex session history first, including `thread/list`, `provider_session_id`, rollout metadata, and `session_key`, instead of treating every local continuity gap like a forced fresh start
+- native resume/interrupt recovery now follows the stored `codex_thread_id` first instead of treating every transient interruption like a forced fresh start; legacy app-server fallback may still inspect provider, rollout, and `thread/list` hints while debugging that transport
 - Windows process-tree shutdown now uses `taskkill /t` fallback instead of assuming POSIX-only negative-pid signaling, so interrupted Codex runs are less likely to leave orphaned child processes behind
 - local loopback IPC now retries blocked or reserved loopback ports on native Windows instead of failing the forwarding server on the first bind error
 - Windows runtime helpers now also normalize case-insensitive `PATH` / `PATHEXT`, reject unsafe `%` shell-routed `.cmd` arguments, sanitize reserved attachment names, and retry transient atomic-replace filesystem failures instead of surfacing brittle host-specific edge cases

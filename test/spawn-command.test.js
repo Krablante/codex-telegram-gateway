@@ -144,7 +144,7 @@ test("buildSpawnCommand quotes Windows shell args that contain spaces", async ()
   try {
     const launch = buildSpawnCommand(commandPath, [
       "-C",
-      "O:/Users/Konstantin/Source Repos/gateway",
+      "O:/Users/Example/Source Repos/gateway",
       "--flag",
       "plain",
     ], {
@@ -161,7 +161,7 @@ test("buildSpawnCommand quotes Windows shell args that contain spaces", async ()
       "/d",
       "/s",
       "/c",
-      `${commandPath} -C "O:/Users/Konstantin/Source Repos/gateway" --flag plain`,
+      `${commandPath} -C "O:/Users/Example/Source Repos/gateway" --flag plain`,
     ]);
     assert.equal(launch.spawnOptions.shell, undefined);
   } finally {

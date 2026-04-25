@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
+import process from "node:process";
 import { getDefaultEnvFilePath } from "./default-paths.js";
 
-export const DEFAULT_ENV_FILE = getDefaultEnvFilePath();
+const DEFAULT_ENV_FILE = getDefaultEnvFilePath();
+const PRIVATE_ENV_FILE_MODE = 0o600;
 
 function normalizeEnvText(text) {
   return String(text ?? "").replace(/^\uFEFF/u, "");
@@ -49,7 +51,19 @@ export function parseEnvText(text) {
   return env;
 }
 
-export async function loadEnvFile(envFilePath = DEFAULT_ENV_FILE) {
+async function ensureEnvFilePrivateMode(
+  envFilePath,
+  { platform = process.platform } = {},
+) {
+  if (platform === "win32") {
+    return;
+  }
+
+  await fs.chmod(envFilePath, PRIVATE_ENV_FILE_MODE);
+}
+
+export async function loadEnvFile(envFilePath = DEFAULT_ENV_FILE, options = {}) {
+  await ensureEnvFilePrivateMode(envFilePath, options);
   const text = await fs.readFile(envFilePath, "utf8");
   return parseEnvText(text);
 }

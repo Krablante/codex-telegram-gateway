@@ -7,10 +7,12 @@ Linux/operator path:
 ```bash
 cd /path/to/codex-telegram-gateway
 npm ci
-install -d -m700 ${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway
-install -m600 .env.example ${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway"
+install -d -m700 "$(dirname "$runtime_env")" "$state_root"
+install -m600 .env.example "$runtime_env"
 # Edit runtime.env before doctor if this is a fresh host.
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make doctor
+ENV_FILE="$runtime_env" make doctor
 make lint
 make typecheck
 make test
@@ -32,7 +34,7 @@ scripts\windows\test-live.cmd
 scripts\windows\test-live-app-server.cmd
 ```
 
-Native Windows uses the repo-local `.env` by default. `ENV_FILE` still overrides it, but the state `runtime.env` convention is mainly for Linux service installs.
+Native Windows uses the repo-local `.env` by default. `ENV_FILE` still overrides it. Linux service installs should prefer `${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env`; mutable state stays under `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway`.
 
 ## Repo-level validation
 
@@ -85,21 +87,24 @@ Useful focused suites:
 
 Use this order:
 
-1. `ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-bootstrap`
-2. `ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync`
-3. `ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-bootstrap-runtime ARGS='--host worker-a'`
-4. `ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-doctor`
-5. `ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-remote-smoke ARGS='--host worker-a'`
-6. run one ordinary `worker-a`-bound Spike prompt through the default `exec-json` path
-7. verify busy follow-ups live-steer cleanly while the `worker-a` run is active, including the controlled interrupted-child recovery path, and explicit `/q` prompts still queue for the next turn
-8. verify a context-window failure on a bound host takes the compact/fresh-thread recovery path once instead of falling back to app-server semantics
-9. verify one successful and one refused remote `telegram-file` send in a `worker-a`-bound topic
-10. `ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync-install`
-11. `ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make host-sync-status`
+1. `runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"`
+2. `ENV_FILE="$runtime_env" make host-bootstrap`
+3. `ENV_FILE="$runtime_env" make host-sync`
+4. `ENV_FILE="$runtime_env" make host-bootstrap-runtime ARGS='--host worker-a'`
+5. `ENV_FILE="$runtime_env" make host-doctor`
+6. `ENV_FILE="$runtime_env" make host-remote-smoke ARGS='--host worker-a'`
+7. run one ordinary `worker-a`-bound Spike prompt through the default `exec-json` path
+8. verify busy follow-ups live-steer cleanly while the `worker-a` run is active, including the controlled interrupted-child recovery path, and explicit `/q` prompts still queue for the next turn
+9. verify a context-window failure on a bound host takes the compact/fresh-thread recovery path once instead of falling back to app-server semantics
+10. verify one successful and one refused remote `telegram-file` send in a `worker-a`-bound topic
+11. `ENV_FILE="$runtime_env" make host-sync-install`
+12. `ENV_FILE="$runtime_env" make host-sync-status`
 
 ## Live user testing
 
 ```bash
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+export ENV_FILE="$runtime_env"
 make user-login
 make user-status
 make user-e2e

@@ -317,21 +317,22 @@ command = "pitlane"
 test("default path helpers switch to Windows-friendly state and workspace roots", () => {
   const stateRoot = getDefaultStateRoot({
     platform: "win32",
-    homeDirectory: "C:/Users/konstantin",
-    localAppData: "C:/Users/konstantin/AppData/Local",
+    homeDirectory: "C:/Users/example",
+    localAppData: "C:/Users/example/AppData/Local",
   });
   const workspaceRoot = getDefaultWorkspaceRoot({
     platform: "win32",
     repoRoot: "O:/workspace/codex-telegram-gateway",
   });
   const envFilePath = getDefaultEnvFilePath({
-    stateRoot,
+    platform: "win32",
+    localAppData: "C:/Users/example/AppData/Local",
   });
 
   assert.equal(
     path.win32.normalize(stateRoot),
     path.win32.join(
-      "C:/Users/konstantin/AppData/Local",
+      "C:/Users/example/AppData/Local",
       "codex-telegram-gateway",
     ),
   );
@@ -344,7 +345,49 @@ test("default path helpers switch to Windows-friendly state and workspace roots"
   assert.equal(
     path.win32.normalize(envFilePath),
     path.win32.join(
-      "C:/Users/konstantin/AppData/Local",
+      "C:/Users/example/AppData/Local",
+      "codex-telegram-gateway",
+      "runtime.env",
+    ),
+  );
+});
+
+test("buildRuntimeConfig applies injected platform defaults consistently", () => {
+  const previousLocalAppData = process.env.LOCALAPPDATA;
+  process.env.LOCALAPPDATA = "C:/Users/example/AppData/Local";
+
+  let config;
+  try {
+    config = buildRuntimeConfig(
+      {
+        TELEGRAM_BOT_TOKEN: "secret",
+        TELEGRAM_ALLOWED_USER_ID: "123456789",
+        TELEGRAM_FORUM_CHAT_ID: "-1001234567890",
+        REPO_ROOT: "O:/workspace/codex-telegram-gateway",
+      },
+      {},
+      { platform: "win32" },
+    );
+  } finally {
+    restoreEnvVar("LOCALAPPDATA", previousLocalAppData);
+  }
+
+  assert.equal(config.codexBinPath, "codex.cmd");
+  assert.equal(
+    path.win32.normalize(config.workspaceRoot),
+    path.win32.normalize("O:/workspace"),
+  );
+  assert.equal(
+    path.win32.normalize(config.stateRoot),
+    path.win32.join(
+      "C:/Users/example/AppData/Local",
+      "codex-telegram-gateway",
+    ),
+  );
+  assert.equal(
+    path.win32.normalize(config.envFilePath),
+    path.win32.join(
+      "C:/Users/example/AppData/Local",
       "codex-telegram-gateway",
       "runtime.env",
     ),
@@ -355,8 +398,8 @@ test("resolveRuntimeEnvFilePath uses repo-local .env only when fallback is allow
   const repoRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-repo-"),
   );
-  const stateRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-state-"),
+  const configRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-config-"),
   );
   const repoEnvPath = path.join(repoRoot, ".env");
   await fs.writeFile(repoEnvPath, "TELEGRAM_BOT_TOKEN=secret\n", "utf8");
@@ -366,7 +409,7 @@ test("resolveRuntimeEnvFilePath uses repo-local .env only when fallback is allow
   const resolved = await resolveRuntimeEnvFilePath({
     allowRepoEnvFallback: true,
     repoRoot,
-    stateRoot,
+    configRoot,
   });
 
   assert.equal(resolved, repoEnvPath);
@@ -374,23 +417,23 @@ test("resolveRuntimeEnvFilePath uses repo-local .env only when fallback is allow
   const lockedDown = await resolveRuntimeEnvFilePath({
     allowRepoEnvFallback: false,
     repoRoot,
-    stateRoot,
+    configRoot,
   });
   restoreEnvVar("ENV_FILE", previousEnvFile);
-  assert.equal(lockedDown, path.join(stateRoot, "runtime.env"));
+  assert.equal(lockedDown, path.join(configRoot, "runtime.env"));
 });
 
-test("resolveRuntimeEnvFilePath prefers repo-local .env on Windows and state runtime.env on Linux", async () => {
+test("resolveRuntimeEnvFilePath prefers repo-local .env on Windows and config runtime.env on Linux", async () => {
   const repoRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-env-repo-"),
   );
-  const stateRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), "codex-telegram-gateway-env-state-"),
+  const configRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-env-config-"),
   );
   const repoEnvPath = path.join(repoRoot, ".env");
-  const stateEnvPath = path.join(stateRoot, "runtime.env");
+  const configEnvPath = path.join(configRoot, "runtime.env");
   await fs.writeFile(repoEnvPath, "TELEGRAM_BOT_TOKEN=repo\n", "utf8");
-  await fs.writeFile(stateEnvPath, "TELEGRAM_BOT_TOKEN=state\n", "utf8");
+  await fs.writeFile(configEnvPath, "TELEGRAM_BOT_TOKEN=config\n", "utf8");
 
   const previousEnvFile = process.env.ENV_FILE;
   delete process.env.ENV_FILE;
@@ -399,7 +442,7 @@ test("resolveRuntimeEnvFilePath prefers repo-local .env on Windows and state run
       await resolveRuntimeEnvFilePath({
         platform: "win32",
         repoRoot,
-        stateRoot,
+        configRoot,
       }),
       repoEnvPath,
     );
@@ -407,10 +450,44 @@ test("resolveRuntimeEnvFilePath prefers repo-local .env on Windows and state run
       await resolveRuntimeEnvFilePath({
         platform: "linux",
         repoRoot,
-        stateRoot,
+        configRoot,
         allowRepoEnvFallback: true,
       }),
-      stateEnvPath,
+      configEnvPath,
+    );
+  } finally {
+    restoreEnvVar("ENV_FILE", previousEnvFile);
+  }
+});
+
+test("resolveRuntimeEnvFilePath ignores legacy state-root runtime.env fallback", async () => {
+  const repoRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-env-repo-"),
+  );
+  const configRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-env-config-"),
+  );
+  const stateRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-env-state-"),
+  );
+  await fs.writeFile(
+    path.join(stateRoot, "runtime.env"),
+    "TELEGRAM_BOT_TOKEN=legacy-state\n",
+    "utf8",
+  );
+
+  const previousEnvFile = process.env.ENV_FILE;
+  delete process.env.ENV_FILE;
+  try {
+    assert.equal(
+      await resolveRuntimeEnvFilePath({
+        platform: "linux",
+        repoRoot,
+        configRoot,
+        stateRoot,
+        allowRepoEnvFallback: false,
+      }),
+      path.join(configRoot, "runtime.env"),
     );
   } finally {
     restoreEnvVar("ENV_FILE", previousEnvFile);
@@ -449,14 +526,56 @@ test("loadRuntimeConfig reads a repo-local .env when explicitly allowed", async 
   assert.equal(config.workspaceRoot, "O:/workspace");
 });
 
-test("loadRuntimeConfig uses shell STATE_ROOT to discover the canonical runtime env", async () => {
+test("loadRuntimeConfig repairs runtime env file mode on POSIX", {
+  skip: process.platform === "win32",
+}, async () => {
   const repoRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-load-config-"),
+  );
+  const configRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-config-root-"),
+  );
+  const runtimeEnvPath = path.join(configRoot, "runtime.env");
+  await fs.writeFile(
+    runtimeEnvPath,
+    [
+      "TELEGRAM_BOT_TOKEN=secret-token",
+      "TELEGRAM_ALLOWED_USER_ID=123456789",
+      "TELEGRAM_FORUM_CHAT_ID=-1001234567890",
+      "WORKSPACE_ROOT=/srv/workspace",
+      "",
+    ].join("\n"),
+    {
+      encoding: "utf8",
+      mode: 0o644,
+    },
+  );
+  await fs.chmod(runtimeEnvPath, 0o644);
+
+  const previousEnvFile = process.env.ENV_FILE;
+  delete process.env.ENV_FILE;
+  const config = await loadRuntimeConfig({
+    configRoot,
+    repoRoot,
+  });
+  restoreEnvVar("ENV_FILE", previousEnvFile);
+
+  const stats = await fs.stat(runtimeEnvPath);
+  assert.equal(config.envFilePath, runtimeEnvPath);
+  assert.equal(stats.mode & 0o777, 0o600);
+});
+
+test("loadRuntimeConfig uses config root to discover the canonical runtime env", async () => {
+  const repoRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-load-config-"),
+  );
+  const configRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-config-root-"),
   );
   const stateRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-state-root-"),
   );
-  const runtimeEnvPath = path.join(stateRoot, "runtime.env");
+  const runtimeEnvPath = path.join(configRoot, "runtime.env");
   await fs.writeFile(
     runtimeEnvPath,
     [
@@ -475,6 +594,7 @@ test("loadRuntimeConfig uses shell STATE_ROOT to discover the canonical runtime 
   process.env.STATE_ROOT = stateRoot;
 
   const config = await loadRuntimeConfig({
+    configRoot,
     repoRoot,
   });
 

@@ -576,6 +576,74 @@ test("handleIncomingMessage queues a follow-up when live steer is temporarily un
   assert.match(sent[0].text, /следующим prompt/u);
 });
 
+test("handleIncomingMessage persists a prompt to the queue when shutdown blocks new runs", async () => {
+  for (const [index, startResult, shuttingDown] of [
+    [0, { ok: false, reason: "shutdown" }, false],
+    [1, { ok: false, reason: "shutting-down" }, false],
+    [2, { ok: false, reason: "host-unavailable" }, true],
+  ]) {
+    const sent = [];
+    const queuedPayloads = [];
+    const topicId = 92 + index;
+    const messageId = 781 + index;
+
+    const result = await handleIncomingMessage({
+      api: {
+        async sendMessage(payload) {
+          sent.push(payload);
+        },
+      },
+      botUsername: "gatewaybot",
+      config,
+      message: {
+        text: "сохрани это на следующий запуск",
+        from: { id: 123456789, is_bot: false },
+        chat: { id: -1001234567890 },
+        message_id: messageId,
+        message_thread_id: topicId,
+      },
+      serviceState: {
+        ignoredUpdates: 0,
+        handledCommands: 0,
+        lastCommandName: null,
+        lastCommandAt: null,
+      },
+      sessionService: {
+        async ensureRunnableSessionForMessage() {
+          return {
+            session_key: `-1001234567890:${topicId}`,
+            chat_id: "-1001234567890",
+            topic_id: String(topicId),
+            ui_language: "rus",
+            prompt_suffix_enabled: false,
+            prompt_suffix_text: null,
+          };
+        },
+        async enqueuePromptQueue(_session, payload) {
+          queuedPayloads.push(payload);
+          return { position: 1 };
+        },
+      },
+      workerPool: {
+        shuttingDown,
+        async startPromptRun() {
+          return startResult;
+        },
+      },
+    });
+
+    assert.equal(result.reason, "prompt-queued");
+    assert.equal(queuedPayloads.length, 1);
+    assert.equal(queuedPayloads[0].rawPrompt, "сохрани это на следующий запуск");
+    assert.equal(
+      queuedPayloads[0].prompt,
+      "User Prompt:\nсохрани это на следующий запуск",
+    );
+    assert.equal(queuedPayloads[0].replyToMessageId, messageId);
+    assert.match(sent[0].text, /Поставил в очередь/u);
+  }
+});
+
 test("handleIncomingMessage queues a follow-up instead of sending the generic busy reply after steer-failed", async () => {
   const sent = [];
   const queuedPayloads = [];

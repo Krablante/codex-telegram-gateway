@@ -18,11 +18,15 @@ import {
 import {
   finalizeProgress,
   flushPendingLiveSteer,
+  requeuePendingLiveSteer,
   sendTypingAction,
   startProgressLoop,
   steerActiveRun,
   stopProgressLoop,
 } from "./worker-pool-transport.js";
+
+const QUEUED_PROMPT_HOST_BACKOFF_INITIAL_MS = 30_000;
+const QUEUED_PROMPT_HOST_BACKOFF_MAX_MS = 5 * 60_000;
 
 export class CodexWorkerPool {
   constructor({
@@ -37,6 +41,7 @@ export class CodexWorkerPool {
     globalPromptSuffixStore = null,
     globalCodexSettingsStore = null,
     hostRegistryService = null,
+    promptQueueStore = null,
     serviceGenerationId = null,
     onRunTerminated = null,
     runTask = createHostAwareRunTask({ config, hostRegistryService }),
@@ -52,6 +57,7 @@ export class CodexWorkerPool {
     this.globalPromptSuffixStore = globalPromptSuffixStore;
     this.globalCodexSettingsStore = globalCodexSettingsStore;
     this.hostRegistryService = hostRegistryService;
+    this.promptQueueStore = promptQueueStore;
     this.serviceGenerationId = serviceGenerationId;
     this.onRunTerminated = onRunTerminated;
     this.runTask = runTask;
@@ -60,6 +66,7 @@ export class CodexWorkerPool {
     this.startingRuns = new Set();
     this.startingRunSessions = new Map();
     this.startingRunPromises = new Map();
+    this.queuedPromptBackoffBySessionKey = new Map();
     this.shuttingDown = false;
   }
 
@@ -91,8 +98,33 @@ export class CodexWorkerPool {
     return { ok: true };
   }
 
+  shouldSkipQueuedPromptStart(sessionKey, now = Date.now()) {
+    const backoff = this.queuedPromptBackoffBySessionKey.get(sessionKey);
+    return Boolean(backoff && backoff.nextRetryAtMs > now);
+  }
+
+  noteQueuedPromptStartResult(sessionKey, result, now = Date.now()) {
+    if (result?.ok || result?.reason !== "host-unavailable") {
+      this.queuedPromptBackoffBySessionKey.delete(sessionKey);
+      return;
+    }
+
+    const current = this.queuedPromptBackoffBySessionKey.get(sessionKey);
+    const delayMs = current
+      ? Math.min(current.delayMs * 2, QUEUED_PROMPT_HOST_BACKOFF_MAX_MS)
+      : QUEUED_PROMPT_HOST_BACKOFF_INITIAL_MS;
+    this.queuedPromptBackoffBySessionKey.set(sessionKey, {
+      delayMs,
+      nextRetryAtMs: now + delayMs,
+    });
+  }
+
   async flushPendingLiveSteer(sessionKey, run) {
     return flushPendingLiveSteer(this, sessionKey, run);
+  }
+
+  async requeuePendingLiveSteer(sessionKey, run) {
+    return requeuePendingLiveSteer(this, sessionKey, run);
   }
 
   steerActiveRun(args) {

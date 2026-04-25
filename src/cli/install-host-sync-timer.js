@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
 import {
@@ -40,7 +41,7 @@ function getUserUnitPath(unitName) {
   return path.posix.join(os.homedir(), ".config", "systemd", "user", unitName);
 }
 
-function buildHostSyncServiceUnit({
+export function buildHostSyncServiceUnit({
   repoRoot,
   envFilePath,
   nodePath,
@@ -57,6 +58,7 @@ function buildHostSyncServiceUnit({
     "",
     "[Service]",
     "Type=oneshot",
+    "UMask=0077",
     `WorkingDirectory=${escapeDirectiveValue(repoRoot)}`,
     quoteEnvironment("ENV_FILE", envFilePath),
     quoteEnvironment("PATH", pathValue),
@@ -123,7 +125,9 @@ async function main() {
   console.log(`interval_minutes: ${config.hostSyncIntervalMinutes}`);
 }
 
-main().catch((error) => {
-  console.error(`host sync timer install failed: ${error.message}`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`host sync timer install failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}

@@ -36,7 +36,7 @@ function buildUnlimitedLimitsSummary(overrides = {}) {
   return {
     available: true,
     capturedAt: "2026-04-04T13:00:00.000Z",
-    source: "windows_rtx",
+    source: "windows_worker",
     planType: "business",
     limitName: "codex",
     unlimited: true,
@@ -517,7 +517,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
     botUsername: "gatewaybot",
     config,
     message: {
-      text: "/new cwd=homelab/infra/automation/codex-telegram-gateway Bound repo",
+      text: "/new cwd=projects/codex-telegram-gateway Bound repo",
       entities: [{ type: "bot_command", offset: 0, length: 4 }],
       from: { id: 123456789, is_bot: false },
       chat: { id: -1001234567890 },
@@ -527,7 +527,7 @@ test("handleIncomingMessage creates new topic session with explicit binding path
       async resolveBindingPath(requestedPath) {
         assert.equal(
           requestedPath,
-          "homelab/infra/automation/codex-telegram-gateway",
+          "projects/codex-telegram-gateway",
         );
         return {
           repo_root: "/srv/codex-workspace/codex-telegram-gateway",

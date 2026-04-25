@@ -106,7 +106,7 @@ service-status:
 service-logs:
 	journalctl --user -u codex-telegram-gateway.service -n 100 --no-pager
 
-service-rollout:
+service-rollout: config
 	ENV_FILE="$(ENV_FILE)" $(NODE) src/cli/service-rollout.js
 
 service-restart: service-rollout

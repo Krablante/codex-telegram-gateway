@@ -332,7 +332,18 @@ export function attachRunLifecycle(
     .finally(async () => {
       pool.stopProgressLoop(run);
       pool.activeRuns.delete(run.sessionKey);
-      pool.pendingLiveSteers.delete(run.sessionKey);
+      if (pool.pendingLiveSteers.has(run.sessionKey)) {
+        try {
+          const requeued = await pool.requeuePendingLiveSteer(run.sessionKey, run);
+          if (!requeued) {
+            pool.pendingLiveSteers.delete(run.sessionKey);
+            run.state.warnings.push("pending live steer remained buffered after run cleanup");
+          }
+        } catch (error) {
+          pool.pendingLiveSteers.delete(run.sessionKey);
+          run.state.warnings.push(`pending live steer requeue failed: ${error.message}`);
+        }
+      }
       setActiveRunCount(pool.serviceState, pool.activeRuns.size);
       if (typeof pool.onRunTerminated === "function") {
         try {

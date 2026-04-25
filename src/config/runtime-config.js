@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { DEFAULT_ENV_FILE, loadEnvFile } from "./env-file.js";
+import { loadEnvFile } from "./env-file.js";
 import {
   getDefaultCodexConfigPath,
   getDefaultCodexSessionsRoot,
+  getDefaultEnvFilePath,
   getDefaultRepoRoot,
   getDefaultStateRoot,
   getDefaultWorkspaceRoot,
@@ -214,23 +215,25 @@ async function loadCodexConfigProfile(configPath) {
   }
 }
 
-export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
+export function buildRuntimeConfig(rawEnv, codexProfile = {}, options = {}) {
+  const platform = options.platform || process.platform;
   const repoRoot = rawEnv.REPO_ROOT?.trim() || getDefaultRepoRoot();
-  const stateRoot = rawEnv.STATE_ROOT?.trim() || getDefaultStateRoot();
+  const stateRoot = rawEnv.STATE_ROOT?.trim() || getDefaultStateRoot({ platform });
   const currentHostId =
     rawEnv.CURRENT_HOST_ID?.trim().toLowerCase() || os.hostname().trim().toLowerCase();
   const hostRegistryPath =
     rawEnv.HOST_REGISTRY_PATH?.trim() || path.join(stateRoot, "hosts", "registry.json");
-  const envFilePath = rawEnv.ENV_FILE?.trim() || DEFAULT_ENV_FILE;
+  const envFilePath =
+    rawEnv.ENV_FILE?.trim() || getDefaultEnvFilePath({ platform });
   const workspaceRoot =
     rawEnv.WORKSPACE_ROOT?.trim()
-    || getDefaultWorkspaceRoot({ repoRoot });
+    || getDefaultWorkspaceRoot({ platform, repoRoot });
   const telegramApiBaseUrl =
     rawEnv.TELEGRAM_API_BASE_URL?.trim() || DEFAULT_TELEGRAM_API_BASE_URL;
   const defaultSessionBindingPath =
     rawEnv.DEFAULT_SESSION_BINDING_PATH?.trim() || workspaceRoot;
   const codexBinPath =
-    rawEnv.CODEX_BIN_PATH?.trim() || getDefaultCodexBinPath();
+    rawEnv.CODEX_BIN_PATH?.trim() || getDefaultCodexBinPath(platform);
   const codexConfigPath =
     rawEnv.CODEX_CONFIG_PATH?.trim() ||
     codexProfile.configPath ||
@@ -379,16 +382,18 @@ export function buildRuntimeConfig(rawEnv, codexProfile = {}) {
 }
 
 export async function loadRuntimeConfig(options = {}) {
+  const platform = options.platform || process.platform;
   const repoRoot = options.repoRoot || process.env.REPO_ROOT || getDefaultRepoRoot();
-  const stateRoot = options.stateRoot || process.env.STATE_ROOT || getDefaultStateRoot();
+  const stateRoot =
+    options.stateRoot || process.env.STATE_ROOT || getDefaultStateRoot({ platform });
   const envFilePath = await resolveRuntimeEnvFilePath({
     allowRepoEnvFallback: options.allowRepoEnvFallback,
+    configRoot: options.configRoot,
     explicitEnvFilePath: options.envFilePath || process.env.ENV_FILE || null,
-    platform: options.platform || process.platform,
+    platform,
     repoRoot,
-    stateRoot,
   });
-  const fileEnv = await loadEnvFile(envFilePath);
+  const fileEnv = await loadEnvFile(envFilePath, { platform });
   const mergedEnv = {
     ...fileEnv,
     ...process.env,
@@ -400,5 +405,5 @@ export async function loadRuntimeConfig(options = {}) {
     mergedEnv.CODEX_CONFIG_PATH?.trim() || DEFAULT_CODEX_CONFIG_PATH;
   const codexProfile = await loadCodexConfigProfile(codexConfigPath);
 
-  return buildRuntimeConfig(mergedEnv, codexProfile);
+  return buildRuntimeConfig(mergedEnv, codexProfile, { platform });
 }

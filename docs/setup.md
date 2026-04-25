@@ -5,15 +5,20 @@ This is the recommended first-time setup path for a single operator running the 
 If you want the shortest version:
 
 ```bash
-npm install
-cp .env.example .env
+npm ci
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway"
+install -d -m700 "$(dirname "$runtime_env")" "$state_root"
+install -m600 .env.example "$runtime_env"
 
-# fill the required values in .env:
+# fill the required values in "$runtime_env":
 # TELEGRAM_BOT_TOKEN
 # TELEGRAM_ALLOWED_USER_ID or TELEGRAM_ALLOWED_USER_IDS
 # TELEGRAM_FORUM_CHAT_ID
 # WORKSPACE_ROOT
 # optional: DEFAULT_SESSION_BINDING_PATH
+$EDITOR "$runtime_env"
+export ENV_FILE="$runtime_env"
 make doctor
 make test
 make run
@@ -103,7 +108,11 @@ Read these values:
 ## 4. Fill The Env File
 
 ```bash
-cp .env.example .env
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+install -d -m700 "$(dirname "$runtime_env")"
+install -m600 .env.example "$runtime_env"
+$EDITOR "$runtime_env"
+export ENV_FILE="$runtime_env"
 ```
 
 Minimum required values:
@@ -176,6 +185,7 @@ What that means in practice:
 ## 5. Validate Before Running
 
 ```bash
+export ENV_FILE="${ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env}"
 make doctor
 make test
 ```
@@ -199,6 +209,7 @@ scripts\windows\test.cmd
 Foreground:
 
 ```bash
+export ENV_FILE="${ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env}"
 make run
 ```
 
@@ -211,6 +222,7 @@ scripts\windows\run.cmd
 User service:
 
 ```bash
+export ENV_FILE="${ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env}"
 make service-install
 make service-status
 make service-rollout
@@ -218,6 +230,8 @@ make service-rollout
 
 Those `service-*` flows are Linux-only because they target `systemd --user`.
 Use `make service-rollout` or `make service-restart` for the soft Spike handoff path. Reserve `make service-hard-restart` for blind restarts.
+
+Repo-local `.env` remains convenient for native Windows and throwaway development. For Linux service operation, keep secrets in the config-root `runtime.env` above and pass it through `ENV_FILE`.
 
 ## 7. First Telegram Check
 

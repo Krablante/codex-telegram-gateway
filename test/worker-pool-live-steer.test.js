@@ -1000,6 +1000,100 @@ test("CodexWorkerPool keeps pending live steer buffered when flush fails", async
   });
 });
 
+test("CodexWorkerPool requeues pending live steer after a run exits before flush", async () => {
+  const session = {
+    chat_id: "-1001234567890",
+    topic_id: "77",
+    session_key: "session-1",
+  };
+  const enqueued = [];
+  const workerPool = new CodexWorkerPool({
+    api: {},
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore: {
+      async load() {
+        return session;
+      },
+    },
+    promptQueueStore: {
+      async enqueue(currentSession, payload) {
+        enqueued.push({ currentSession, payload });
+        return { position: 1, size: 1, entry: payload };
+      },
+    },
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+  });
+
+  workerPool.pendingLiveSteers.set("session-1", {
+    attachments: [{ file_path: "/tmp/follow-up.png", is_image: true }],
+    input: [{ type: "text", text: "follow-up" }],
+    exchangePrompt: "follow-up",
+    rawPrompt: "follow-up",
+    replyToMessageId: 123,
+  });
+
+  const requeued = await workerPool.requeuePendingLiveSteer("session-1", {
+    session,
+  });
+
+  assert.equal(requeued, true);
+  assert.equal(workerPool.pendingLiveSteers.has("session-1"), false);
+  assert.equal(enqueued.length, 1);
+  assert.equal(enqueued[0].currentSession, session);
+  assert.deepEqual(enqueued[0].payload, {
+    rawPrompt: "follow-up",
+    prompt: "follow-up",
+    attachments: [{ file_path: "/tmp/follow-up.png", is_image: true }],
+    replyToMessageId: 123,
+  });
+});
+
+test("CodexWorkerPool buffers live steer while an active run is between attempts", async () => {
+  const session = {
+    session_key: "session-1",
+    chat_id: "-1001234567890",
+    topic_id: "77",
+  };
+  const workerPool = new CodexWorkerPool({
+    api: {},
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore: {},
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+  });
+  workerPool.activeRuns.set("session-1", {
+    session,
+    exchangePrompt: "base",
+    state: {
+      status: "rebuilding",
+      finalizing: false,
+    },
+  });
+
+  const result = workerPool.steerActiveRun({
+    session,
+    rawPrompt: "second follow-up",
+    message: { message_id: 321 },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, "steer-buffered");
+  assert.equal(workerPool.pendingLiveSteers.get("session-1").rawPrompt, "second follow-up");
+});
+
 test("CodexWorkerPool retries buffered live steer flush across a transient transport recovery", async () => {
   const steerCalls = [];
   const workerPool = new CodexWorkerPool({

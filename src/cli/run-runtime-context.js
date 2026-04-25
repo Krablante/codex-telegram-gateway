@@ -130,6 +130,7 @@ export async function createRunRuntimeContext({
     hostRegistryService,
     offsetStore,
     probe,
+    promptQueueStore,
     runtimeObserver,
     rolloutCoordinationStore,
     runTask,

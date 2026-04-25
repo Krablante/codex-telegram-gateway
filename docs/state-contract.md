@@ -2,11 +2,10 @@
 
 ## Canonical state root
 
-`${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
+`${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway`
 
 ## Mutable surfaces
 
-- `runtime.env` — local runtime secrets and operator fixture
 - `hosts/` — host registry, doctor snapshots, host-sync state
 - `codex-space/` — rendered shared/per-host multi-host outputs
 - `sessions/` — per-topic session state
@@ -63,6 +62,11 @@ Current slices guarantee:
 - `settings/rollout-coordination.json` may track soft-rollout state and retained sessions
 - each session dir may store `topic-control-panel.json` with `/menu` state
 
+Runtime secrets and operator config belong in the configured env file, usually
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env` on Linux or
+repo-local `.env` for native Windows bootstrap. They are not part of the mutable
+state root contract.
+
 ## Session metadata
 
 Session metadata may store:
@@ -108,7 +112,7 @@ If old on-disk state still contains removed legacy autonomy metadata, normalizat
 - state lives under `the configured state root/...`, never inside the source repo
 - state directories are private by default (`0700`); state files, append-only JSONL/log files, and downloaded attachments are private by default (`0600`) on POSIX
 - expired pending attachment buffers remove their unconsumed files from the session `incoming/` directory
-- bot tokens and runtime credentials stay only here
+- bot tokens and runtime credentials stay in the configured env file, not in source control or derived state artifacts
 - `codex-space/` is canonical on `controller`; remote hosts receive synced copies
 - the clean exchange log is the durable raw user/final conversational surface
 - `progress-notes.jsonl` is the durable append-only natural-language progress surface; it stores only Telegram-visible main-run notes, not hidden chain-of-thought or tool chatter

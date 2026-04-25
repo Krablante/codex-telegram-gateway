@@ -14,7 +14,7 @@
 
 ```text
 /new Backend Cleanup
-/new host=worker-a cwd=homelab/infra/automation/codex-telegram-gateway Gateway Audit
+/new host=worker-a cwd=projects/codex-telegram-gateway Gateway Audit
 ```
 
 Потом заходишь в новый топик и отправляешь задачу обычным текстом.

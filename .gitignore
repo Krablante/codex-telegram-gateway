@@ -16,6 +16,13 @@ __pycache__/
 coverage/
 guidebook-*.pdf
 runbook-*.pdf
+state/
+logs/
+tmp/
+*.log
+*.ndjson
+*.sqlite
+*.db
 
 # OS
 .DS_Store

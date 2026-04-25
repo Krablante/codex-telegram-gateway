@@ -3,14 +3,16 @@
 ## Canonical paths
 
 - repo root: `/path/to/codex-telegram-gateway`
-- state root: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway`
-- runtime env: `${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env`
+- state root: `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway`
+- runtime env: `${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env`
 
 ## First checks
 
 ```bash
 cd /path/to/codex-telegram-gateway
-ENV_FILE=${XDG_CONFIG_HOME:-~/.config}/codex-telegram-gateway/runtime.env make doctor
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+export ENV_FILE="$runtime_env"
+make doctor
 make admin ARGS='status'
 make service-status
 make service-logs
@@ -18,19 +20,21 @@ make service-logs
 
 Useful live files:
 
-- heartbeat: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-heartbeat.json`
-- events: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/runtime-events.ndjson`
-- doctor snapshot: `${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway/logs/doctor-last-run.json`
+- heartbeat: `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway/logs/runtime-heartbeat.json`
+- events: `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway/logs/runtime-events.ndjson`
+- doctor snapshot: `${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway/logs/doctor-last-run.json`
 
 If state was created before private-by-default permissions, repair it once:
 
 ```bash
-chmod -R go-rwx ${XDG_STATE_HOME:-~/.local/state}/codex-telegram-gateway
+chmod -R go-rwx "${XDG_STATE_HOME:-$HOME/.local/state}/codex-telegram-gateway"
 ```
 
 ## Main operator actions
 
 ```bash
+runtime_env="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env"
+export ENV_FILE="$runtime_env"
 make run
 make smoke
 make soak

@@ -8,4 +8,4 @@ Report it privately to the maintainer with:
 - reproduction steps
 - any suggested mitigation
 
-Until a dedicated disclosure channel is published, use the maintainer contact attached to the repository host profile.
+Preferred channel: use GitHub private vulnerability reporting for this repository. If that is unavailable, use the maintainer contact attached to the repository host profile.
