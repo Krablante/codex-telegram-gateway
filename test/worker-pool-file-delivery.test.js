@@ -398,7 +398,11 @@ test("CodexWorkerPool builds remote host-aware topic context for bound topics", 
   assert.doesNotMatch(runCalls[0].baseInstructions, /topic context file: .*telegram-topic-context\.md/u);
 });
 
-test("CodexWorkerPool delivers remote telegram-file directives through private staging", async () => {
+test("CodexWorkerPool delivers remote telegram-file directives through private staging", {
+  skip: process.platform === "win32"
+    ? "remote rsync staging fixture is POSIX-only"
+    : false,
+}, async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );
