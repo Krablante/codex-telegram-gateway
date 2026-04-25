@@ -10,7 +10,7 @@ import {
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
 
-const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
+const INITIAL_PROGRESS_TEXT = "...";
 
 test("CodexWorkerPool defaults to host-aware exec-json backend selection when no runner is injected", () => {
   const workerPool = new CodexWorkerPool({

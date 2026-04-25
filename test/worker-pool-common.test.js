@@ -55,7 +55,7 @@ test("buildProgressText ignores internal orchestration leakage and keeps the las
   assert.doesNotMatch(engText, /subagent|inspect the repo/u);
 });
 
-test("buildProgressText falls back to neutral text when internal leakage is all that remains", () => {
+test("buildProgressText falls back to a bare spinner when internal leakage is all that remains", () => {
   const text = buildProgressText({
     status: "running",
     latestProgressMessage: "Spawning a subagent to inspect the repo before I continue.",
@@ -63,7 +63,7 @@ test("buildProgressText falls back to neutral text when internal leakage is all 
     latestSummary: "Spawning a subagent to inspect the repo before I continue.",
   }, "eng");
 
-  assert.equal(text, "Working\n\n...");
+  assert.equal(text, "...");
 });
 
 test("buildProgressText keeps generic natural-language progress visible", () => {
@@ -78,21 +78,21 @@ test("buildProgressText keeps generic natural-language progress visible", () => 
   assert.match(text, /\n\n\.\.\.$/u);
 });
 
-test("buildProgressText keeps a long silent run on neutral progress text", () => {
+test("buildProgressText keeps a long silent run on a bare spinner", () => {
   const text = buildProgressText({
     status: "running",
     startedAtMs: Date.now() - 20_000,
   }, "rus");
 
-  assert.equal(text, "Работаю\n\n...");
+  assert.equal(text, "...");
 });
 
-test("buildProgressText shows startup state instead of bare dots", () => {
+test("buildProgressText keeps startup on a bare spinner", () => {
   const text = buildProgressText({
     status: "starting",
   }, "rus");
 
-  assert.equal(text, "Запускаю Codex run\n\n...");
+  assert.equal(text, "...");
 });
 
 test("buildProgressText hides internal live-steer restart labels", () => {
@@ -102,7 +102,23 @@ test("buildProgressText hides internal live-steer restart labels", () => {
     latestSummary: "live-steer-restart",
   }, "eng");
 
-  assert.equal(text, "Working\n\n...");
+  assert.equal(text, "...");
+  assert.doesNotMatch(text, /live-steer-restart/u);
+});
+
+test("buildProgressText keeps the previous thought while live steer rebuilds", () => {
+  const text = buildProgressText({
+    status: "rebuilding",
+    resumeMode: "live-steer-restart",
+    threadId: "thread-1",
+    holdProgressUntilNaturalUpdate: true,
+    latestProgressMessage: "Сохраняю эту мысль до следующего события Codex.",
+    latestSummaryKind: "rebuild",
+    latestSummary: "live-steer-restart",
+  }, "rus");
+
+  assert.match(text, /Сохраняю эту мысль/u);
+  assert.doesNotMatch(text, /Продолжаю тот же Codex thread/u);
   assert.doesNotMatch(text, /live-steer-restart/u);
 });
 

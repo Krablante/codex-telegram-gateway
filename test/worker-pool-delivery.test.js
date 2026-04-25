@@ -15,7 +15,7 @@ import {
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
 
-const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
+const INITIAL_PROGRESS_TEXT = "...";
 
 test("CodexWorkerPool does not surface completed command output in progress without commentary", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -134,7 +134,7 @@ test("CodexWorkerPool does not surface completed command output in progress with
   assert.equal(sentMessages.at(-1)?.text, "FINAL_ONLY");
 });
 
-test("CodexWorkerPool keeps long silent runs on neutral progress instead of synthetic thoughts", async () => {
+test("CodexWorkerPool keeps long silent runs on a bare spinner instead of synthetic thoughts", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-sessions-"),
   );

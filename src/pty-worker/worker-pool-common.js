@@ -128,12 +128,8 @@ function buildProgressSpinner() {
   return PROGRESS_PENDING_MARKER;
 }
 
-function buildNeutralProgressText(language = "rus") {
-  return [
-    isEnglish(language) ? "Working" : "Работаю",
-    "",
-    buildProgressSpinner(),
-  ].join("\n");
+function buildNeutralProgressText() {
+  return buildProgressSpinner();
 }
 
 function isInternalOrchestrationProgressDetail(text) {
@@ -167,39 +163,7 @@ function normalizeProgressDetail(text) {
   return compact;
 }
 
-function buildProgressStep(state, language = "rus") {
-  if (state.status === "starting") {
-    return {
-      heading: isEnglish(language) ? "Starting Codex run" : "Запускаю Codex run",
-      detail: null,
-    };
-  }
-
-  if (["interrupting", "interrupted"].includes(state.status)) {
-    return {
-      heading: isEnglish(language) ? "Stopping the run" : "Останавливаю run",
-      detail: null,
-    };
-  }
-
-  if (state.status === "rebuilding") {
-    if (
-      ["upstream-restart", "live-steer-restart"].includes(state.resumeMode)
-      && state.threadId
-    ) {
-      return {
-        heading: isEnglish(language)
-          ? "Continuing the same Codex thread"
-          : "Продолжаю тот же Codex thread",
-        detail: null,
-      };
-    }
-    return {
-      heading: isEnglish(language) ? "Rebuilding context" : "Восстанавливаю контекст",
-      detail: null,
-    };
-  }
-
+function buildLatestProgressStep(state) {
   if (
     typeof state.latestProgressMessage === "string" &&
     state.latestProgressMessage.trim()
@@ -231,11 +195,49 @@ function buildProgressStep(state, language = "rus") {
   return null;
 }
 
+function buildProgressStep(state, language = "rus") {
+  if (["interrupting", "interrupted"].includes(state.status)) {
+    return {
+      heading: isEnglish(language) ? "Stopping the run" : "Останавливаю run",
+      detail: null,
+    };
+  }
+
+  const latestProgressStep = buildLatestProgressStep(state);
+
+  if (state.status === "rebuilding") {
+    if (
+      state.resumeMode === "live-steer-restart" &&
+      state.holdProgressUntilNaturalUpdate &&
+      latestProgressStep
+    ) {
+      return latestProgressStep;
+    }
+    if (
+      ["upstream-restart", "live-steer-restart"].includes(state.resumeMode)
+      && state.threadId
+    ) {
+      return {
+        heading: isEnglish(language)
+          ? "Continuing the same Codex thread"
+          : "Продолжаю тот же Codex thread",
+        detail: null,
+      };
+    }
+    return {
+      heading: isEnglish(language) ? "Rebuilding context" : "Восстанавливаю контекст",
+      detail: null,
+    };
+  }
+
+  return latestProgressStep;
+}
+
 export function buildProgressText(state, language = "rus") {
   const spinner = buildProgressSpinner();
   const step = buildProgressStep(state, language);
   if (!step) {
-    return buildNeutralProgressText(language);
+    return buildNeutralProgressText();
   }
 
   const parts = [];

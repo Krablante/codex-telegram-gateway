@@ -153,6 +153,7 @@ The bot should be an admin in the forum chat. Topic creation and cleanup flows w
 
 `/menu` also accepts the Telegram-style `/<command>@YourBot` form, shows an in-menu `Status` screen, and recreates the pinned topic panel cleanly when you reopen it so old menu messages do not pile up. Telegram may still keep its own pin service notice, but the gateway no longer guesses and deletes neighboring message ids.
 If a topic already has a live Spike run, plain follow-up text is steered into that same run as many times as needed. If live steer hits a short transient failure, the gateway retries briefly before falling back to the next prompt queue; use `/q` only when you explicitly mean "run this next after the current one". If upstream aborts a turn, the gateway now retries that same top-level run on the stored `codex_thread_id` before it falls back to a fresh-thread rebuild; accepted live-steer images are replayed into the recovery attempt, ordinary upstream-interrupted turns still use a bounded two-retry budget, and an already completed `turn.completed` answer is kept as `completed` instead of being thrown away. Fallback app-server debugging may inspect older provider, rollout, and `thread/list` hints, but default `exec-json` continuity stays on the Codex thread id.
+Visible progress stays quiet until Codex emits main-run natural-language progress: startup and silent runs show only `...`, and live steer keeps the previous thought visible through interrupt/resume plumbing until a new progress item or final answer arrives.
 
 Native Windows:
 

@@ -161,6 +161,7 @@ export async function startPromptRun(
     lastTypingActionAt: 0,
     typingActionInFlight: false,
     acceptedLiveSteerCount: 0,
+    holdProgressUntilNaturalUpdate: false,
     liveSteerImagePaths: [],
     executionHost: hostExecution?.host ?? null,
   };

@@ -543,14 +543,21 @@ async function prepareInterruptedRunFallback(
   run.state.resumeMode = recoveryKind;
   run.state.latestSummary = recoveryKind;
   run.state.latestSummaryKind = "rebuild";
-  run.state.latestProgressMessage = null;
+  const holdLiveSteerProgress =
+    recoveryKind === "live-steer-restart" &&
+    run.state.holdProgressUntilNaturalUpdate;
+  if (!holdLiveSteerProgress) {
+    run.state.latestProgressMessage = null;
+  }
   run.state.latestCommandOutput = null;
   run.state.latestCommand = null;
   run.state.finalAgentMessage = null;
   run.state.finalAgentMessageSource = null;
-  run.state.progress?.queueUpdate(
-    buildProgressText(run.state, getSessionUiLanguage(run.session)),
-  );
+  if (!holdLiveSteerProgress) {
+    run.state.progress?.queueUpdate(
+      buildProgressText(run.state, getSessionUiLanguage(run.session)),
+    );
+  }
 
   if (resumeThreadId) {
     return {

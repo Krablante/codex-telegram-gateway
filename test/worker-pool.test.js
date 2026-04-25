@@ -13,7 +13,7 @@ import {
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
 
-const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
+const INITIAL_PROGRESS_TEXT = "...";
 
 test("CodexWorkerPool preserves continuity metadata when native resume stays unavailable after retry", async () => {
   const sessionsRoot = await fs.mkdtemp(

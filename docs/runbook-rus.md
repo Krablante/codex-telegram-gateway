@@ -112,9 +112,9 @@ Runtime специально fail-closed. Создай новую тему из 
 
 Помни: `/compact` сначала пересобирает `active-brief.md`, а потом уже сбрасывает continuity для следующего fresh run. У gateway/operator surface нет отдельного synthetic report/continue reset mode; поддерживаемые context-pressure пути — `/compact` и Codex auto-compact.
 
-### В Telegram виден только нейтральный progress
+### В Telegram виден только spinner progress
 
-Такой run должен оставаться на нейтральном локализованном статусе, например `Работаю` плюс spinner, пока Codex не emit-ит main-run natural-language progress (`agent_message` progress notes или `reasoning`). Внутренние recovery labels вроде `live-steer-restart` не должны попадать в bubble. Если выглядит мёртвым:
+Такой run должен оставаться только на spinner marker `...`, пока Codex не emit-ит main-run natural-language progress (`agent_message` progress notes или `reasoning`). После live steer текущий bubble должен остаться на последней видимой мысли до следующего настоящего progress или final answer; внутренние recovery labels вроде `live-steer-restart`, служебное `Продолжаю тот же Codex thread` и startup/liveness filler не должны попадать в bubble. Если выглядит мёртвым:
 
 1. смотри `runtime-heartbeat.json`
 2. смотри свежие `runtime-events.ndjson`

@@ -67,6 +67,8 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - for container-backed MCP tools like `pitlane` and `large_file`, teach Codex the host-to-container workspace mirror when your deploy uses one, for example `/host/workspace/...` on the host becoming `/workspace/...` inside the tool
 - keep tool use targeted; do not tell Codex to read large parts of the repo or the web blindly when a narrower MCP call will do
 - keep prompt guidance concise and practical instead of bloated
+- for the default exec-json backend, keep Telegram-visible progress sourced from main-run Codex natural-language `agent_message` progress notes and `reasoning` items; do not show startup/liveness filler such as "Working" or "Starting Codex run"
+- after accepted live steer, hold the existing progress bubble through interrupt/rebuild plumbing until Codex emits new visible natural-language progress or a final answer
 
 ## Boundaries
 

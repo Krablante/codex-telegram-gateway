@@ -6,6 +6,16 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.69] - 2026-04-25
+
+Fixed:
+
+- live steer no longer replaces the current visible progress bubble with internal lifecycle text while the run interrupts and resumes the same Codex thread
+
+Changed:
+
+- startup and silent runs now keep the progress bubble on the bare spinner marker `...` until Codex emits real natural-language progress, instead of showing service filler such as "Working" or "Starting Codex run"
+
 ## [0.3.68] - 2026-04-25
 
 Fixed:

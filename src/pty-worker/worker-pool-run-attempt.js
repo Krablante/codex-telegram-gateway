@@ -247,6 +247,7 @@ async function handleAttemptEvent(pool, run, summary, attemptInsight) {
         state.latestSummary = excerpt(normalizedAgentMessage, 500);
         state.latestSummaryKind = "agent_message";
         state.latestProgressMessage = normalizedAgentMessage;
+        state.holdProgressUntilNaturalUpdate = false;
         await appendProgressNoteBestEffort(pool, run, summary, normalizedAgentMessage);
         shouldRefreshProgress = true;
       }

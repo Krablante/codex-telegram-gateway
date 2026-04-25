@@ -31,6 +31,7 @@ function applyAcceptedSteer({
   run.exchangePrompt = appendPromptPart(run.exchangePrompt, exchangePrompt);
   run.state.acceptedLiveSteerCount =
     (Number(run.state.acceptedLiveSteerCount) || 0) + 1;
+  run.state.holdProgressUntilNaturalUpdate = true;
   if (Array.isArray(input) && input.length > 0) {
     const nextImagePaths = new Set(run.state.liveSteerImagePaths || []);
     for (const item of input) {
@@ -268,9 +269,11 @@ export async function sendTypingAction(pool, run) {
     return;
   }
 
-  run.state.progress?.queueUpdate(
-    buildProgressText(run.state, getSessionUiLanguage(run.session)),
-  );
+  if (!run.state.holdProgressUntilNaturalUpdate) {
+    run.state.progress?.queueUpdate(
+      buildProgressText(run.state, getSessionUiLanguage(run.session)),
+    );
+  }
 
   if (typeof pool.api.sendChatAction !== "function") {
     return;

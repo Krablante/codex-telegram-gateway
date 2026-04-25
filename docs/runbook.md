@@ -112,9 +112,9 @@ Check:
 
 Remember: `/compact` intentionally rebuilds `active-brief.md` first and only then resets continuity for the next fresh run. The gateway/operator surface has no separate synthetic report/continue reset mode; `/compact` and Codex auto-compact are the supported context-pressure paths.
 
-### Telegram shows only neutral progress
+### Telegram shows only spinner progress
 
-This should stay as a neutral localized status, for example `Working` plus the spinner, until Codex emits main-run natural-language progress (`agent_message` progress notes or `reasoning`). Internal recovery labels such as `live-steer-restart` should not appear in the bubble. If it looks dead:
+This should stay as only the spinner marker `...` until Codex emits main-run natural-language progress (`agent_message` progress notes or `reasoning`). After live steer, the current bubble should stay on the last visible thought until the next real progress item or final answer; internal recovery labels such as `live-steer-restart`, lifecycle text such as `Continuing the same Codex thread`, and startup/liveness filler should not appear in the bubble. If it looks dead:
 
 1. inspect `runtime-heartbeat.json`
 2. inspect recent `runtime-events.ndjson`

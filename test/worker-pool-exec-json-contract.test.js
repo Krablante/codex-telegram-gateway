@@ -11,7 +11,7 @@ import {
   waitForRunToFinish,
 } from "../test-support/worker-pool-fixtures.js";
 
-const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
+const INITIAL_PROGRESS_TEXT = "...";
 
 test("CodexWorkerPool mirrors the exec-json live smoke through a local runner contract", async (t) => {
   // This preserves the worker-pool live-smoke contract without spawning external Codex.

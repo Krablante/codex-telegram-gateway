@@ -189,7 +189,8 @@ Transport-specific rules:
 - fallback app-server progress can use protocol commentary agent messages while debugging that backend
 - final replies come from the primary run final answer
 - plan/todo, file-change, tool, web-search, command, and subagent events are internal activity and must not be rendered as thoughts
-- if a run emits no visible natural-language progress, the progress bubble stays on a neutral localized status; liveness belongs in `/status` and runtime events, not synthetic thought text or internal recovery labels
+- live steer keeps the current progress bubble unchanged during the interrupt/rebuild gap; lifecycle labels and startup/liveness filler must not overwrite the last visible thought before the next real progress item or final answer
+- if a run emits no visible natural-language progress, the progress bubble shows only the spinner marker `...`; liveness belongs in `/status` and runtime events, not synthetic thought text, startup/liveness filler, or internal recovery labels
 - fenced `telegram-file` blocks with `action: send` trigger file delivery into the current topic
 - local delivery roots are limited to the current worktree and the per-session state dir; remote delivery roots are limited to the translated bound-host worktree/cwd roots; system temp delivery is debug-only via `CODEX_ALLOW_SYSTEM_TEMP_DELIVERY=1`
 - on host-bound topics, `telegram-file path:` must be an absolute path on the bound host

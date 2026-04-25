@@ -12,7 +12,7 @@ import {
   waitFor,
 } from "../test-support/worker-pool-fixtures.js";
 
-const INITIAL_PROGRESS_TEXT = "Запускаю Codex run\n\n...";
+const INITIAL_PROGRESS_TEXT = "...";
 
 test("CodexWorkerPool buffers live steer input while the run is still starting and flushes it into the same run", async () => {
   const sessionsRoot = await fs.mkdtemp(
@@ -366,6 +366,216 @@ test("CodexWorkerPool restarts the run after an upstream interrupt that happens 
   assert.equal(reloaded.last_run_status, "completed");
   assert.equal(reloaded.codex_thread_id, "aborted-thread");
   assert.equal(reloaded.last_agent_reply, "Учёл follow-up и продолжил run.");
+});
+
+test("CodexWorkerPool keeps the previous progress bubble while live steer rebuilds", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-live-steer-progress-hold-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 2035,
+    topicName: "Live steer progress hold",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+
+  const sentMessages = [];
+  const editedMessages = [];
+  const runCalls = [];
+  const steerCalls = [];
+  const firstAttemptFinished = createDeferred();
+  const secondProgressGate = createDeferred();
+  const secondAttemptFinished = createDeferred();
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText(payload) {
+        editedMessages.push(payload);
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      codexGatewayBackend: "exec-json",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    runTask: ({ sessionThreadId, onEvent }) => {
+      runCalls.push({ sessionThreadId });
+      const child = { kill() {} };
+      if (runCalls.length === 1) {
+        return {
+          child,
+          steer({ input }) {
+            steerCalls.push(input);
+            return Promise.resolve({
+              ok: true,
+              reason: "steered",
+            });
+          },
+          finished: (async () => {
+            await onEvent(
+              {
+                kind: "thread",
+                eventType: "thread.started",
+                text: "Codex thread started: progress-hold-thread",
+                threadId: "progress-hold-thread",
+              },
+              {
+                type: "thread.started",
+                thread_id: "progress-hold-thread",
+              },
+            );
+            await onEvent(
+              {
+                kind: "agent_message",
+                eventType: "item.completed",
+                text: "Последняя мысль перед live steer.",
+                messagePhase: "commentary",
+              },
+              {
+                type: "item.completed",
+                item: {
+                  type: "agent_message",
+                  text: "Последняя мысль перед live steer.",
+                },
+              },
+            );
+            await firstAttemptFinished.promise;
+            return {
+              exitCode: null,
+              signal: "SIGINT",
+              threadId: "progress-hold-thread",
+              warnings: [],
+              interrupted: true,
+              interruptReason: "upstream",
+              abortReason: "interrupted",
+              resumeReplacement: null,
+            };
+          })(),
+        };
+      }
+
+      return {
+        child,
+        finished: (async () => {
+          await onEvent(
+            {
+              kind: "thread",
+              eventType: "thread.started",
+              text: "Codex thread resumed: progress-hold-thread",
+              threadId: "progress-hold-thread",
+            },
+            {
+              type: "thread.started",
+              thread_id: "progress-hold-thread",
+            },
+          );
+          await secondProgressGate.promise;
+          await onEvent(
+            {
+              kind: "agent_message",
+              eventType: "item.completed",
+              text: "Новая мысль после live steer.",
+              messagePhase: "commentary",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Новая мысль после live steer.",
+              },
+            },
+          );
+          await secondAttemptFinished.promise;
+          await onEvent(
+            {
+              kind: "agent_message",
+              eventType: "item.completed",
+              text: "Финальный ответ после live steer.",
+              messagePhase: "final_answer",
+            },
+            {
+              type: "item.completed",
+              item: {
+                type: "agent_message",
+                text: "Финальный ответ после live steer.",
+              },
+            },
+          );
+          return {
+            exitCode: 0,
+            signal: null,
+            threadId: "progress-hold-thread",
+            warnings: [],
+            resumeReplacement: null,
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session,
+    prompt: "Начни задачу с progress.",
+    message: {
+      message_id: 710,
+      message_thread_id: 2035,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(session.session_key)?.controller);
+  await waitFor(() => editedMessages.some(
+    (message) => /Последняя мысль перед live steer/u.test(message.text),
+  ));
+
+  const steered = await workerPool.steerActiveRun({
+    session,
+    rawPrompt: "Live steer follow-up.",
+    message: {
+      message_id: 711,
+      message_thread_id: 2035,
+    },
+  });
+  assert.equal(steered.ok, true);
+  assert.equal(steerCalls.length, 1);
+
+  firstAttemptFinished.resolve();
+  await waitFor(() => runCalls.length === 2);
+  await sleep(1100);
+
+  assert.doesNotMatch(
+    editedMessages.map((message) => message.text).join("\n"),
+    /Продолжаю тот же Codex thread|Continuing the same Codex thread|Работаю|Working/u,
+  );
+
+  secondProgressGate.resolve();
+  await waitFor(() => editedMessages.some(
+    (message) => /Новая мысль после live steer/u.test(message.text),
+  ));
+  secondAttemptFinished.resolve();
+  await waitFor(() => workerPool.getActiveRun(session.session_key) === null, 5000);
+
+  assert.equal(sentMessages.at(-1)?.text, "Финальный ответ после live steer.");
+  assert.equal(sentMessages.at(-1)?.reply_to_message_id, 711);
 });
 
 test("CodexWorkerPool restarts a normal run after an upstream interrupt before the final answer", async () => {
