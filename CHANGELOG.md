@@ -6,6 +6,8 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.68] - 2026-04-25
+
 Fixed:
 
 - default runtime-env discovery now resolves the Linux operator env from the config root instead of the mutable state root, repairs env-file mode to `0600` on POSIX, and ignores stale `STATE_ROOT/runtime.env` fallbacks
