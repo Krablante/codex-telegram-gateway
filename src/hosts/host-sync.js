@@ -21,7 +21,7 @@ async function syncRenderedDirectory({
   localDirectory,
   remoteDirectory,
 }) {
-  await runHostBash({
+  const { stdout } = await runHostBash({
     connectTimeoutSecs,
     currentHostId,
     execFileImpl,
@@ -30,16 +30,18 @@ async function syncRenderedDirectory({
       `target=${shellQuote(remoteDirectory)}`,
       'if [[ "$target" == "~" ]]; then target="$HOME"; elif [[ "$target" == "~/"* ]]; then target="$HOME/${target:2}"; fi',
       'mkdir -p "$target"',
+      'printf "%s\\n" "$target"',
     ].join("; "),
     timeoutMs: Math.max(connectTimeoutSecs * 1000, 5000),
   });
+  const resolvedRemoteDirectory = stdout.trim().split("\n").at(-1) || remoteDirectory;
   await runCommand(
     "rsync",
     [
       ...buildRsyncBaseArgs(connectTimeoutSecs),
       "--delete",
       normalizeRsyncLocalPath(`${localDirectory}${path.sep}`),
-      buildRsyncRemotePath(host.ssh_target, `${remoteDirectory}/`),
+      buildRsyncRemotePath(host.ssh_target, `${resolvedRemoteDirectory}/`),
     ],
     {
       execFileImpl,

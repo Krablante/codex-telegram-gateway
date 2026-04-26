@@ -80,8 +80,9 @@ function buildHostPromptSnippet(host) {
   ].join("\n");
 }
 
-function buildHostHealthSnapshot(host) {
+function buildHostHealthSnapshot(host, generatedAt) {
   return {
+    generated_at: generatedAt,
     host_id: host.host_id,
     label: host.label,
     status: host.last_health || "unknown",
@@ -97,6 +98,7 @@ export async function renderCodexSpace({
   hosts,
 }) {
   const hostIds = hosts.map((host) => host.host_id);
+  const generatedAt = new Date().toISOString();
   const layout = await ensureCodexSpaceLayout(codexSpaceRoot, hostIds);
   const fleetMapPath = path.join(layout.sharedRendered, "fleet-map.json");
   const fleetReminderPath = path.join(layout.sharedRendered, "fleet-reminder.txt");
@@ -107,7 +109,7 @@ export async function renderCodexSpace({
     fleetMapPath,
     `${JSON.stringify({
       current_host_id: currentHostId,
-      generated_at: new Date().toISOString(),
+      generated_at: generatedAt,
       hosts,
     }, null, 2)}\n`,
   );
@@ -122,7 +124,7 @@ export async function renderCodexSpace({
   await writeTextAtomic(
     manifestPath,
     `${JSON.stringify({
-      generated_at: new Date().toISOString(),
+      generated_at: generatedAt,
       current_host_id: currentHostId,
       host_ids: hostIds,
     }, null, 2)}\n`,
@@ -151,7 +153,7 @@ export async function renderCodexSpace({
     );
     await writeTextAtomic(
       healthPath,
-      `${JSON.stringify(buildHostHealthSnapshot(host), null, 2)}\n`,
+      `${JSON.stringify(buildHostHealthSnapshot(host, generatedAt), null, 2)}\n`,
     );
 
     files.push(profilePath, promptSnippetPath, healthPath);

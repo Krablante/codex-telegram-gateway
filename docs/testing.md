@@ -38,14 +38,14 @@ Native Windows uses the repo-local `.env` by default. `ENV_FILE` still overrides
 
 ## Repo-level validation
 
-- `make doctor` — env, Telegram auth, webhook state, basic runtime checks
+- `make doctor` — env, Telegram auth, webhook state, basic runtime checks, and Linux user-service freshness/stale-unit checks
 - `npm ci` — install pinned Node dependencies before local tests or asset builds
 - `npm run test:exec` / `npm run test:live` — package-script aliases for the same default exec-json checks when `make` is not the caller
 - `npm run test:live:app-server` — package-script alias for fallback app-server live debugging; the runner injects `CODEX_ENABLE_LEGACY_APP_SERVER=1`
 - `make host-bootstrap` — render the canonical host registry preset on `controller`
 - `make host-bootstrap-runtime ARGS='--host worker-a'` — prepare a helper-capable remote runtime
-- `make host-sync` — render and sync `codex-space` outputs from `controller`
-- `make host-doctor` — record host readiness and failure reasons
+- `make host-sync` — render and sync fresh `codex-space` outputs from `controller`
+- `make host-doctor` — record host readiness, failure reasons, and `codex-space` freshness
 - `make host-remote-smoke ARGS='--host worker-a'` — prove one real host-local `codex exec` run
 - `make host-sync-install` — install the `systemd --user` host-sync timer on `controller`
 - `make host-sync-status` — inspect that timer
@@ -99,6 +99,10 @@ Use this order:
 10. verify one successful and one refused remote `telegram-file` send in a `worker-a`-bound topic
 11. `ENV_FILE="$runtime_env" make host-sync-install`
 12. `ENV_FILE="$runtime_env" make host-sync-status`
+
+`host-doctor` expects rendered `codex-space` files to be recent. Run
+`host-sync` first if the sync timer has been disabled or the host has been
+offline longer than roughly three sync intervals.
 
 ## Live user testing
 

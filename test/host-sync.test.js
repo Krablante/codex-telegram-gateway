@@ -32,13 +32,13 @@ test("runHostSync renders and syncs host outputs over ssh and rsync", async (t) 
     currentHostId: "controller",
   });
   await registryService.upsertHost({
-    host_id: "worker-a",
-    label: "worker-a",
-    ssh_target: "worker-a",
+    host_id: "ser",
+    label: "ser",
+    ssh_target: "ser",
     enabled: true,
-    workspace_root: "~/workspace",
+    workspace_root: "~/atlas",
     repo_root: "~/workspace/codex-telegram-gateway",
-    worker_runtime_root: "~/.local/state/codex-telegram-gateway",
+    worker_runtime_root: "~/state/codex-telegram-gateway",
     codex_bin_path: "codex",
     codex_config_path: "~/.codex/config.toml",
     codex_auth_path: "~/.codex/auth.json",
@@ -70,6 +70,21 @@ test("runHostSync renders and syncs host outputs over ssh and rsync", async (t) 
       );
       return;
     }
+    if (
+      command === "ssh"
+      && Array.isArray(args)
+      && String(args.at(-1) || "").includes("mkdir -p")
+    ) {
+      const script = String(args.at(-1) || "");
+      callback(
+        null,
+        script.includes("shared/rendered")
+          ? "/home/worker/state/codex-telegram-gateway/codex-space/shared/rendered\n"
+          : "/home/worker/state/codex-telegram-gateway/codex-space/hosts/ser/rendered\n",
+        "",
+      );
+      return;
+    }
 
     callback(null, "", "");
   };
@@ -81,12 +96,12 @@ test("runHostSync renders and syncs host outputs over ssh and rsync", async (t) 
     execFileImpl,
     hostsRoot: path.join(stateRoot, "hosts"),
     registryService,
-    targetHostId: "worker-a",
+    targetHostId: "ser",
   });
 
   assert.deepEqual(results, [
     {
-      host_id: "worker-a",
+      host_id: "ser",
       status: "synced",
       reason: null,
     },
@@ -107,6 +122,12 @@ test("runHostSync renders and syncs host outputs over ssh and rsync", async (t) 
       && call.args.includes("'ssh' '-o' 'BatchMode=yes' '-o' 'ConnectTimeout=5'")),
     true,
   );
+  assert.equal(
+    calls
+      .filter((call) => call.command === "rsync")
+      .every((call) => !call.args.some((arg) => String(arg).includes("/~/"))),
+    true,
+  );
   assert.deepEqual(
     JSON.parse(
       await fs.readFile(
@@ -114,7 +135,7 @@ test("runHostSync renders and syncs host outputs over ssh and rsync", async (t) 
           stateRoot,
           "codex-space",
           "hosts",
-          "worker-a",
+          "ser",
           "rendered",
           "models_cache.json",
         ),

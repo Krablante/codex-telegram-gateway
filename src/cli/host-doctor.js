@@ -1,7 +1,10 @@
 import process from "node:process";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
-import { runHostDoctor } from "../hosts/host-doctor.js";
+import {
+  resolveCodexSpaceFreshnessMaxAgeSecs,
+  runHostDoctor,
+} from "../hosts/host-doctor.js";
 import { HostRegistryService } from "../hosts/host-registry-service.js";
 import { ensureStateLayout } from "../state/layout.js";
 
@@ -39,6 +42,9 @@ async function main() {
     currentHostId: config.currentHostId,
   });
   const results = await runHostDoctor({
+    codexSpaceMaxAgeSecs: resolveCodexSpaceFreshnessMaxAgeSecs(
+      config.hostSyncIntervalMinutes,
+    ),
     codexSpaceRoot: layout.codexSpace,
     connectTimeoutSecs: config.hostSshConnectTimeoutSecs,
     currentHostId: config.currentHostId,

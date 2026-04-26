@@ -4,7 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { inspectHostReadiness, runHostDoctor } from "../src/hosts/host-doctor.js";
+import {
+  inspectHostReadiness,
+  resolveCodexSpaceFreshnessMaxAgeSecs,
+  runHostDoctor,
+} from "../src/hosts/host-doctor.js";
 import { HostRegistryService } from "../src/hosts/host-registry-service.js";
 
 function createExecFileStub({ failScripts = [] } = {}) {
@@ -28,8 +32,8 @@ test("inspectHostReadiness fails early for remote hosts without ssh_target", asy
     connectTimeoutSecs: 5,
     currentHostId: "controller",
     host: {
-      host_id: "worker-a",
-      label: "worker-a",
+      host_id: "ser",
+      label: "ser",
       enabled: true,
       ssh_target: null,
     },
@@ -52,9 +56,9 @@ test("runHostDoctor persists ready snapshots and updates registry health", async
     host_id: "controller",
     label: "controller",
     enabled: true,
-    workspace_root: "~/workspace",
+    workspace_root: "~/atlas",
     repo_root: "~/workspace/codex-telegram-gateway",
-    worker_runtime_root: "~/.local/state/codex-telegram-gateway",
+    worker_runtime_root: "~/state/codex-telegram-gateway",
     codex_bin_path: "codex",
     codex_config_path: "~/.codex/config.toml",
     codex_auth_path: "~/.codex/auth.json",
@@ -91,13 +95,13 @@ test("inspectHostReadiness reports docker as not ready when a local-MCP host lac
     currentHostId: "controller",
     execFileImpl: createExecFileStub({ failScripts: ["docker info"] }),
     host: {
-      host_id: "worker-b",
-      label: "worker-b",
+      host_id: "rtx",
+      label: "rtx",
       enabled: true,
-      ssh_target: "worker-b",
-      workspace_root: "~/workspace",
+      ssh_target: "rtx",
+      workspace_root: "~/atlas",
       repo_root: "~/workspace/codex-telegram-gateway",
-      worker_runtime_root: "~/.local/state/codex-telegram-gateway",
+      worker_runtime_root: "~/state/codex-telegram-gateway",
       codex_bin_path: "codex",
       codex_config_path: "~/.codex/config.toml",
       codex_auth_path: "~/.codex/auth.json",
@@ -110,6 +114,37 @@ test("inspectHostReadiness reports docker as not ready when a local-MCP host lac
   assert.equal(snapshot.checks.some((check) => check.id === "docker" && check.ok === false), true);
 });
 
+test("inspectHostReadiness fails when synced codex-space is stale", async () => {
+  const snapshot = await inspectHostReadiness({
+    codexSpaceMaxAgeSecs: resolveCodexSpaceFreshnessMaxAgeSecs(15),
+    connectTimeoutSecs: 5,
+    currentHostId: "controller",
+    execFileImpl: createExecFileStub({ failScripts: ["shared/rendered/manifest.json"] }),
+    host: {
+      host_id: "ser",
+      label: "ser",
+      enabled: true,
+      ssh_target: "ser",
+      workspace_root: "~/atlas",
+      repo_root: "~/workspace/codex-telegram-gateway",
+      worker_runtime_root: "~/state/codex-telegram-gateway",
+      codex_bin_path: "codex",
+      codex_config_path: "~/.codex/config.toml",
+      codex_auth_path: "~/.codex/auth.json",
+      required_capabilities: ["codex"],
+    },
+  });
+
+  assert.equal(snapshot.ready, false);
+  assert.equal(snapshot.failure_reason, "shared-codex-space-fresh");
+  assert.equal(
+    snapshot.checks.some(
+      (check) => check.id === "shared-codex-space-fresh" && check.ok === false,
+    ),
+    true,
+  );
+});
+
 test("inspectHostReadiness treats missing passwordless sudo as advisory for normal execution", async () => {
   const snapshot = await inspectHostReadiness({
     codexSpaceRoot: "/tmp/codex-space",
@@ -117,13 +152,13 @@ test("inspectHostReadiness treats missing passwordless sudo as advisory for norm
     currentHostId: "controller",
     execFileImpl: createExecFileStub({ failScripts: ["sudo -n true"] }),
     host: {
-      host_id: "worker-a",
-      label: "worker-a",
+      host_id: "ser",
+      label: "ser",
       enabled: true,
-      ssh_target: "worker-a",
-      workspace_root: "~/workspace",
+      ssh_target: "ser",
+      workspace_root: "~/atlas",
       repo_root: "~/workspace/codex-telegram-gateway",
-      worker_runtime_root: "~/.local/state/codex-telegram-gateway",
+      worker_runtime_root: "~/state/codex-telegram-gateway",
       codex_bin_path: "codex",
       codex_config_path: "~/.codex/config.toml",
       codex_auth_path: "~/.codex/auth.json",

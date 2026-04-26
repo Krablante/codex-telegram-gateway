@@ -2,6 +2,7 @@ import path from "node:path";
 import process from "node:process";
 
 import { loadRuntimeConfig } from "../config/runtime-config.js";
+import { auditSystemdUserGateway } from "../runtime/systemd-user-doctor.js";
 import { writeTextAtomic } from "../state/file-utils.js";
 import { ensureStateLayout } from "../state/layout.js";
 import { TelegramBotApiClient } from "../telegram/bot-api-client.js";
@@ -26,6 +27,7 @@ async function main() {
   });
   const probe = await runTelegramProbe(config, api);
   const { me, chat, membership, webhookInfo } = probe;
+  const systemdUser = await auditSystemdUserGateway({ config });
 
   const report = {
     checked_at: new Date().toISOString(),
@@ -61,17 +63,47 @@ async function main() {
       pending_update_count: webhookInfo.pending_update_count || 0,
       allowed_updates: webhookInfo.allowed_updates || [],
     },
+    systemd_user: systemdUser,
   };
 
   const snapshotPath = await writeDoctorSnapshot(layout.logs, report);
+  const failures = [];
+  if (systemdUser.supported) {
+    if (systemdUser.main_unit.installed && systemdUser.main_unit.fresh === false) {
+      failures.push(
+        `systemd unit is stale: ${systemdUser.main_unit.mismatches.join(", ") || systemdUser.main_unit.error || "unknown mismatch"}`,
+      );
+    }
+    if (systemdUser.stale_units.length > 0) {
+      failures.push(
+        `stale systemd units: ${systemdUser.stale_units
+          .map((unit) => `${unit.name} (${unit.reasons.join(", ")})`)
+          .join("; ")}`,
+      );
+    }
+  }
 
-  printSummaryLine("doctor", "ok");
+  printSummaryLine("doctor", failures.length > 0 ? "failed" : "ok");
   printSummaryLine("env_file", config.envFilePath);
   printSummaryLine("bot", `${me.first_name} (@${me.username || "no-username"})`);
   printSummaryLine("forum_chat", `${chat.title} [${chat.id}]`);
   printSummaryLine("forum_enabled", String(Boolean(chat.is_forum)));
   printSummaryLine("bot_membership", membership.status);
   printSummaryLine("webhook_url", webhookInfo.url || "(none)");
+  if (systemdUser.supported) {
+    printSummaryLine(
+      "systemd_unit",
+      systemdUser.main_unit.installed
+        ? `installed fresh=${String(systemdUser.main_unit.fresh)}`
+        : "not-installed",
+    );
+    printSummaryLine(
+      "stale_systemd_units",
+      systemdUser.stale_units.length
+        ? systemdUser.stale_units.map((unit) => unit.name).join(", ")
+        : "none",
+    );
+  }
   printSummaryLine(
     "expected_topics",
     config.telegramExpectedTopics.length
@@ -79,6 +111,13 @@ async function main() {
       : "none",
   );
   printSummaryLine("snapshot", snapshotPath);
+
+  if (failures.length > 0) {
+    for (const failure of failures) {
+      console.error(`doctor check failed: ${failure}`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {

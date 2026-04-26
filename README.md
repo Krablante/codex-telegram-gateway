@@ -130,6 +130,9 @@ ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env" 
 ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/codex-telegram-gateway/runtime.env" make run
 ```
 
+On Linux, `make doctor` also checks the installed user service unit for
+freshness and reports obsolete gateway units or missing `ExecStart` targets.
+
 First-time minimum in the runtime env:
 
 - `TELEGRAM_BOT_TOKEN`
@@ -205,6 +208,10 @@ make service-restart-live
 make service-hard-restart
 make admin ARGS='status'
 ```
+
+For multi-host setups, run `make host-sync` before `make host-doctor` after a
+remote host or the sync timer was idle; `host-doctor` treats stale rendered
+`codex-space` as not ready.
 
 Windows-native path:
 

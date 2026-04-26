@@ -35,6 +35,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 
 - prefer repo entry points
 - `make doctor`
+- `make doctor` also validates installed Linux user-service freshness and should fail on obsolete gateway units or missing service `ExecStart` targets
 - `make admin ARGS='status'`
 - `make run`
 - `make smoke`

@@ -6,6 +6,36 @@ import { ensureCodexSpaceLayout, getCodexSpaceLayout } from "./codex-space.js";
 import { runHostBash, shellQuote } from "./host-command-runner.js";
 
 const REQUIRED_NODE_MAJOR = 20;
+const DEFAULT_CODEX_SPACE_FRESHNESS_MULTIPLIER = 3;
+const MIN_CODEX_SPACE_MAX_AGE_SECS = 60;
+
+const CODEX_SPACE_FRESHNESS_SCRIPT = `
+const fs = require("node:fs");
+const [filePath, maxAgeRaw, field] = process.argv.slice(1);
+const maxAgeSecs = Number(maxAgeRaw);
+let parsed;
+try {
+  parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+} catch (error) {
+  console.error(\`invalid json: \${error.message}\`);
+  process.exit(1);
+}
+const value = parsed?.[field];
+const timestampMs = Date.parse(value);
+if (!Number.isFinite(timestampMs)) {
+  console.error(\`missing or invalid \${field}\`);
+  process.exit(1);
+}
+const ageSecs = Math.floor((Date.now() - timestampMs) / 1000);
+if (ageSecs < -300) {
+  console.error(\`\${field} is too far in the future: \${value}\`);
+  process.exit(1);
+}
+if (ageSecs > maxAgeSecs) {
+  console.error(\`stale \${field}: \${value} age_secs=\${ageSecs} max_age_secs=\${maxAgeSecs}\`);
+  process.exit(1);
+}
+`;
 
 function buildCheck(id, label, ok, detail = null) {
   return {
@@ -25,6 +55,35 @@ function buildExistsScript(kind, targetPath) {
     `target=${shellQuote(targetPath)}`,
     'if [[ "$target" == "~" ]]; then target="$HOME"; elif [[ "$target" == "~/"* ]]; then target="$HOME/${target:2}"; fi',
     `test -${kind} "$target"`,
+  ].join("; ");
+}
+
+export function resolveCodexSpaceFreshnessMaxAgeSecs(hostSyncIntervalMinutes) {
+  const intervalMinutes = Number(hostSyncIntervalMinutes);
+  const safeIntervalMinutes = Number.isFinite(intervalMinutes) && intervalMinutes > 0
+    ? intervalMinutes
+    : 15;
+  return Math.max(
+    MIN_CODEX_SPACE_MAX_AGE_SECS,
+    Math.ceil(
+      safeIntervalMinutes * 60 * DEFAULT_CODEX_SPACE_FRESHNESS_MULTIPLIER,
+    ),
+  );
+}
+
+function buildJsonTimestampFreshnessScript(targetPath, {
+  field = "generated_at",
+  maxAgeSecs,
+} = {}) {
+  if (!targetPath || !maxAgeSecs) {
+    return "exit 1";
+  }
+
+  return [
+    `target=${shellQuote(targetPath)}`,
+    'if [[ "$target" == "~" ]]; then target="$HOME"; elif [[ "$target" == "~/"* ]]; then target="$HOME/${target:2}"; fi',
+    `test -f "$target"`,
+    `node -e ${shellQuote(CODEX_SPACE_FRESHNESS_SCRIPT)} "$target" ${shellQuote(String(maxAgeSecs))} ${shellQuote(field)}`,
   ].join("; ");
 }
 
@@ -101,6 +160,7 @@ async function runDoctorCheck({
 }
 
 export async function inspectHostReadiness({
+  codexSpaceMaxAgeSecs = resolveCodexSpaceFreshnessMaxAgeSecs(),
   connectTimeoutSecs,
   currentHostId,
   execFileImpl = execFile,
@@ -144,6 +204,12 @@ export async function inspectHostReadiness({
     host.host_id,
     "rendered",
     "health.json",
+  );
+  const sharedManifestPath = path.posix.join(
+    hostCodexSpaceRoot,
+    "shared",
+    "rendered",
+    "manifest.json",
   );
   const sharedReminderPath = path.posix.join(
     hostCodexSpaceRoot,
@@ -284,9 +350,35 @@ export async function inspectHostReadiness({
       currentHostId,
       execFileImpl,
       host,
+      id: "shared-codex-space-fresh",
+      label: "shared codex-space is fresh",
+      script: buildJsonTimestampFreshnessScript(sharedManifestPath, {
+        maxAgeSecs: codexSpaceMaxAgeSecs,
+      }),
+    }),
+  );
+  checks.push(
+    await runDoctorCheck({
+      connectTimeoutSecs,
+      currentHostId,
+      execFileImpl,
+      host,
       id: "host-codex-space",
       label: "host codex-space was synced",
       script: buildExistsScript("f", hostHealthPath),
+    }),
+  );
+  checks.push(
+    await runDoctorCheck({
+      connectTimeoutSecs,
+      currentHostId,
+      execFileImpl,
+      host,
+      id: "host-codex-space-fresh",
+      label: "host codex-space is fresh",
+      script: buildJsonTimestampFreshnessScript(hostHealthPath, {
+        maxAgeSecs: codexSpaceMaxAgeSecs,
+      }),
     }),
   );
 
@@ -305,6 +397,7 @@ export async function inspectHostReadiness({
 }
 
 export async function runHostDoctor({
+  codexSpaceMaxAgeSecs = resolveCodexSpaceFreshnessMaxAgeSecs(),
   codexSpaceRoot,
   connectTimeoutSecs,
   currentHostId,
@@ -331,6 +424,7 @@ export async function runHostDoctor({
   for (const host of selectedHosts) {
     const snapshot = await inspectHostReadiness({
       codexSpaceRoot,
+      codexSpaceMaxAgeSecs,
       connectTimeoutSecs,
       currentHostId,
       execFileImpl,

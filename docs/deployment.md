@@ -56,6 +56,10 @@ $EDITOR "$runtime_env"
 ENV_FILE="$runtime_env" make doctor
 ```
 
+On Linux, `make doctor` also audits the installed `systemd --user` gateway unit
+against the current template and fails on obsolete gateway units or missing
+`ExecStart` targets.
+
 On native Windows, the practical default is repo-local `.env`, and it is preferred even if a config `runtime.env` also exists. Explicit `ENV_FILE` still wins. On Linux service, repo-local `.env` fallback is disabled unless `CODEX_GATEWAY_ALLOW_REPO_ENV=1`; use the canonical config `runtime.env`.
 
 ## Workspace and host settings
@@ -128,6 +132,10 @@ ENV_FILE="$runtime_env" make host-sync-status
 ```
 
 Host registry `ssh_target` values are intentionally constrained to safe SSH aliases or `user@host` names. Values with whitespace, leading `-`, shell metacharacters, or `:` are rejected before SSH/rsync calls. Rsync calls use protected-args mode so valid remote paths with spaces stay single operands after the SSH hop.
+
+`host-doctor` treats stale rendered `codex-space` as not ready. Its freshness
+budget is roughly three `HOST_SYNC_INTERVAL_MINUTES` intervals, so run
+`host-sync` before doctor after a remote host or the sync timer has been idle.
 
 Remote runtime bootstrap will not install an unpinned Codex package. Provide a copied `CODEX_BIN_PATH`/`sourceBinPath` or an explicit pinned package spec such as `@openai/codex@0.124.0`.
 

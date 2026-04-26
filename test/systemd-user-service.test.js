@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
+import {
+  auditSystemdUserGateway,
+  extractExecStartAbsolutePaths,
+} from "../src/runtime/systemd-user-doctor.js";
 import {
   MIN_SYSTEMD_EXIT_TYPE_CGROUP_VERSION,
   SYSTEMD_USER_SERVICE_NAME,
@@ -13,6 +19,12 @@ import {
   parseSystemdVersion,
   supportsExitTypeCgroup,
 } from "../src/runtime/systemd-user-service.js";
+
+async function writeExecutable(filePath) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  await fs.chmod(filePath, 0o755);
+}
 
 test("buildUserServiceUnit renders a direct node user systemd wrapper", () => {
   const unit = buildUserServiceUnit({
@@ -136,5 +148,88 @@ test("buildUnsupportedSystemdUserMessage points Windows users at the wrapper scr
   assert.match(
     buildUnsupportedSystemdUserMessage(),
     /scripts\\windows\\run\.cmd/u,
+  );
+});
+
+test("extractExecStartAbsolutePaths reads quoted systemd command paths", () => {
+  assert.deepEqual(
+    extractExecStartAbsolutePaths('[Service]\nExecStart="/opt/node versions/node" "/repo path/src/cli/run.js"\n'),
+    ["/opt/node versions/node", "/repo path/src/cli/run.js"],
+  );
+});
+
+test("auditSystemdUserGateway reports obsolete and stale user units", async () => {
+  const home = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-systemd-doctor-"),
+  );
+  const repoRoot = path.join(home, "repo");
+  const stateRoot = path.join(home, "state");
+  const nodePath = path.join(home, "bin", "node");
+  const codexPath = path.join(home, "bin", "codex");
+  const unitDir = path.join(home, ".config", "systemd", "user");
+
+  await writeExecutable(nodePath);
+  await writeExecutable(codexPath);
+  await fs.mkdir(path.join(repoRoot, "src", "cli"), { recursive: true });
+  await fs.writeFile(path.join(repoRoot, "src", "cli", "run.js"), "\n", "utf8");
+
+  const freshUnit = buildUserServiceUnit({
+    repoRoot,
+    envFilePath: path.join(stateRoot, "runtime.env"),
+    nodePath,
+    codexBinPath: codexPath,
+    codexConfigPath: path.join(home, ".codex", "config.toml"),
+    pathEntries: [path.dirname(nodePath), "/usr/bin"],
+    description: "Codex Telegram Gateway",
+    scriptPath: "src/cli/run.js",
+    exitType: "cgroup",
+  });
+  await fs.mkdir(unitDir, { recursive: true });
+  await fs.writeFile(
+    path.join(unitDir, SYSTEMD_USER_SERVICE_NAME),
+    freshUnit.replace("UMask=0077\n", ""),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(unitDir, "codex-telegram-gateway-omni.service"),
+    buildUserServiceUnit({
+      repoRoot,
+      envFilePath: path.join(stateRoot, "runtime.env"),
+      nodePath,
+      codexBinPath: codexPath,
+      codexConfigPath: path.join(home, ".codex", "config.toml"),
+      pathEntries: [path.dirname(nodePath), "/usr/bin"],
+      description: "Codex Telegram Gateway Retired",
+      scriptPath: "src/cli/run-omni.js",
+    }),
+    "utf8",
+  );
+
+  const report = await auditSystemdUserGateway({
+    config: {
+      repoRoot,
+      envFilePath: path.join(stateRoot, "runtime.env"),
+      codexBinPath: codexPath,
+      codexConfigPath: path.join(home, ".codex", "config.toml"),
+    },
+    homeDirectory: home,
+    nodePath,
+    platform: "linux",
+  });
+
+  assert.equal(report.main_unit.installed, true);
+  assert.equal(report.main_unit.fresh, false);
+  assert.deepEqual(report.main_unit.mismatches, ["Service.UMask"]);
+  assert.deepEqual(
+    report.stale_units.map((unit) => unit.name).sort(),
+    [
+      "codex-telegram-gateway-omni.service",
+      "codex-telegram-gateway.service",
+    ],
+  );
+  assert.equal(
+    report.stale_units.some((unit) =>
+      unit.reasons.some((reason) => reason.startsWith("missing-exec-target:"))),
+    true,
   );
 });

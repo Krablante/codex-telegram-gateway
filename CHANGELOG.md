@@ -6,6 +6,15 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+Fixed:
+
+- host-sync now expands remote `~/...` runtime roots through the remote shell before invoking rsync, avoiding broken `/home/user/~/...` destinations
+
+Changed:
+
+- `make doctor` now audits the installed Linux `systemd --user` gateway unit for freshness and reports obsolete or broken gateway units
+- `make host-doctor` now checks synced `codex-space` freshness in addition to file presence
+
 ## [0.3.70] - 2026-04-25
 
 Fixed:
