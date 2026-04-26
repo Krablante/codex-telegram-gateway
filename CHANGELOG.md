@@ -6,8 +6,11 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.71] - 2026-04-26
+
 Fixed:
 
+- `codex exec` runs that hit `No tool call found for function call output ...` now compact once, clear stale native thread continuity, and retry as a fresh exec-json thread instead of surfacing the upstream 400
 - host-sync now expands remote `~/...` runtime roots through the remote shell before invoking rsync, avoiding broken `/home/user/~/...` destinations
 
 Changed:

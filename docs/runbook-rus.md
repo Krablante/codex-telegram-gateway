@@ -133,6 +133,18 @@ User-visible failure replies специально короткие. Raw `codex e
 
 Если снова падает, смотри `logs/runtime-events.ndjson` на `recovery_kind: context-window-compact`, затем делай gateway `/compact` вручную или новый `/new` topic, если upstream продолжает отдавать эту ошибку. Не считай отправку `/compact` внутрь `codex exec --json resume` стабильным noninteractive recovery API.
 
+### `No tool call found for function call output`
+
+Это значит, что native Codex thread history стала неконсистентной: в сохранённом thread есть function-call output, но соответствующий tool call больше не валиден в API input sequence. Один реально пойманный случай в `codex-cli 0.124.0`: CLI warning вставился между function call и его output после попытки модели вызвать `apply_patch` через shell-команду.
+
+Дефолтный worker должен сделать один recovery сам:
+
+1. собрать `active-brief.md` через compact
+2. очистить stale thread/provider continuity
+3. один раз повторить latest prompt как fresh `codex exec --json` thread
+
+Если снова падает, смотри `logs/runtime-events.ndjson` на `recovery_kind: exec-thread-corruption` и latest `exec-json-run.jsonl` на upstream error.
+
 ### Remote exec-json topic падает на SSH/path setup
 
 Дефолтный remote path — прямой `ssh -T <host> codex exec --json`, не JSON-RPC host executor. Проверь:

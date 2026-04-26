@@ -5,6 +5,7 @@ import {
   buildProgressText,
   buildPromptWithAttachments,
   buildThreadDeveloperInstructions,
+  isCodexThreadCorruptionError,
   isContextWindowExceededText,
   isTransientModelCapacityError,
   sleep,
@@ -195,6 +196,7 @@ export async function executeRunAttempts(
   let recoveredLiveSteerCount = 0;
   let recoveredInterruptedRunCount = 0;
   let recoveredContextWindowCount = 0;
+  let recoveredThreadCorruptionCount = 0;
   let upstreamModelCapacityRetryCount = 0;
   const upstreamModelCapacityRetryDelaysMs =
     resolveUpstreamModelCapacityRetryDelaysMs(pool);
@@ -252,6 +254,24 @@ export async function executeRunAttempts(
         const fallback = await prepareContextWindowFallback(pool, run, {
           prompt: run.exchangePrompt,
           recoveryAttempt: recoveredContextWindowCount,
+        });
+        nextPrompt = fallback.prompt;
+        nextSessionThreadId = fallback.sessionThreadId;
+        nextSkipThreadHistoryLookup = fallback.skipThreadHistoryLookup ?? true;
+        continue;
+      }
+
+      if (
+        !run.state.interruptRequested
+        && recoveredThreadCorruptionCount === 0
+        && pool?.sessionCompactor
+        && typeof pool.sessionCompactor.compact === "function"
+        && isCodexThreadCorruptionError(error)
+      ) {
+        recoveredThreadCorruptionCount += 1;
+        const fallback = await prepareThreadCorruptionFallback(pool, run, {
+          prompt: run.exchangePrompt,
+          recoveryAttempt: recoveredThreadCorruptionCount,
         });
         nextPrompt = fallback.prompt;
         nextSessionThreadId = fallback.sessionThreadId;
@@ -321,6 +341,25 @@ export async function executeRunAttempts(
         result.warnings = [
           ...(Array.isArray(result.warnings) ? result.warnings : []),
           `context-window recovery failed: ${error.message}`,
+        ];
+      }
+    }
+
+    if (shouldRecoverThreadCorruption(pool, run, result, recoveredThreadCorruptionCount)) {
+      recoveredThreadCorruptionCount += 1;
+      try {
+        const fallback = await prepareThreadCorruptionFallback(pool, run, {
+          prompt: run.exchangePrompt,
+          recoveryAttempt: recoveredThreadCorruptionCount,
+        });
+        nextPrompt = fallback.prompt;
+        nextSessionThreadId = fallback.sessionThreadId;
+        nextSkipThreadHistoryLookup = fallback.skipThreadHistoryLookup ?? true;
+        continue;
+      } catch (error) {
+        result.warnings = [
+          ...(Array.isArray(result.warnings) ? result.warnings : []),
+          `thread-corruption recovery failed: ${error.message}`,
         ];
       }
     }
@@ -397,6 +436,13 @@ export async function executeRunAttempts(
   }
 }
 
+function resultMessages(result) {
+  return [
+    result?.abortReason,
+    ...(Array.isArray(result?.warnings) ? result.warnings : []),
+  ];
+}
+
 function shouldRecoverContextWindow(pool, run, result, recoveredContextWindowCount) {
   if (recoveredContextWindowCount > 0 || run?.state?.interruptRequested) {
     return false;
@@ -408,27 +454,43 @@ function shouldRecoverContextWindow(pool, run, result, recoveredContextWindowCou
     return false;
   }
 
-  return [
-    result?.abortReason,
-    ...(Array.isArray(result?.warnings) ? result.warnings : []),
-  ].some((value) => isContextWindowExceededText(value));
+  return resultMessages(result).some((value) => isContextWindowExceededText(value));
 }
 
-async function prepareContextWindowFallback(
+function shouldRecoverThreadCorruption(pool, run, result, recoveredThreadCorruptionCount) {
+  if (recoveredThreadCorruptionCount > 0 || run?.state?.interruptRequested) {
+    return false;
+  }
+  if (!pool?.sessionCompactor || typeof pool.sessionCompactor.compact !== "function") {
+    return false;
+  }
+  if (result?.ok === true || result?.interrupted === true) {
+    return false;
+  }
+
+  return resultMessages(result).some((value) => isCodexThreadCorruptionError(value));
+}
+
+async function prepareFreshThreadFallback(
   pool,
   run,
-  { prompt, recoveryAttempt = 1 },
+  {
+    prompt,
+    recoveryAttempt = 1,
+    recoveryKind,
+    compactionReason,
+  },
 ) {
   await noteRunEventBestEffort(pool, "run.recovery", {
     ...buildRunEventSessionFields(run.session),
-    recovery_kind: "context-window-compact",
+    recovery_kind: recoveryKind,
     attempt: recoveryAttempt,
     prior_thread_id: normalizeOptionalText(run.state.threadId) || null,
   });
 
   run.state.status = "rebuilding";
-  run.state.resumeMode = "context-window-compact";
-  run.state.latestSummary = "context-window-compact";
+  run.state.resumeMode = recoveryKind;
+  run.state.latestSummary = recoveryKind;
   run.state.latestSummaryKind = "rebuild";
   run.state.latestProgressMessage = null;
   run.state.latestCommandOutput = null;
@@ -437,7 +499,7 @@ async function prepareContextWindowFallback(
   run.state.finalAgentMessageSource = null;
 
   const compacted = await pool.sessionCompactor.compact(run.session, {
-    reason: "context-window-recovery",
+    reason: compactionReason,
   });
   const compactedSession = compacted?.session || run.session;
   run.session = await pool.sessionStore.patch(compactedSession, {
@@ -457,6 +519,32 @@ async function prepareContextWindowFallback(
     sessionThreadId: null,
     skipThreadHistoryLookup: true,
   };
+}
+
+async function prepareContextWindowFallback(
+  pool,
+  run,
+  { prompt, recoveryAttempt = 1 },
+) {
+  return prepareFreshThreadFallback(pool, run, {
+    prompt,
+    recoveryAttempt,
+    recoveryKind: "context-window-compact",
+    compactionReason: "context-window-recovery",
+  });
+}
+
+async function prepareThreadCorruptionFallback(
+  pool,
+  run,
+  { prompt, recoveryAttempt = 1 },
+) {
+  return prepareFreshThreadFallback(pool, run, {
+    prompt,
+    recoveryAttempt,
+    recoveryKind: "exec-thread-corruption",
+    compactionReason: "thread-corruption-recovery",
+  });
 }
 
 function classifyInterruptedRunRecovery(

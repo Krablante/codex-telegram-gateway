@@ -5,6 +5,7 @@ import {
   buildRunFailureText,
   buildProgressText,
   buildThreadDeveloperInstructions,
+  isCodexThreadCorruptionError,
   isContextWindowExceededText,
   isTransientModelCapacityError,
 } from "../src/pty-worker/worker-pool-common.js";
@@ -229,4 +230,20 @@ test("isContextWindowExceededText matches known upstream context-window failures
     true,
   );
   assert.equal(isContextWindowExceededText("Selected model is at capacity."), false);
+});
+
+test("isCodexThreadCorruptionError matches orphan tool-output failures", () => {
+  assert.equal(
+    isCodexThreadCorruptionError(
+      `Codex exec failed: {
+        "error": {
+          "type": "invalid_request_error",
+          "message": "No tool call found for function call output with call_id call_123."
+        },
+        "status": 400
+      }`,
+    ),
+    true,
+  );
+  assert.equal(isCodexThreadCorruptionError("Selected model is at capacity."), false);
 });

@@ -101,6 +101,7 @@ Exec backend behavior:
 - startup stale-run recovery runs only after the instance has the intake-leader lease, rechecks ownership under the session meta lock, and may read `exec-json-run.jsonl` for an already-finished default-backend turn
 - busy-topic plain follow-ups are accepted as live steer: the active exec process is interrupted and the same logical run resumes with the merged prompt; child exits caused by the requested steer are classified as upstream interruption/recovery, not as incomplete-stream crashes, unless Codex emitted an explicit fatal JSONL event
 - context-window exhaustion gets one recovery attempt: compact the topic into `active-brief.md`, clear stale continuity, and retry once as a fresh exec-json thread. Source selection is in `docs/state-contract.md`: small logs use the full exchange log, small logs with pending progress notes use a full `compaction-source.md`, and oversized logs use bounded recent/progress/high-signal/checkpoint slices.
+- orphan function-call-output failures such as `No tool call found for function call output ...` are treated as corrupt native Codex thread history and use the same compact/fresh-thread recovery shape once
 - gateway recovery does not depend on injecting `/compact` into `codex exec --json resume`; that path is not treated as a stable noninteractive CLI control API
 - visible progress is sourced from main-run natural-language `agent_message` progress notes and `reasoning` items
 - plan/todo, file-change, tool, web-search, command, and collab/subagent events stay internal

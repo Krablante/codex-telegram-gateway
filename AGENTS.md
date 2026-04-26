@@ -70,6 +70,7 @@ Motto: avoid overengineering; prioritize efficient, modular systems, security, h
 - keep prompt guidance concise and practical instead of bloated
 - for the default exec-json backend, keep Telegram-visible progress sourced from main-run Codex natural-language `agent_message` progress notes and `reasoning` items; do not show startup/liveness filler such as "Working" or "Starting Codex run"
 - after accepted live steer, hold the existing progress bubble through interrupt/rebuild plumbing until Codex emits new visible natural-language progress or a final answer
+- exec-json orphan tool-output failures such as `No tool call found for function call output ...` mean native Codex thread history is corrupt; compact once, clear stale continuity, and retry as a fresh exec-json thread instead of surfacing the upstream 400
 
 ## Boundaries
 

@@ -133,6 +133,18 @@ This can be caused by a genuinely oversized thread, a stale resume key, or upstr
 
 If it still fails, check `logs/runtime-events.ndjson` for `recovery_kind: context-window-compact`, then run gateway `/compact` manually or start a fresh `/new` topic if the upstream error is persistent. Do not assume sending `/compact` into `codex exec --json resume` is a stable noninteractive recovery API.
 
+### `No tool call found for function call output`
+
+This means the native Codex thread history is inconsistent: the stored thread contains a function-call output whose matching tool call is no longer valid in the API input sequence. One observed cause in `codex-cli 0.124.0` is a CLI warning inserted between a function call and its output after the model tries to run `apply_patch` through a shell command.
+
+The default worker should make one recovery attempt automatically:
+
+1. compact the topic into `active-brief.md`
+2. clear stale thread/provider continuity
+3. retry once as a fresh `codex exec --json` thread with the latest user prompt
+
+If it still fails, check `logs/runtime-events.ndjson` for `recovery_kind: exec-thread-corruption` and inspect the latest `exec-json-run.jsonl` mirror for the upstream error.
+
 ### Remote exec-json topic fails on SSH/path setup
 
 Default remote execution is direct `ssh -T <host> codex exec --json`, not the JSON-RPC host executor. Check:

@@ -1207,6 +1207,170 @@ test("CodexWorkerPool compacts and retries once after exec-json context-window f
   assert.equal(sentMessages.at(-1).text, "Recovered answer.");
 });
 
+test("CodexWorkerPool compacts and retries after exec-json orphan tool-output corruption", async () => {
+  const sessionsRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-thread-corruption-"),
+  );
+  const sessionStore = new SessionStore(sessionsRoot);
+  const session = await sessionStore.ensure({
+    chatId: -1001234567890,
+    topicId: 247,
+    topicName: "Thread corruption recovery",
+    createdVia: "command/new",
+    workspaceBinding: {
+      repo_root: "/srv/codex-workspace",
+      cwd: "/srv/codex-workspace",
+      branch: "main",
+      worktree_path: "/srv/codex-workspace",
+    },
+  });
+  const resumedSession = await sessionStore.patch(session, {
+    codex_thread_id: "corrupt-thread",
+    last_user_prompt: "previous prompt",
+    last_agent_reply: "previous reply",
+    last_run_status: "completed",
+  });
+  await sessionStore.appendExchangeLogEntry(resumedSession, {
+    created_at: "2026-04-26T23:20:00.000Z",
+    status: "completed",
+    user_prompt: "previous prompt",
+    assistant_reply: "previous reply",
+  });
+
+  const sentMessages = [];
+  const runCalls = [];
+  const compactCalls = [];
+  const workerPool = new CodexWorkerPool({
+    api: {
+      async sendMessage(payload) {
+        sentMessages.push(payload);
+        return { message_id: sentMessages.length };
+      },
+      async editMessageText() {
+        return { ok: true };
+      },
+      async deleteMessage() {
+        return true;
+      },
+    },
+    config: {
+      codexBinPath: "codex",
+      maxParallelSessions: 1,
+    },
+    sessionStore,
+    serviceState: {
+      acceptedPrompts: 0,
+      lastPromptAt: null,
+      activeRunCount: 0,
+    },
+    sessionCompactor: {
+      async compact(meta, { reason }) {
+        compactCalls.push({ sessionKey: meta.session_key, reason });
+        await sessionStore.writeSessionText(
+          meta,
+          "active-brief.md",
+          "# Active brief\n\nRecovered after Codex thread corruption.\n",
+        );
+        const compacted = await sessionStore.patch(meta, {
+          last_compacted_at: "2026-04-26T23:21:00.000Z",
+          last_compaction_reason: reason,
+          exchange_log_entries: 1,
+          codex_thread_id: null,
+          provider_session_id: null,
+          codex_rollout_path: null,
+          last_context_snapshot: null,
+        });
+        return { session: compacted };
+      },
+    },
+    runTask: ({
+      prompt,
+      sessionThreadId,
+      skipThreadHistoryLookup,
+      onRuntimeState,
+      onEvent,
+    }) => {
+      runCalls.push({ prompt, sessionThreadId, skipThreadHistoryLookup });
+      if (runCalls.length === 1) {
+        return {
+          child: { kill() {} },
+          finished: Promise.resolve({
+            ok: false,
+            backend: "exec-json",
+            exitCode: 1,
+            signal: null,
+            threadId: "corrupt-thread",
+            warnings: [
+              `Codex exec failed: {
+                "type": "error",
+                "error": {
+                  "type": "invalid_request_error",
+                  "message": "No tool call found for function call output with call_id call_UiILq3mzXeeZwpxPOzSMZ64z.",
+                  "param": "input"
+                },
+                "status": 400
+              }`,
+            ],
+            abortReason: "exec_stream_error",
+          }),
+        };
+      }
+
+      return {
+        child: { kill() {} },
+        finished: (async () => {
+          await onRuntimeState({ threadId: "fresh-after-corruption" });
+          await onEvent({
+            kind: "agent_message",
+            eventType: "turn.completed",
+            text: "Recovered from thread corruption.",
+            messagePhase: "final_answer",
+          });
+          return {
+            ok: true,
+            backend: "exec-json",
+            exitCode: 0,
+            signal: null,
+            threadId: "fresh-after-corruption",
+            warnings: [],
+          };
+        })(),
+      };
+    },
+  });
+
+  await workerPool.startPromptRun({
+    session: resumedSession,
+    prompt: "Continue after orphan tool output.",
+    message: {
+      message_id: 247,
+      message_thread_id: 247,
+    },
+  });
+
+  await waitFor(() => workerPool.getActiveRun(resumedSession.session_key) === null);
+
+  assert.equal(compactCalls.length, 1);
+  assert.equal(compactCalls[0].reason, "thread-corruption-recovery");
+  assert.equal(runCalls.length, 2);
+  assert.equal(runCalls[0].sessionThreadId, "corrupt-thread");
+  assert.equal(runCalls[1].sessionThreadId, null);
+  assert.equal(runCalls[1].skipThreadHistoryLookup, true);
+  assert.match(runCalls[1].prompt, /stored active brief/u);
+  assert.match(runCalls[1].prompt, /Recovered after Codex thread corruption/u);
+  assert.match(runCalls[1].prompt, /Continue after orphan tool output/u);
+
+  const meta = await sessionStore.load(
+    resumedSession.chat_id,
+    resumedSession.topic_id,
+  );
+  assert.equal(meta.last_run_status, "completed");
+  assert.equal(meta.codex_thread_id, "fresh-after-corruption");
+  assert.equal(meta.last_compaction_reason, "thread-corruption-recovery");
+  assert.equal(meta.last_agent_reply, "Recovered from thread corruption.");
+  assert.equal(sentMessages.at(-1).text, "Recovered from thread corruption.");
+});
+
 test("CodexWorkerPool compacts and retries when exec-json throws context-window failure", async () => {
   const sessionsRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "codex-telegram-gateway-context-window-throw-"),

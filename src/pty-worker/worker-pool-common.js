@@ -81,6 +81,11 @@ export function isTransientModelCapacityError(error) {
   );
 }
 
+export function isCodexThreadCorruptionError(value) {
+  const text = String(value?.message || value || "").toLowerCase();
+  return text.includes("no tool call found for function call output");
+}
+
 export function isTransientTransportError(error) {
   if (getRetryDelayMs(error) !== null) {
     return true;

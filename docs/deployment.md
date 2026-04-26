@@ -100,7 +100,7 @@ printf '%s' "$prompt" | codex exec --json --dangerously-bypass-approvals-and-san
 
 Remote topics use the same command through direct `ssh -T`; the SSH connection stays open for that turn. The gateway resolves the bound host cwd/bin path first, stages remote images under a per-run `<worker_runtime_root>/remote-inputs/...` directory, removes that staging directory after the child exits, and still passes runtime `-c` overrides. Mid-turn spool/detach is intentionally not part of the current deployment.
 
-If `codex exec` reports context-window exhaustion, the worker makes one recovery attempt: compact the topic into `active-brief.md` using the source selector in `docs/state-contract.md`, clear stale thread/provider continuity, and retry once as a fresh exec-json thread. If that also fails, the original failure plus recovery warning remain visible in runtime diagnostics. The worker does not depend on sending `/compact` into noninteractive `codex exec --json resume`.
+If `codex exec` reports context-window exhaustion or an orphan function-call-output error such as `No tool call found for function call output ...`, the worker makes one recovery attempt: compact the topic into `active-brief.md` using the source selector in `docs/state-contract.md`, clear stale thread/provider continuity, and retry once as a fresh exec-json thread. If that also fails, the original failure plus recovery warning remain visible in runtime diagnostics. The worker does not depend on sending `/compact` into noninteractive `codex exec --json resume`.
 
 Use `CODEX_GATEWAY_BACKEND=app-server` only when intentionally debugging the old WebSocket transport, and set `CODEX_ENABLE_LEGACY_APP_SERVER=1` for that debug run.
 

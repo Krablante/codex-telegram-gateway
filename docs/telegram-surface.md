@@ -73,6 +73,7 @@ After `/purge`, old topic-menu callbacks are treated as expired. The same topic 
 - the default `exec-json` backend live-steers a busy plain follow-up by accepting it, interrupting the active exec process, then resuming the same logical run with the merged prompt; an interrupted child exit from that requested steer is not shown as a user-visible incomplete-stream failure unless Codex emitted an explicit fatal JSONL event
 - if live steer cannot be accepted or recovered, the gateway falls back to the next prompt queue instead of wedging the topic
 - if `codex exec` hits context-window exhaustion, the worker compacts once using the state-contract source selector, then retries once as a fresh exec-json thread before surfacing failure
+- if `codex exec` reports `No tool call found for function call output ...`, the worker treats the native thread as corrupt, compacts once, and retries once as a fresh exec-json thread before surfacing failure
 - attachment-first prompts are buffered until the next text arrives
 - long Telegram-split prompts and media groups are assembled before start
 
