@@ -129,3 +129,115 @@ test("RuntimeObserver serializes overlapping heartbeat writes", async () => {
 
   assert.equal(heartbeat.polling.current_offset, 20);
 });
+
+test("RuntimeObserver does not let poller standby write the shared heartbeat", async () => {
+  const logsDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-logs-"),
+  );
+  const serviceState = {
+    startedAt: "2026-03-22T12:00:00.000Z",
+    botId: "1",
+    botUsername: "gatewaybot",
+    handledUpdates: 0,
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    acceptedPrompts: 0,
+    pollErrors: 0,
+    knownSessions: 0,
+    activeRunCount: 0,
+    generationId: "gen-runtime",
+    isLeader: false,
+    retiring: false,
+    rolloutStatus: "idle",
+    lastUpdateId: null,
+    lastCommandName: null,
+    lastCommandAt: null,
+    lastPromptAt: null,
+    bootstrapDroppedUpdateId: null,
+  };
+  const observer = new RuntimeObserver({
+    logsDir,
+    config: {
+      envFilePath: "/state/runtime.env",
+      repoRoot: "/repo",
+      stateRoot: "/state",
+      telegramForumChatId: "-1001234567890",
+    },
+    serviceState,
+    probe: {
+      me: {
+        first_name: "SEVERUS",
+      },
+    },
+    mode: "poller",
+  });
+
+  await observer.start({ currentOffset: 10 });
+  await observer.notePollError(new Error("standby should not mask leader"));
+
+  await assert.rejects(
+    fs.readFile(path.join(logsDir, "runtime-heartbeat.json"), "utf8"),
+    { code: "ENOENT" },
+  );
+  const events = (await fs.readFile(path.join(logsDir, "runtime-events.ndjson"), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(events[0].type, "service.started");
+  assert.equal(events[1].type, "poll.error");
+});
+
+test("RuntimeObserver lets a retiring poller leader write its final shared heartbeat", async () => {
+  const logsDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "codex-telegram-gateway-logs-"),
+  );
+  const serviceState = {
+    startedAt: "2026-03-22T12:00:00.000Z",
+    botId: "1",
+    botUsername: "gatewaybot",
+    handledUpdates: 0,
+    ignoredUpdates: 0,
+    handledCommands: 0,
+    acceptedPrompts: 0,
+    pollErrors: 0,
+    knownSessions: 0,
+    activeRunCount: 0,
+    generationId: "gen-runtime",
+    isLeader: true,
+    retiring: false,
+    rolloutStatus: "idle",
+    lastUpdateId: null,
+    lastCommandName: null,
+    lastCommandAt: null,
+    lastPromptAt: null,
+    bootstrapDroppedUpdateId: null,
+  };
+  const observer = new RuntimeObserver({
+    logsDir,
+    config: {
+      envFilePath: "/state/runtime.env",
+      repoRoot: "/repo",
+      stateRoot: "/state",
+      telegramForumChatId: "-1001234567890",
+    },
+    serviceState,
+    probe: {
+      me: {
+        first_name: "SEVERUS",
+      },
+    },
+    mode: "poller",
+  });
+
+  await observer.start({ currentOffset: 10 });
+  serviceState.isLeader = false;
+  serviceState.retiring = true;
+  await observer.stop();
+
+  const heartbeat = JSON.parse(
+    await fs.readFile(path.join(logsDir, "runtime-heartbeat.json"), "utf8"),
+  );
+  assert.equal(heartbeat.lifecycle_state, "stopped");
+  assert.equal(heartbeat.generation.is_leader, false);
+  assert.equal(heartbeat.generation.retiring, true);
+});

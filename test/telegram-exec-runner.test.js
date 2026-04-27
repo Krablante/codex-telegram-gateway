@@ -42,6 +42,12 @@ class FakeChild extends EventEmitter {
       this.emit("close", code, signal);
     });
   }
+
+  closeProcessOnly(code = 0, signal = null) {
+    queueMicrotask(() => {
+      this.emit("close", code, signal);
+    });
+  }
 }
 
 function assertSshCommand(command) {
@@ -428,6 +434,65 @@ test("runCodexExecTask mirrors raw JSONL lines for stale recovery", async (t) =>
   assert.match(mirrored, /"thread_id":"mirror-thread"/u);
   assert.match(mirrored, /"text":"mirrored"/u);
   assert.match(mirrored, /"type":"turn.completed"/u);
+});
+
+test("runCodexExecTask finishes after child close even if readline streams do not close", async () => {
+  const task = runCodexExecTask({
+    codexBinPath: "codex",
+    cwd: "/repo",
+    prompt: "finish from child close",
+    streamCloseGraceMs: 5,
+    spawnImpl() {
+      return new FakeChild();
+    },
+  });
+
+  task.child.stdout.write('{"type":"thread.started","thread_id":"thread-close"}\n');
+  task.child.stdout.write(`${JSON.stringify({
+    type: "item.completed",
+    item: { id: "msg-1", type: "agent_message", text: "done after close" },
+  })}\n`);
+  task.child.stdout.write('{"type":"turn.completed"}\n');
+  task.child.closeProcessOnly(0, null);
+
+  const result = await task.finished;
+  assert.equal(result.ok, true);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.threadId, "thread-close");
+});
+
+test("runCodexExecTask finishes on turn.completed even if child keeps running", async () => {
+  const finalAnswers = [];
+  const task = runCodexExecTask({
+    codexBinPath: "codex",
+    cwd: "/repo",
+    prompt: "finish from terminal event",
+    streamCloseGraceMs: 5,
+    onEvent(summary) {
+      if (summary?.messagePhase === "final_answer") {
+        finalAnswers.push(summary.text);
+      }
+    },
+    spawnImpl() {
+      return new FakeChild();
+    },
+  });
+
+  task.child.stdout.write('{"type":"thread.started","thread_id":"thread-terminal"}\n');
+  task.child.stdout.write(`${JSON.stringify({
+    type: "item.completed",
+    item: { id: "msg-1", type: "agent_message", text: "terminal done" },
+  })}\n`);
+  task.child.stdout.write('{"type":"turn.completed"}\n');
+
+  const result = await task.finished;
+  assert.equal(result.ok, true);
+  assert.equal(result.exitCode, null);
+  assert.equal(result.signal, null);
+  assert.equal(result.threadId, "thread-terminal");
+  assert.equal(task.child.killed, true);
+  assert.equal(task.child.signal, "SIGTERM");
+  assert.deepEqual(finalAnswers, ["terminal done"]);
 });
 
 test("runRemoteCodexExecTask expands remote tilde paths before launching ssh exec", async () => {

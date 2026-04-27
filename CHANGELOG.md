@@ -6,6 +6,16 @@ The format is intentionally simple and human-readable.
 
 ## [Unreleased]
 
+## [0.3.72] - 2026-04-27
+
+Fixed:
+
+- `codex exec --json` runs now finalize as soon as the root `turn.completed`, `turn.failed`, or `error` JSONL event arrives, then terminate any lingering child process instead of waiting for stuck process/readline shutdown. This fixes native Windows cases where Telegram received the final answer only after the child timeout.
+
+Changed:
+
+- `runtime-heartbeat.json` is now written by the poller leader only; standby generations still write their generation heartbeat, but no longer mask a stuck leader in shared runtime diagnostics.
+
 ## [0.3.71] - 2026-04-26
 
 Fixed:

@@ -38,6 +38,7 @@ export class RuntimeObserver {
     this.heartbeatPath = path.join(logsDir, heartbeatFileName);
     this.eventsPath = path.join(logsDir, eventsFileName);
     this.heartbeatWriteChain = Promise.resolve();
+    this.wroteLeaderHeartbeat = false;
   }
 
   buildHeartbeat({ observedAt = new Date().toISOString() } = {}) {
@@ -93,6 +94,18 @@ export class RuntimeObserver {
 
   async writeHeartbeat() {
     const writeTask = async () => {
+      if (this.mode === "poller") {
+        if (this.serviceState.isLeader) {
+          this.wroteLeaderHeartbeat = true;
+        } else if (
+          !this.wroteLeaderHeartbeat
+          || !this.serviceState.retiring
+          || this.lifecycleState === "running"
+        ) {
+          return null;
+        }
+      }
+
       const observedAt = new Date().toISOString();
       const heartbeat = this.buildHeartbeat({ observedAt });
       await writeTextAtomic(

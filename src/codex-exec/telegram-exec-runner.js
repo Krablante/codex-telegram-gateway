@@ -24,6 +24,13 @@ export const CODEX_EXEC_BACKEND = "exec-json";
 const STDERR_TAIL_LINES = 20;
 const STDERR_TAIL_MAX_BYTES = 16 * 1024;
 const STDERR_TAIL_LINE_MAX_BYTES = 2 * 1024;
+const STREAM_CLOSE_GRACE_MS = 1000;
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function normalizeOptionalText(value) {
   if (typeof value !== "string") {
@@ -353,6 +360,10 @@ export function summarizeCodexExecEvent(event) {
 }
 
 function createJsonlProcessor({ onEvent, onWarning, onRuntimeState }) {
+  let resolveTerminalEvent;
+  const terminalEventPromise = new Promise((resolve) => {
+    resolveTerminalEvent = resolve;
+  });
   const state = {
     latestThreadId: null,
     sawTurnCompleted: false,
@@ -367,6 +378,7 @@ function createJsonlProcessor({ onEvent, onWarning, onRuntimeState }) {
 
   const handleEvent = async (event) => {
     const nonPrimaryEvent = isLikelyNonPrimaryExecEvent(event);
+    let terminalEvent = null;
     if (event.type === "thread.started" && event.thread_id && !nonPrimaryEvent) {
       state.latestThreadId = event.thread_id;
       await onRuntimeState?.({ threadId: event.thread_id });
@@ -376,11 +388,14 @@ function createJsonlProcessor({ onEvent, onWarning, onRuntimeState }) {
       state.emittedFinalAnswer = false;
     } else if (event.type === "turn.completed" && !nonPrimaryEvent) {
       state.sawTurnCompleted = true;
+      terminalEvent = event;
     } else if (event.type === "turn.failed" && !nonPrimaryEvent) {
       state.sawTurnFailed = true;
       state.fatalError = event.error || { message: "Codex turn failed" };
+      terminalEvent = event;
     } else if (event.type === "error" && !nonPrimaryEvent) {
       state.fatalError = { message: event.message || "Codex exec stream error" };
+      terminalEvent = event;
     }
 
     const summary = summarizeCodexExecEvent(event);
@@ -414,10 +429,14 @@ function createJsonlProcessor({ onEvent, onWarning, onRuntimeState }) {
         messagePhase: "final_answer",
       });
     }
+    if (terminalEvent) {
+      resolveTerminalEvent(terminalEvent);
+    }
   };
 
   return {
     state,
+    terminalEventPromise,
     ingestLine(line) {
       chain = chain
         .then(async () => {
@@ -446,6 +465,17 @@ function createJsonlProcessor({ onEvent, onWarning, onRuntimeState }) {
       }
     },
   };
+}
+
+async function waitForReaderClose(reader, closePromise, graceMs) {
+  const result = await Promise.race([
+    closePromise.then(() => "closed"),
+    sleep(graceMs).then(() => "timeout"),
+  ]);
+  if (result === "timeout") {
+    reader.close();
+  }
+  await closePromise.catch(() => null);
 }
 
 async function stageExecImagesToRemote({
@@ -643,6 +673,7 @@ function startExecChild({
   detached = platform !== "win32",
   jsonlLogPath = null,
   sessionThreadId = null,
+  streamCloseGraceMs = STREAM_CLOSE_GRACE_MS,
 }) {
   const child = spawnRuntimeCommand(command, args, {
     cwd,
@@ -687,6 +718,15 @@ function startExecChild({
     child.once("error", reject);
     child.once("close", (code, signal) => resolve({ code, signal }));
   });
+  const exitSettledPromise = closePromise.then(
+    (exit) => ({ kind: "child-exit", exit }),
+    (error) => ({ kind: "child-error", error }),
+  );
+  const terminalSettledPromise = processor.terminalEventPromise.then(
+    (event) => ({ kind: "terminal-event", event }),
+  );
+  const stdoutClosed = once(stdoutReader, "close").catch(() => null);
+  const stderrClosed = once(stderrReader, "close").catch(() => null);
 
   if (child.stdin) {
     child.stdin.end(String(prompt || ""));
@@ -696,13 +736,36 @@ function startExecChild({
   let steerInterruptRequested = false;
 
   const finished = (async () => {
-    const [exit] = await Promise.all([
-      closePromise,
-      once(stdoutReader, "close").catch(() => null),
-      once(stderrReader, "close").catch(() => null),
+    const firstCompletion = await Promise.race([
+      exitSettledPromise,
+      terminalSettledPromise,
+    ]);
+    if (firstCompletion.kind === "child-error") {
+      throw firstCompletion.error;
+    }
+
+    let exit = firstCompletion.kind === "child-exit"
+      ? firstCompletion.exit
+      : null;
+    const completedFromTerminalEvent = firstCompletion.kind === "terminal-event";
+    if (completedFromTerminalEvent) {
+      signalChildProcessTree(child, "SIGTERM", { platform });
+      const maybeExit = await Promise.race([
+        exitSettledPromise,
+        sleep(streamCloseGraceMs).then(() => null),
+      ]);
+      if (maybeExit?.kind === "child-exit") {
+        exit = maybeExit.exit;
+      }
+    }
+
+    await Promise.all([
+      waitForReaderClose(stdoutReader, stdoutClosed, streamCloseGraceMs),
+      waitForReaderClose(stderrReader, stderrClosed, streamCloseGraceMs),
     ]);
     await jsonlLogWriteChain;
     await processor.settle();
+    exit ??= { code: null, signal: null };
 
     const requestedInterrupt = userInterruptRequested || steerInterruptRequested;
     const requestedInterruptWithoutTerminalEvent =
@@ -711,8 +774,11 @@ function startExecChild({
       && !processor.state.sawTurnFailed
       && !processor.state.fatalError;
     const interrupted =
-      isInterruptExit(exit)
-      || requestedInterruptWithoutTerminalEvent;
+      !completedFromTerminalEvent
+      && (
+        isInterruptExit(exit)
+        || requestedInterruptWithoutTerminalEvent
+      );
     const warnings = [];
     if (processor.state.malformedLineCount > 0) {
       warnings.push(
@@ -722,7 +788,12 @@ function startExecChild({
     if (processor.state.fatalError?.message && !interrupted) {
       warnings.push(`Codex exec failed: ${processor.state.fatalError.message}`);
     }
-    if ((exit.code !== 0 || exit.signal) && stderrTail.length > 0 && !interrupted) {
+    if (
+      !completedFromTerminalEvent
+      && (exit.code !== 0 || exit.signal)
+      && stderrTail.length > 0
+      && !interrupted
+    ) {
       warnings.push(`codex exec stderr:\n${stderrTail.join("\n")}`);
     }
     if (!processor.state.sawTurnCompleted && !interrupted) {
@@ -730,8 +801,8 @@ function startExecChild({
     }
 
     const ok =
-      exit.code === 0
-      && !exit.signal
+      (completedFromTerminalEvent || exit.code === 0)
+      && (completedFromTerminalEvent || !exit.signal)
       && processor.state.sawTurnCompleted
       && !processor.state.fatalError;
     const requestedThreadId = normalizeOptionalText(sessionThreadId);
@@ -822,6 +893,7 @@ export function runCodexExecTask({
   jsonlLogPath = null,
   spawnImpl,
   platform = process.platform,
+  streamCloseGraceMs = STREAM_CLOSE_GRACE_MS,
 }) {
   const args = buildCodexExecTaskArgs({
     cwd,
@@ -849,6 +921,7 @@ export function runCodexExecTask({
     spawnImpl,
     platform,
     sessionThreadId,
+    streamCloseGraceMs,
   });
 }
 
@@ -876,6 +949,7 @@ export async function runRemoteCodexExecTask({
   sessionThreadId = null,
   spawnImpl,
   platform = process.platform,
+  streamCloseGraceMs = STREAM_CLOSE_GRACE_MS,
 }) {
   const resolvedHost = host || null;
   const hostId = normalizeOptionalText(executionHost?.hostId || resolvedHost?.host_id);
@@ -955,6 +1029,7 @@ export async function runRemoteCodexExecTask({
     platform,
     detached: platform !== "win32",
     sessionThreadId,
+    streamCloseGraceMs,
   });
   return {
     ...execTask,

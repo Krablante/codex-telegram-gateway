@@ -122,6 +122,17 @@ This should stay as only the spinner marker `...` until Codex emits main-run nat
 
 User-visible failure replies are intentionally short. Raw `codex exec stderr` tails stay in diagnostics/warnings and should not be pasted into the final Telegram error.
 
+### Final answer appears much later than `turn.completed`
+
+For the default `exec-json` backend, root `turn.completed`, `turn.failed`, and `error` JSONL events are terminal for the current turn. The runner should finalize from that terminal event, then terminate any lingering child process and force-close stdout/stderr readers after a short grace period.
+
+If Telegram delays the final answer even though `exec-json-run.jsonl` already contains a root `turn.completed` plus the final `agent_message`, check:
+
+- whether the deployed `src/codex-exec/telegram-exec-runner.js` contains terminal-event completion
+- whether the event is a root event, not a subagent/foreign `turn.completed`
+- whether the old `node src/cli/run.js` process was restarted after updating the file
+- `logs/runtime-events.ndjson` and the leader `runtime-heartbeat.json`; standby generations should not overwrite the shared heartbeat
+
 ### `Codex ran out of room in the model's context window`
 
 This can be caused by a genuinely oversized thread, a stale resume key, or upstream Codex pressure. The default `exec-json` worker should make one recovery attempt automatically:

@@ -122,6 +122,17 @@ Runtime специально fail-closed. Создай новую тему из 
 
 User-visible failure replies специально короткие. Raw `codex exec stderr` tails остаются в diagnostics/warnings и не должны попадать в финальную Telegram-ошибку.
 
+### Финальный ответ приходит сильно позже `turn.completed`
+
+Для дефолтного `exec-json` backend root `turn.completed`, `turn.failed` и `error` JSONL events являются терминальными для текущего turn. Runner должен финализировать run по такому событию, затем завершить зависший child process и принудительно закрыть stdout/stderr readers после короткого grace-period.
+
+Если Telegram задерживает финальный ответ, хотя в `exec-json-run.jsonl` уже есть root `turn.completed` и финальный `agent_message`, проверь:
+
+- содержит ли deployed `src/codex-exec/telegram-exec-runner.js` terminal-event completion
+- не является ли событие subagent/foreign `turn.completed`
+- был ли старый `node src/cli/run.js` перезапущен после обновления файла
+- `logs/runtime-events.ndjson` и leader `runtime-heartbeat.json`; standby generations не должны перезаписывать общий heartbeat
+
 ### `Codex ran out of room in the model's context window`
 
 Это может быть реальный переполненный thread, stale resume key или внешний upstream pressure у Codex. Дефолтный `exec-json` worker должен сделать один recovery сам:

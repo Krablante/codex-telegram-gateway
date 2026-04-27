@@ -49,6 +49,7 @@ Expose the real Codex runtime local to the selected execution host through Teleg
    - continuation: `codex exec --json --dangerously-bypass-approvals-and-sandbox -C <cwd> resume <thread_id> -`
    - remote turn: direct `ssh -T <host> '<codex>' exec --json ...`, with the prompt on stdin
    - the first `thread.started.thread_id` is persisted as `session.codex_thread_id`
+   - root `turn.completed`, `turn.failed`, and `error` JSONL events are terminal for the current turn; after one arrives, the runner finalizes from the stream and terminates any lingering child process
    - only main-run natural-language `agent_message` progress notes and `reasoning` items become Telegram-visible progress; plan/todo, file-change, tool, web-search, command, and collab/subagent items stay internal
 9. `src/pty-worker/codex-runner*.js` owns the fallback app-server transport, JSON-RPC turn lifecycle, websocket reattach, rollout replay fallback, steer buffering, startup bootstrap, and completion recovery through focused stage modules.
 10. `src/codex-runtime/limits/` owns limits snapshot normalization, formatting, and source/service resolution.
@@ -99,6 +100,7 @@ Exec backend behavior:
 - runtime model/reasoning/context-pressure knobs are passed as `-c` overrides
 - continuity is `codex_thread_id` only; fallback app-server provider ids, rollout paths, and snapshot `session_id` values are ignored or cleared in the default path
 - startup stale-run recovery runs only after the instance has the intake-leader lease, rechecks ownership under the session meta lock, and may read `exec-json-run.jsonl` for an already-finished default-backend turn
+- the runner does not wait for `codex exec` process/readline shutdown after a root terminal JSONL event; this prevents a ready final answer from being delayed by a stuck child lifecycle
 - busy-topic plain follow-ups are accepted as live steer: the active exec process is interrupted and the same logical run resumes with the merged prompt; child exits caused by the requested steer are classified as upstream interruption/recovery, not as incomplete-stream crashes, unless Codex emitted an explicit fatal JSONL event
 - context-window exhaustion gets one recovery attempt: compact the topic into `active-brief.md`, clear stale continuity, and retry once as a fresh exec-json thread. Source selection is in `docs/state-contract.md`: small logs use the full exchange log, small logs with pending progress notes use a full `compaction-source.md`, and oversized logs use bounded recent/progress/high-signal/checkpoint slices.
 - orphan function-call-output failures such as `No tool call found for function call output ...` are treated as corrupt native Codex thread history and use the same compact/fresh-thread recovery shape once

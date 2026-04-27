@@ -51,7 +51,7 @@ Current slices guarantee:
 - on a remote host, `<worker_runtime_root>/codex-space/hosts/<host-id>/rendered/` may store the synced bound-host prompt snippets
 - on a remote host, `<worker_runtime_root>/host-smoke/` may store smoke artifacts
 - on a remote host, `<worker_runtime_root>/remote-inputs/<session-key>/<run-id>/` may temporarily store staged image attachments copied from `controller`; the worker removes the per-run directory after the remote exec child exits
-- `logs/runtime-heartbeat.json` may track the latest service heartbeat, pid, counters, and poll state
+- `logs/runtime-heartbeat.json` may track the latest poller leader heartbeat, pid, counters, and poll state; standby generations must not overwrite this shared file
 - `logs/runtime-events.ndjson` may append structured service and per-run lifecycle events
 - `indexes/telegram-update-offset.json` may be refreshed by `make run` or `make smoke`
 - `indexes/spike-leader.json` may track the current intake-leader lease
