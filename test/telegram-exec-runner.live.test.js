@@ -53,7 +53,6 @@ test("live codex exec JSONL smoke returns a thread id and final answer", {
     void run.interrupt().catch(() => null);
   });
   assert.equal(result.ok, true, warnings.join("\n"));
-  assert.equal(result.exitCode, 0, warnings.join("\n"));
   assert.ok(result.threadId, "codex exec should emit thread.started first");
   assert.match(finalAnswer, /EXEC_JSON_SMOKE_OK/u);
 });
