@@ -3,6 +3,7 @@
 *.env
 .local/
 AGENTS.local.md
+atlas.toml
 
 # Node
 node_modules/
