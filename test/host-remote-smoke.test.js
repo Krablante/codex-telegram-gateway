@@ -58,7 +58,7 @@ test("runHostRemoteSmoke writes a successful smoke summary for a ready remote ho
     workspace_root: "~/workspace",
     repo_root: "~/workspace/codex-telegram-gateway",
     worker_runtime_root: "~/.local/state/codex-telegram-gateway",
-    codex_bin_path: "~/workspace/state/oss/forks/codex/bin/codex",
+    codex_bin_path: "~/workspace/state/external/forks/codex/bin/codex",
     codex_config_path: "~/.codex/config.toml",
     codex_auth_path: "~/.codex/auth.json",
   });
@@ -91,7 +91,7 @@ test("runHostRemoteSmoke writes a successful smoke summary for a ready remote ho
     && String(call.args.at(-1) || "").includes("smoke-proof-worker-a")
   )?.args.at(-1) || "");
   assert.equal(smokeScript.includes("configured_codex=$(expand_path"), true);
-  assert.equal(smokeScript.includes("workspace/state/oss/forks/codex/bin/codex"), true);
+  assert.equal(smokeScript.includes("workspace/state/external/forks/codex/bin/codex"), true);
   assert.equal(smokeScript.includes('timeout 120s "$configured_codex"'), true);
   assert.equal(smokeScript.includes("--json"), true);
   assert.equal(smokeScript.includes("--dangerously-bypass-approvals-and-sandbox"), true);

@@ -143,7 +143,7 @@ test("buildRemoteCodexExecSshArgs sends only command args over ssh; prompt stays
   const args = buildRemoteCodexExecSshArgs({
     host: { ssh_target: "worker-a" },
     connectTimeoutSecs: 8,
-    codexBinPath: "/srv/codex-workspace/state/oss/forks/codex/bin/codex",
+    codexBinPath: "/srv/codex-workspace/state/external/forks/codex/bin/codex",
     args: buildCodexExecTaskArgs({ cwd: "/srv/codex-workspace" }),
   });
 
@@ -513,7 +513,7 @@ test("runRemoteCodexExecTask expands remote tilde paths before launching ssh exe
         workspace_root: "~/workspace",
         worker_runtime_root:
           "~/.local/state/codex-telegram-gateway",
-        codex_bin_path: "~/workspace/state/oss/forks/codex/bin/codex",
+        codex_bin_path: "~/workspace/state/external/forks/codex/bin/codex",
       },
     },
     session: {
@@ -537,7 +537,7 @@ test("runRemoteCodexExecTask expands remote tilde paths before launching ssh exe
         [
           "cwd=/home/worker-a/workspace",
           "input_root=/home/worker-a/workspace/state/codex-telegram-gateway/remote-inputs/chat-topic",
-          "codex_bin=/home/worker-a/workspace/state/oss/forks/codex/bin/codex",
+          "codex_bin=/home/worker-a/workspace/state/external/forks/codex/bin/codex",
         ].join("\n"),
         "",
       );
@@ -566,7 +566,7 @@ test("runRemoteCodexExecTask expands remote tilde paths before launching ssh exe
   assert.equal(execFileCalls[0].command, "ssh");
   assert.match(execFileCalls[0].args.at(-1), /expand_path/u);
   assertSshCommand(spawnCalls[0].command);
-  assert.match(sshCommand, /\/home\/worker-a\/workspace\/state\/oss\/forks\/codex\/bin\/codex/u);
+  assert.match(sshCommand, /\/home\/worker-a\/workspace\/state\/external\/forks\/codex\/bin\/codex/u);
   assert.match(sshCommand, /-C/u);
   assert.match(sshCommand, /\/home\/worker-a\/workspace/u);
   assert.match(sshCommand, /developer_instructions=/u);
@@ -596,7 +596,7 @@ test("runRemoteCodexExecTask forwards runtime overrides and staged images over s
         workspace_root: "~/workspace",
         worker_runtime_root:
           "~/.local/state/codex-telegram-gateway",
-        codex_bin_path: "~/workspace/state/oss/forks/codex/bin/codex",
+        codex_bin_path: "~/workspace/state/external/forks/codex/bin/codex",
       },
     },
     session: {
@@ -629,7 +629,7 @@ test("runRemoteCodexExecTask forwards runtime overrides and staged images over s
           [
             "cwd=/home/worker-a/workspace",
             `input_root=${remoteInputRoot}`,
-            "codex_bin=/home/worker-a/workspace/state/oss/forks/codex/bin/codex",
+            "codex_bin=/home/worker-a/workspace/state/external/forks/codex/bin/codex",
           ].join("\n"),
           "",
         );
@@ -685,7 +685,7 @@ test("runRemoteCodexExecTask treats requested steer exit code 1 as controlled in
         workspace_root: "~/workspace",
         worker_runtime_root:
           "~/.local/state/codex-telegram-gateway",
-        codex_bin_path: "~/workspace/state/oss/forks/codex/bin/codex",
+        codex_bin_path: "~/workspace/state/external/forks/codex/bin/codex",
       },
     },
     session: {
@@ -704,7 +704,7 @@ test("runRemoteCodexExecTask treats requested steer exit code 1 as controlled in
         [
           "cwd=/home/worker-a/workspace",
           "input_root=/home/worker-a/workspace/state/codex-telegram-gateway/remote-inputs/chat-topic",
-          "codex_bin=/home/worker-a/workspace/state/oss/forks/codex/bin/codex",
+          "codex_bin=/home/worker-a/workspace/state/external/forks/codex/bin/codex",
         ].join("\n"),
         "",
       );

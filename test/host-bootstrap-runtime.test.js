@@ -48,7 +48,7 @@ function createExecFileRecorder() {
             "npm_version=9.2.0",
             "codex_path=/usr/local/bin/codex",
             "configured_codex_present=1",
-            "configured_codex_path=/home/worker-a/workspace/state/oss/forks/codex/bin/codex",
+            "configured_codex_path=/home/worker-a/workspace/state/external/forks/codex/bin/codex",
             "docker_path=/usr/bin/docker",
             "workspace_root_exists=1",
             "repo_root_exists=1",
@@ -153,7 +153,7 @@ test("runHostBootstrapRuntime mirrors the usable Codex profile subset and option
   const customBinPath = path.join(
     sourceWorkspaceRoot,
     "state",
-    "oss",
+    "external",
     "forks",
     "codex",
     "bin",
@@ -181,9 +181,9 @@ test("runHostBootstrapRuntime mirrors the usable Codex profile subset and option
   assert.equal(result.codex_npm_spec, "@openai/codex@0.121.0");
   assert.equal(
     result.probe.codex_path,
-    "/home/worker-a/workspace/state/oss/forks/codex/bin/codex",
+    "/home/worker-a/workspace/state/external/forks/codex/bin/codex",
   );
-  assert.equal(result.remote_bin_path, "~/workspace/state/oss/forks/codex/bin/codex");
+  assert.equal(result.remote_bin_path, "~/workspace/state/external/forks/codex/bin/codex");
   assert.match(recorder.getCapturedConfigText(), /model = "gpt-5\.4"/u);
   assert.match(recorder.getCapturedConfigText(), /\[projects\."\/home\/worker-a\/workspace"\]/u);
   assert.match(recorder.getCapturedConfigText(), /path = "\/home\/worker-a\/\.codex\/skills\/vercel-deploy\/SKILL\.md"/u);
@@ -215,7 +215,7 @@ test("runHostBootstrapRuntime mirrors the usable Codex profile subset and option
   assert.equal(
     recorder.calls.some((call) =>
       call.command === "rsync"
-      && call.args.at(-1) === "worker-a:~/workspace/state/oss/forks/codex/bin/codex"),
+      && call.args.at(-1) === "worker-a:~/workspace/state/external/forks/codex/bin/codex"),
     true,
   );
   assert.equal(

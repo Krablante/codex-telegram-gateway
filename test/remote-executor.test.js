@@ -54,7 +54,7 @@ class FakeRemoteExecutorChild extends EventEmitter {
 test("buildRemoteStartRunParams keeps developerInstructions on the remote startRun payload", () => {
   const params = buildRemoteStartRunParams({
     resolvedHost: {
-      codex_bin_path: "/home/worker-b/workspace/state/oss/forks/codex/bin/codex",
+      codex_bin_path: "/home/worker-b/workspace/state/external/forks/codex/bin/codex",
     },
     codexBinPath: "/fallback/codex",
     remoteCwd: "/home/worker-b/workspace",
@@ -76,7 +76,7 @@ test("buildRemoteStartRunParams keeps developerInstructions on the remote startR
   );
   assert.equal(
     params.codexBinPath,
-    "/home/worker-b/workspace/state/oss/forks/codex/bin/codex",
+    "/home/worker-b/workspace/state/external/forks/codex/bin/codex",
   );
   assert.equal(params.contextWindow, 400000);
   assert.equal(params.autoCompactTokenLimit, 375000);
