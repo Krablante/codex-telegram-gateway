@@ -96,7 +96,8 @@ async function main() {
   await fs.writeFile(unitPath, unitText, "utf8");
 
   await runSystemctl(["daemon-reload"]);
-  await runSystemctl(["enable", "--now", serviceName]);
+  await runSystemctl(["enable", serviceName]);
+  await runSystemctl(["restart", serviceName]);
 
   const { stdout } = await execFileAsync("systemctl", [
     "--user",
